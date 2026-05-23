@@ -12,7 +12,7 @@
 [![CI](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml/badge.svg)](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI](https://img.shields.io/badge/pypi-memctrl-blue.svg)](https://pypi.org/project/memctrl/)
+[![PyPI](https://img.shields.io/pypi/v/memctrl.svg)](https://pypi.org/project/memctrl/)
 [![Tests](https://img.shields.io/badge/tests-187%2F187%20passing-brightgreen)]()
 
 MemCtrl replaces passive vector dumps with an **active memory hierarchy** inspired by human cognition. Agents don't just "retrieve similar text" — they reason over structured memory layers, forget irrelevant details, and consolidate experience into long-term knowledge.
