@@ -50,6 +50,7 @@ def _get_store():
     if rc_path.exists():
         try:
             from memctrl.rules import RuleEngine
+
             engine = RuleEngine(str(rc_path))
             rules = engine.load()
             if rules.db_path:
@@ -137,6 +138,7 @@ def init(
     db_path = db_dir / "memories.db"
     if not db_path.exists():
         from memctrl.store import MemoryStore
+
         MemoryStore(str(db_path))  # initializes schema
         console.print(f"[green]Created {db_path}[/green]")
     else:
