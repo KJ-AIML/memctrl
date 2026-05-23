@@ -37,11 +37,33 @@ console = Console()
 
 
 def _get_store():
-    """Get MemoryStore instance with default DB path."""
+    """Get MemoryStore instance with project-local or global DB path."""
     from memctrl.store import MemoryStore
 
+    # 1. Environment variable overrides everything
     db_path = os.environ.get("MEMCTRL_DB_PATH")
-    return MemoryStore(db_path)
+    if db_path:
+        return MemoryStore(db_path)
+
+    # 2. If .memoryrc exists in cwd, use its db_path
+    rc_path = Path(".memoryrc")
+    if rc_path.exists():
+        try:
+            from memctrl.rules import RuleEngine
+            engine = RuleEngine(str(rc_path))
+            rules = engine.load()
+            if rules.db_path:
+                # Resolve relative to .memoryrc location (cwd)
+                resolved = Path(rules.db_path)
+                if not resolved.is_absolute():
+                    resolved = rc_path.parent / resolved
+                resolved.parent.mkdir(parents=True, exist_ok=True)
+                return MemoryStore(str(resolved))
+        except Exception:
+            pass  # Fallback to global default
+
+    # 3. Global default
+    return MemoryStore()
 
 
 def _get_engine():
@@ -92,7 +114,7 @@ def install(
 def init(
     force: bool = typer.Option(False, help="Overwrite existing .memoryrc"),
 ):
-    """Create .memoryrc in current directory"""
+    """Create .memoryrc and project-local database in current directory"""
     dest = Path(".memoryrc")
     if dest.exists() and not force:
         console.print(
@@ -108,6 +130,17 @@ def init(
 
     dest.write_text(content)
     console.print(f"[green]Created {dest}[/green]")
+
+    # Create project-local database directory and initialize empty DB
+    db_dir = Path(".memctrl")
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "memories.db"
+    if not db_path.exists():
+        from memctrl.store import MemoryStore
+        MemoryStore(str(db_path))  # initializes schema
+        console.print(f"[green]Created {db_path}[/green]")
+    else:
+        console.print(f"[dim]{db_path} already exists[/dim]")
 
 
 @app.command()
@@ -463,6 +496,9 @@ def serve(
 
 def _default_memoryrc() -> str:
     return """# MemCtrl configuration
+
+[memctrl]
+db_path = ".memctrl/memories.db"
 
 [layers]
 project = "architecture decisions, tech stack, ADRs, why we chose X"

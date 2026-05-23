@@ -43,6 +43,7 @@ class Rules:
     forget_never: List[str] = field(default_factory=list)
     forget_after_days: Dict[str, int] = field(default_factory=dict)
     confidence: Dict[str, float] = field(default_factory=dict)
+    db_path: Optional[str] = None
 
     def get_ttl_days(self, layer: str) -> Optional[int]:
         return self.forget_after_days.get(layer)
@@ -150,6 +151,12 @@ class RuleEngine:
                 rules.confidence = {
                     k: float(v) for k, v in extract["confidence"].items()
                 }
+
+        # [memctrl]
+        if "memctrl" in data:
+            memctrl_cfg = data["memctrl"]
+            if "db_path" in memctrl_cfg:
+                rules.db_path = str(memctrl_cfg["db_path"])
 
         self.rules = rules
         return rules
