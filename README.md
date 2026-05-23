@@ -18,7 +18,12 @@
 MemCtrl replaces passive vector dumps with an **active memory hierarchy** inspired by human cognition. Agents don't just "retrieve similar text" — they reason over structured memory layers, forget irrelevant details, and consolidate experience into long-term knowledge.
 
 ```bash
+# Via pip
 pip install memctrl
+
+# Or via uv (fast, no global install needed)
+uvx memctrl
+
 memctrl init
 memctrl add "we use FastAPI + PostgreSQL + Redis cache"
 memctrl query "what is our stack?"
@@ -87,7 +92,14 @@ Rules in `.memoryrc` automatically move, summarize, or expire memories between l
 ## 🚀 One-Command Quick Start
 
 ```bash
+# Option 1: pip
 pip install memctrl
+
+# Option 2: uv — fast, modern Python packaging
+uvx memctrl           # run without installing
+# or
+uv tool install memctrl  # install permanently
+
 memctrl init          # creates .memoryrc in your project
 memctrl install       # registers SKILL.md with your AI assistant
 ```
@@ -305,10 +317,22 @@ This demo simulates an AI coding agent working across multiple sessions. Watch h
 
 ## 📦 Requirements
 
-| Requirement | Minimum |
-|---|---|
-| Python | 3.10+ |
-| SQLite | bundled with Python |
+| Requirement | Minimum | Recommended |
+|---|---|---|
+| Python | 3.10+ | 3.12+ |
+| SQLite | bundled with Python | — |
+| Package manager | pip | [uv](https://github.com/astral-sh/uv) |
+
+**Install via pip:**
+```bash
+pip install memctrl
+```
+
+**Install via uv (faster, no global clutter):**
+```bash
+uvx memctrl              # run once, no install
+uv tool install memctrl  # install as a tool
+```
 
 Optional LLM backends (for extraction only):
 
