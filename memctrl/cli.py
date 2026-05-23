@@ -338,7 +338,7 @@ def heatmap():
     for layer, count in sorted(by_layer.items(), key=lambda x: -x[1]):
         pct = count / total * 100
         bar_len = int(pct / 5)
-        bar = "█" * bar_len + "░" * (20 - bar_len)
+        bar = "#" * bar_len + "-" * (20 - bar_len)
         color = "green" if layer == "project" else "yellow" if layer == "session" else "blue"
         console.print(f"  [{color}]{layer:10}[/{color}] {bar} {count:3} ({pct:.0f}%)")
 
@@ -352,7 +352,7 @@ def heatmap():
         console.print("\n[bold]By Tag:[/bold]")
         for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1])[:10]:
             bar_len = min(count, 20)
-            bar = "█" * bar_len + "░" * (20 - bar_len)
+            bar = "#" * bar_len + "-" * (20 - bar_len)
             console.print(f"  {tag:15} {bar} {count}")
 
     console.print(f"\n[dim]Total: {total} memories[/dim]")

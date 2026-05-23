@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemCtrl — Signature Shot</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg-elevated: #12121a;
+            --bg-card: #1a1a25;
+            --border: #2a2a3a;
+            --text: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --accent: #22d3ee;
+            --accent-secondary: #a78bfa;
+            --project: #4ade80;
+            --session: #fbbf24;
+            --user: #60a5fa;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px;
+        }
+        .shot-container {
+            width: 900px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 0 80px rgba(34,211,238,0.08);
+        }
+        .shot-header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .shot-header .dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+        }
+        .shot-header .dot:nth-child(1) { background: #ef4444; }
+        .shot-header .dot:nth-child(2) { background: #fbbf24; }
+        .shot-header .dot:nth-child(3) { background: #22c55e; }
+        .shot-header .title {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .shot-body {
+            padding: 32px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        .query-box {
+            grid-column: 1 / -1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 8px;
+        }
+        .query-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+        .query-text {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .panel {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .panel h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .fact-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .fact-item:last-child { border-bottom: none; }
+        .fact-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            margin-top: 6px;
+            flex-shrink: 0;
+        }
+        .fact-text {
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .fact-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .trace-path {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .trace-step {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+        .trace-arrow {
+            color: var(--accent);
+            font-weight: 700;
+        }
+        .timeline-item {
+            display: flex;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+        .timeline-item:last-child { border-bottom: none; }
+        .timeline-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+        .confidence-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: rgba(34,211,238,0.1);
+            color: var(--accent);
+            border: 1px solid rgba(34,211,238,0.2);
+        }
+        .brand-footer {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            margin-top: 8px;
+        }
+        .brand-footer .logo {
+            font-weight: 800;
+            font-size: 1rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .brand-footer .tagline {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-in {
+            animation: fadeIn 0.5s ease forwards;
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="shot-container">
+        <div class="shot-header">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="title">memctrl query "what auth method do we use?"</div>
+        </div>
+        <div class="shot-body">
+            <div class="query-box animate-in" style="animation-delay: 0.1s">
+                <div class="query-label">Query</div>
+                <div class="query-text">what auth method do we use?</div>
+            </div>
+
+            <div class="panel animate-in" style="animation-delay: 0.2s">
+                <h3>Retrieved Facts</h3>
+                <div class="fact-item">
+                    <div class="fact-dot" style="background: var(--project)"></div>
+                    <div>
+                        <div class="fact-text">JWT auth with refresh tokens. Access 15min, refresh 7 days.</div>
+                        <div class="fact-meta">project layer · 3 weeks ago · confidence 1.0</div>
+                    </div>
+                </div>
+                <div class="fact-item">
+                    <div class="fact-dot" style="background: var(--session)"></div>
+                    <div>
+                        <div class="fact-text">BUG: Access expiry checked before refresh validation. Fixed by reordering middleware.</div>
+                        <div class="fact-meta">session layer · 6 weeks ago · confidence 0.9</div>
+                    </div>
+                </div>
+                <div class="fact-item">
+                    <div class="fact-dot" style="background: var(--project)"></div>
+                    <div>
+                        <div class="fact-text">OAuth follows same middleware order: refresh validation BEFORE access expiry.</div>
+                        <div class="fact-meta">project layer · 2 weeks ago · confidence 1.0</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel animate-in" style="animation-delay: 0.3s">
+                <h3>Reasoning Trace</h3>
+                <div class="trace-path">
+                    <div class="trace-step">root</div>
+                    <span class="trace-arrow">→</span>
+                    <div class="trace-step">project</div>
+                    <span class="trace-arrow">→</span>
+                    <div class="trace-step">auth</div>
+                    <span class="trace-arrow">→</span>
+                    <div class="trace-step">jwt_refresh_bug</div>
+                </div>
+                <div style="margin-top: 16px;">
+                    <span class="confidence-badge">Confidence: 0.92</span>
+                </div>
+            </div>
+
+            <div class="panel animate-in" style="animation-delay: 0.4s">
+                <h3>Memory Timeline</h3>
+                <div class="timeline-item">
+                    <div class="timeline-dot" style="background: var(--session)"></div>
+                    <div>Fixed JWT middleware ordering bug</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot" style="background: var(--project)"></div>
+                    <div>Architectural decision: JWT + refresh tokens</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot" style="background: var(--project)"></div>
+                    <div>OAuth integration (same auth pattern)</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-dot" style="background: var(--session)"></div>
+                    <div>Consolidated 2 session memories → project</div>
+                </div>
+            </div>
+
+            <div class="panel animate-in" style="animation-delay: 0.5s">
+                <h3>Memory Graph</h3>
+                <svg width="100%" height="120" viewBox="0 0 380 120">
+                    <!-- Links -->
+                    <line x1="190" y1="30" x2="100" y2="80" stroke="#2a2a3a" stroke-width="1.5"/>
+                    <line x1="190" y1="30" x2="190" y2="80" stroke="#2a2a3a" stroke-width="1.5"/>
+                    <line x1="190" y1="30" x2="280" y2="80" stroke="#2a2a3a" stroke-width="1.5"/>
+                    <line x1="100" y1="80" x2="190" y2="80" stroke="#2a2a3a" stroke-width="1"/>
+
+                    <!-- Nodes -->
+                    <circle cx="190" cy="30" r="8" fill="var(--accent)" opacity="0.8"/>
+                    <text x="190" y="20" text-anchor="middle" fill="var(--text-muted)" font-size="9">auth</text>
+
+                    <circle cx="100" cy="80" r="6" fill="var(--session)" opacity="0.8"/>
+                    <text x="100" y="95" text-anchor="middle" fill="var(--text-muted)" font-size="8">jwt_bug</text>
+
+                    <circle cx="190" cy="80" r="6" fill="var(--project)" opacity="0.8"/>
+                    <text x="190" y="95" text-anchor="middle" fill="var(--text-muted)" font-size="8">jwt_policy</text>
+
+                    <circle cx="280" cy="80" r="6" fill="var(--project)" opacity="0.8"/>
+                    <text x="280" y="95" text-anchor="middle" fill="var(--text-muted)" font-size="8">oauth</text>
+                </svg>
+            </div>
+
+            <div class="brand-footer animate-in" style="animation-delay: 0.6s">
+                <div class="logo">MemCtrl</div>
+                <div class="tagline">Cognitive Memory Runtime for AI Agents · github.com/KJ-AIML/memctrl</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
