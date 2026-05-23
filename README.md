@@ -125,15 +125,12 @@ Register the skill with your AI assistant:
 
 | Platform | Command |
 |---|---|
-| Claude Code | `memctrl install --platform claude` |
-| Codex | `memctrl install --platform codex` |
-| Cursor | `memctrl install --platform cursor` |
-| Kimi Code | `memctrl install --platform kimi` |
-| Gemini CLI | `memctrl install --platform gemini` |
-| Aider | `memctrl install --platform aider` |
-| VS Code Copilot Chat | `memctrl install --platform vscode` |
-| GitHub Copilot CLI | `memctrl install --platform copilot` |
-| Pi | `memctrl install --platform pi` |
+| Claude Code | `memctrl install --tool claude_code` |
+| Codex | `memctrl install --tool codex` |
+| Cursor | `memctrl install --tool cursor` |
+| Kimi Code | `memctrl install --tool kimi` |
+| Pi | `memctrl install --tool pi` |
+| AxGa | `memctrl install --tool axga` |
 
 Project-scoped install (commits into your repo):
 
@@ -238,7 +235,7 @@ MemCtrl is designed to plug into existing agent stacks:
 | Framework | Status | Notes |
 |---|---|---|
 | **MCP** | ✅ Ready | Stdio transport server included |
-| **Claude Code** | ✅ Ready | `memctrl install --platform claude` |
+| **Claude Code** | ✅ Ready | `memctrl install --tool claude_code` |
 | **LangGraph** | ✅ Ready | `MemCtrlSaver` checkpoint + `MemoryNode` |
 | **CrewAI** | 🚧 Planned | Long-term memory backend |
 | **AutoGen** | 🚧 Planned | Agent memory provider |
