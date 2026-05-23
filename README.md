@@ -1,5 +1,9 @@
 # MemCtrl
 
+<p align="center">
+  <img src="docs/memctrl_logo.png" alt="MemCtrl Logo" width="180">
+</p>
+
 > **Cognitive Memory Runtime for AI Agents**
 >
 > An operating system for long-lived agent memory — hierarchical, explainable, and self-managing.
