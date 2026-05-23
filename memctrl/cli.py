@@ -151,7 +151,7 @@ def query(
         console.print(f"\n[bold green]Facts:[/bold green]")
         for i, fact in enumerate(result.facts, 1):
             console.print(f"  {i}. {fact}")
-        console.print(f"\n[bold blue]Trace:[/bold blue] {' → '.join(result.trace)}")
+        console.print(f"\n[bold blue]Trace:[/bold blue] {' -> '.join(result.trace)}")
         console.print(f"[bold]Confidence:[/bold] {result.confidence:.2f}")
     else:
         console.print(f"[yellow]No relevant memories found for:[/yellow] {query_text}")
@@ -211,15 +211,15 @@ def tree():
     def _build_rich(node, rich_node):
         for child in node.children:
             if child.is_leaf() or not child.children:
-                label = f"[dim]💾[/dim] {child.title[:50]}"
+                label = f"[dim][mem][/dim] {child.title[:50]}"
             else:
-                label = f"[bold]📂 {child.title}[/bold]"
+                label = f"[bold][dir] {child.title}[/bold]"
                 if child.confidence < 1.0:
                     label += f" [dim](conf: {child.confidence})[/dim]"
             branch = rich_node.add(label)
             _build_rich(child, branch)
 
-    rich_root = RichTree("[bold]📁 Memory Tree[/bold]")
+    rich_root = RichTree("[bold]Memory Tree[/bold]")
     _build_rich(root, rich_root)
     console.print(rich_root)
 
@@ -286,7 +286,7 @@ def trigger_cmd(
             return
 
     ids = engine.fire_trigger(event, ctx, store)
-    console.print(f"[green]Trigger '{event}' fired[/green] — {len(ids)} memories affected")
+    console.print(f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected")
 
 
 @app.command()
