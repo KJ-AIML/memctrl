@@ -244,12 +244,16 @@ def test_fire_trigger_consolidate(tmp_path):
 
 def test_fire_trigger_no_match():
     """Trigger that doesn't match any pattern returns empty list."""
+    original_cwd = os.getcwd()
     with tempfile.TemporaryDirectory() as tmpdir:
         os.chdir(tmpdir)
-        store = MemoryStore(str(Path(tmpdir) / "test.db"))
-        engine = RuleEngine()
-        ids = engine.fire_trigger("nonexistent_event", {}, store)
-        assert ids == []
+        try:
+            store = MemoryStore(str(Path(tmpdir) / "test.db"))
+            engine = RuleEngine()
+            ids = engine.fire_trigger("nonexistent_event", {}, store)
+            assert ids == []
+        finally:
+            os.chdir(original_cwd)
 
 
 def test_fire_trigger_logs_trigger(tmp_path):

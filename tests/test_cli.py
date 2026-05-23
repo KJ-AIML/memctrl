@@ -9,12 +9,25 @@ compatibility issue (Parameter.make_metavar() signature change).
 
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from memctrl.cli import app
+
+
+@contextmanager
+def _temp_cwd():
+    """Change to a temp dir and restore on exit."""
+    original = os.getcwd()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.chdir(tmpdir)
+        try:
+            yield tmpdir
+        finally:
+            os.chdir(original)
 
 runner = CliRunner()
 
@@ -34,16 +47,14 @@ def test_version():
 # ---------------------------------------------------------------------------
 
 def test_init():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         result = runner.invoke(app, ["init"])
         assert result.exit_code == 0
         assert (Path(tmpdir) / ".memoryrc").exists()
 
 
 def test_init_already_exists():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         (Path(tmpdir) / ".memoryrc").write_text("existing")
         result = runner.invoke(app, ["init"])
         assert result.exit_code == 1
@@ -51,8 +62,7 @@ def test_init_already_exists():
 
 
 def test_init_force():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         (Path(tmpdir) / ".memoryrc").write_text("existing")
         result = runner.invoke(app, ["init", "--force"])
         assert result.exit_code == 0
@@ -63,8 +73,7 @@ def test_init_force():
 # ---------------------------------------------------------------------------
 
 def test_add_memory():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["add", "we use FastAPI", "--layer", "project"])
         assert result.exit_code == 0
@@ -73,8 +82,7 @@ def test_add_memory():
 
 
 def test_list_empty():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["list"])
         assert result.exit_code == 0
@@ -83,8 +91,7 @@ def test_list_empty():
 
 
 def test_list_with_memories():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "we use FastAPI", "--layer", "project"])
         result = runner.invoke(app, ["list"])
@@ -94,8 +101,7 @@ def test_list_with_memories():
 
 
 def test_forget_memory():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         # Add then list to get ID
         runner.invoke(app, ["add", "to forget", "--layer", "session"])
@@ -117,8 +123,7 @@ def test_forget_memory():
 
 
 def test_forget_missing_memory():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["forget", "nonexistent-id"])
         assert result.exit_code == 0
@@ -131,8 +136,7 @@ def test_forget_missing_memory():
 # ---------------------------------------------------------------------------
 
 def test_tree_empty():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["tree"])
         assert result.exit_code == 0
@@ -141,8 +145,7 @@ def test_tree_empty():
 
 
 def test_tree_with_memories():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "we use FastAPI", "--layer", "project"])
         runner.invoke(app, ["add", "fixing auth bug", "--layer", "session"])
@@ -157,8 +160,7 @@ def test_tree_with_memories():
 # ---------------------------------------------------------------------------
 
 def test_trigger_consolidate():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "task 1", "--layer", "session"])
         runner.invoke(app, ["add", "task 2", "--layer", "session"])
@@ -171,8 +173,7 @@ def test_trigger_consolidate():
 
 
 def test_trigger_no_match():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["trigger-cmd", "nonexistent_event"])
         assert result.exit_code == 0
@@ -181,8 +182,7 @@ def test_trigger_no_match():
 
 
 def test_trigger_invalid_json_context():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["trigger-cmd", "on_commit", "--context", "not json"])
         assert result.exit_code == 0
@@ -195,8 +195,7 @@ def test_trigger_invalid_json_context():
 # ---------------------------------------------------------------------------
 
 def test_audit_empty():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["audit"])
         assert result.exit_code == 0
@@ -205,8 +204,7 @@ def test_audit_empty():
 
 
 def test_audit_with_entries():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "task 1", "--layer", "session"])
         runner.invoke(app, ["trigger-cmd", "on_commit"])
@@ -221,8 +219,7 @@ def test_audit_with_entries():
 # ---------------------------------------------------------------------------
 
 def test_clear_yes():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "to clear", "--layer", "session"])
         result = runner.invoke(app, ["clear", "--yes"])
@@ -232,8 +229,7 @@ def test_clear_yes():
 
 
 def test_clear_empty():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         result = runner.invoke(app, ["clear", "--yes"])
         assert result.exit_code == 0
@@ -242,8 +238,7 @@ def test_clear_empty():
 
 
 def test_clear_by_layer():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.chdir(tmpdir)
+    with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
         runner.invoke(app, ["add", "project memory", "--layer", "project"])
         runner.invoke(app, ["add", "session memory", "--layer", "session"])
