@@ -1,63 +1,95 @@
 ---
 name: memctrl
-description: >
-  Rule-governed memory layer for this project. Call memctrl to store,
-  retrieve, or update memory about this project, session, or user preferences.
-  Use this when:
-  - Starting a new session (load context)
-  - Making an architecture decision (store to project layer)
-  - Finishing work (trigger on_session_end)
-  - Asking "what did we decide about X" (query memory tree)
+description: |
+  MANDATORY: Before starting ANY work in this project, load context from
+  memctrl. After finishing work, store what was learned. This is the project's
+  cognitive memory layer — not optional.
+  
+  CRITICAL RULES:
+  1. ALWAYS run `memctrl query "current project context"` at session start
+  2. ALWAYS run `memctrl add` after architecture decisions or discoveries
+  3. ALWAYS run `memctrl trigger on_session_end` before ending session
+  4. NEVER say "I don't remember" — query memctrl first
 ---
 
-# MemCtrl Memory System
+# MemCtrl — Mandatory Memory Protocol
 
-## When to Use
+## ⚡ Session Start Protocol (REQUIRED)
 
-- **Session start**: Run `memctrl query "current project context"` for instant context
-- **Architecture decisions**: Run `memctrl add --layer project "decided to use X because Y"`
-- **Session end**: Run `memctrl trigger on_session_end` to consolidate memories
-- **Any context question**: Run `memctrl query "<your question>"`
-
-## Memory Layers
-
-| Layer | Purpose | Default Expiry |
-|-------|---------|---------------|
-| project | Architecture decisions, tech stack, ADRs | Never |
-| session | Current task, WIP, what was done this session | 7 days |
-| user | Personal preferences, working style, patterns | 90 days |
-
-## Key Commands
+Run this **before** any coding, planning, or discussion:
 
 ```bash
-# Query what you need
-memctrl query "what is our tech stack?"
-memctrl query "why did we choose PostgreSQL?"
-
-# Store decisions
-memctrl add "decided to use Firecracker for sandbox isolation" --layer project
-memctrl add "currently implementing auth flow" --layer session
-memctrl add "prefers async Python, minimal abstractions" --layer user
-
-# Manage
-memctrl tree                    # view full memory tree
-memctrl trigger on_session_end  # consolidate session memories
-memctrl audit                   # review what was remembered/forgotten
+memctrl query "current project context"
+memctrl query "what decisions have been made"
+memctrl query "what is the tech stack"
 ```
 
-## How Retrieval Works
+If no context exists (new project), initialize:
+```bash
+memctrl init --force
+```
 
-MemCtrl uses tree-based reasoning (like PageIndex) instead of vector similarity:
-- Memories are organized in a semantic tree: project/tech_stack/database
-- When you query, the system reasons about which branches to explore
-- Results include a trace: root → project → tech_stack → database
-- No embeddings needed — pure structured reasoning
+## 📝 During Work — Store Automatically
 
-## MCP Server
+After ANY of these events, run `memctrl add` **immediately**:
 
-If the MCP server is running (`memctrl serve`), these tools are available:
-- `memctrl_query(query, layer?)` → Retrieve memories with trace
-- `memctrl_add(content, layer, source?)` → Store a memory
-- `memctrl_trigger(event, context?)` → Fire a trigger
-- `memctrl_tree()` → Get full memory tree
-- `memctrl_audit(limit?)` → View audit log
+| Event | Example Command |
+|-------|----------------|
+| Architecture decision | `memctrl add "Using FastAPI + async SQLAlchemy" --layer project` |
+| Bug discovered | `memctrl add "JWT validation fails on expired tokens — use jose` --layer project` |
+| Tech choice | `memctrl add "Chose PostgreSQL over SQLite for concurrent writes" --layer project` |
+| Current task | `memctrl add "Implementing OAuth2 login flow" --layer session` |
+| User preference | `memctrl add "Prefers explicit types over generics" --layer user` |
+| Refactoring | `memctrl add "Renamed UserService -> AuthService" --layer project` |
+
+## 🏁 Session End Protocol (REQUIRED)
+
+Before ending ANY session:
+
+```bash
+memctrl trigger on_session_end
+memctrl audit
+```
+
+This consolidates session memories and cleans up expired entries.
+
+## 🔍 When User Asks Context Questions
+
+If user asks anything like:
+- "Why did we choose X?"
+- "What was the decision about Y?"
+- "What were we doing last time?"
+- "What's our tech stack?"
+
+**NEVER guess.** Always run:
+```bash
+memctrl query "<user's question>"
+```
+
+## 🧠 Memory Layers
+
+| Layer | Purpose | When to Use | Expiry |
+|-------|---------|-------------|--------|
+| **project** | Architecture, ADRs, tech stack, refactors | Permanent decisions | Never |
+| **session** | Current task, WIP, what was done today | Temporary work | 7 days |
+| **user** | Preferences, coding style, patterns | Personal habits | 90 days |
+
+## 📋 Quick Commands
+
+```bash
+memctrl query "<question>"              # Retrieve with reasoning trace
+memctrl add "<fact>" --layer project    # Store permanent knowledge
+memctrl add "<fact>" --layer session    # Store temporary work
+memctrl tree                             # View full memory hierarchy
+memctrl trigger on_session_end          # Consolidate & cleanup
+memctrl audit                            # Review memory log
+```
+
+## 🌐 MCP Server (if running)
+
+If `memctrl serve` is active, use these tools directly:
+- `memctrl_query(query, layer?)` — Retrieve memories
+- `memctrl_add(content, layer, source?)` — Store memory
+- `memctrl_trigger(event, context?)` — Fire rule trigger
+- `memctrl_tree()` — Get memory hierarchy
+- `memctrl_audit(limit?)` — View audit log
