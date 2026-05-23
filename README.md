@@ -138,6 +138,8 @@ memctrl install --project
 | `memctrl query <question>` | Retrieve memories with reasoning trace |
 | `memctrl list` | List all memories (optionally `--layer project`) |
 | `memctrl tree` | Display the memory tree (Rich-formatted) |
+| `memctrl heatmap` | Show memory distribution by layer and tags |
+| `memctrl timeline` | Show chronological memory events |
 | `memctrl forget <id>` | Remove a specific memory |
 | `memctrl clear` | Clear all memories or a specific layer |
 
@@ -220,10 +222,24 @@ MemCtrl is designed to plug into existing agent stacks:
 |---|---|---|
 | **MCP** | ✅ Ready | Stdio transport server included |
 | **Claude Code** | ✅ Ready | `memctrl install --platform claude` |
-| **LangGraph** | 🚧 Planned | Memory checkpoint adapter |
+| **LangGraph** | ✅ Ready | `MemCtrlSaver` checkpoint + `MemoryNode` |
 | **CrewAI** | 🚧 Planned | Long-term memory backend |
 | **AutoGen** | 🚧 Planned | Agent memory provider |
 | **OpenAI Agents SDK** | 🚧 Planned | Context persistence layer |
+
+### LangGraph Quick Start
+
+```python
+from langgraph.graph import StateGraph
+from memctrl.integrations.langgraph import MemCtrlSaver, MemoryNode
+
+workflow = StateGraph(...)
+workflow.add_node("memory", MemoryNode())
+workflow.add_edge("agent", "memory")
+
+# Persistent checkpoints with MemCtrl
+app = workflow.compile(checkpointer=MemCtrlSaver())
+```
 
 ---
 

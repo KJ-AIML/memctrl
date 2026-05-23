@@ -249,3 +249,52 @@ def test_clear_by_layer():
         assert "project memory" in result_list.output
         assert "session memory" not in result_list.output
         del os.environ["MEMCTRL_DB_PATH"]
+
+
+# ---------------------------------------------------------------------------
+# Heatmap
+# ---------------------------------------------------------------------------
+
+def test_heatmap_empty():
+    with _temp_cwd() as tmpdir:
+        os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
+        result = runner.invoke(app, ["heatmap"])
+        assert result.exit_code == 0
+        assert "No memories" in result.output
+        del os.environ["MEMCTRL_DB_PATH"]
+
+
+def test_heatmap_with_memories():
+    with _temp_cwd() as tmpdir:
+        os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
+        runner.invoke(app, ["add", "project memory", "--layer", "project"])
+        runner.invoke(app, ["add", "session memory", "--layer", "session"])
+        result = runner.invoke(app, ["heatmap"])
+        assert result.exit_code == 0
+        assert "project" in result.output
+        assert "session" in result.output
+        del os.environ["MEMCTRL_DB_PATH"]
+
+
+# ---------------------------------------------------------------------------
+# Timeline
+# ---------------------------------------------------------------------------
+
+def test_timeline_empty():
+    with _temp_cwd() as tmpdir:
+        os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
+        result = runner.invoke(app, ["timeline"])
+        assert result.exit_code == 0
+        assert "No timeline" in result.output
+        del os.environ["MEMCTRL_DB_PATH"]
+
+
+def test_timeline_with_events():
+    with _temp_cwd() as tmpdir:
+        os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
+        runner.invoke(app, ["add", "task 1", "--layer", "session"])
+        runner.invoke(app, ["trigger-cmd", "on_commit"])
+        result = runner.invoke(app, ["timeline"])
+        assert result.exit_code == 0
+        assert "task 1" in result.output or "on_commit" in result.output
+        del os.environ["MEMCTRL_DB_PATH"]

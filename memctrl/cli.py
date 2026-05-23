@@ -318,6 +318,92 @@ def audit(
 
 
 @app.command()
+def heatmap():
+    """Show memory distribution heatmap by layer and tags"""
+    store = _get_store()
+    memories = store.list_memories()
+
+    if not memories:
+        console.print("[yellow]No memories found.[/yellow]")
+        return
+
+    console.print(Panel("[bold]Memory Heatmap[/bold]", border_style="cyan"))
+
+    # Layer distribution
+    console.print("\n[bold]By Layer:[/bold]")
+    by_layer: dict = {}
+    for mem in memories:
+        by_layer[mem.layer] = by_layer.get(mem.layer, 0) + 1
+    total = len(memories)
+    for layer, count in sorted(by_layer.items(), key=lambda x: -x[1]):
+        pct = count / total * 100
+        bar_len = int(pct / 5)
+        bar = "█" * bar_len + "░" * (20 - bar_len)
+        color = "green" if layer == "project" else "yellow" if layer == "session" else "blue"
+        console.print(f"  [{color}]{layer:10}[/{color}] {bar} {count:3} ({pct:.0f}%)")
+
+    # Tag distribution
+    tag_counts: dict = {}
+    for mem in memories:
+        for tag in mem.tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    if tag_counts:
+        console.print("\n[bold]By Tag:[/bold]")
+        for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1])[:10]:
+            bar_len = min(count, 20)
+            bar = "█" * bar_len + "░" * (20 - bar_len)
+            console.print(f"  {tag:15} {bar} {count}")
+
+    console.print(f"\n[dim]Total: {total} memories[/dim]")
+
+
+@app.command()
+def timeline(
+    limit: int = typer.Option(20, help="Max events to show"),
+):
+    """Show chronological memory timeline"""
+    store = _get_store()
+    memories = store.list_memories()[:limit]
+    logs = store.get_trigger_log(limit=limit)
+
+    if not memories and not logs:
+        console.print("[yellow]No timeline events.[/yellow]")
+        return
+
+    console.print(Panel("[bold]Memory Timeline[/bold]", border_style="cyan"))
+
+    # Merge and sort events
+    events = []
+    for mem in memories:
+        events.append({
+            "ts": mem.created_at,
+            "type": "memory",
+            "layer": mem.layer,
+            "content": mem.content[:60],
+            "icon": "[mem]",
+        })
+    for log in logs:
+        events.append({
+            "ts": log.timestamp,
+            "type": "trigger",
+            "layer": "",
+            "content": f"{log.event}: {log.action}",
+            "icon": "[refl]",
+        })
+
+    events.sort(key=lambda x: x["ts"], reverse=True)
+
+    for ev in events[:limit]:
+        ts = ev["ts"].strftime("%Y-%m-%d %H:%M") if ev["ts"] else "?"
+        if ev["type"] == "memory":
+            color = "green" if ev["layer"] == "project" else "yellow" if ev["layer"] == "session" else "blue"
+            console.print(f"  [dim]{ts}[/dim] [{color}]{ev['icon']}[/{color}] ({ev['layer']}) {ev['content']}")
+        else:
+            console.print(f"  [dim]{ts}[/dim] [magenta]{ev['icon']}[/magenta] {ev['content']}")
+
+
+@app.command()
 def serve(
     port: int = typer.Option(8080, help="Port to run MCP server on"),
     host: str = typer.Option("127.0.0.1", help="Host to bind to"),

@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemCtrl — Memory Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg-elevated: #12121a;
+            --bg-card: #1a1a25;
+            --border: #2a2a3a;
+            --text: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --text-dim: #71717a;
+            --accent: #22d3ee;
+            --accent-secondary: #a78bfa;
+            --project: #4ade80;
+            --session: #fbbf24;
+            --user: #60a5fa;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+        nav {
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 0;
+        }
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .logo {
+            font-weight: 800;
+            font-size: 1.25rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .back-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover { color: var(--text); }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 250px 1fr 300px;
+            gap: 20px;
+            padding: 24px 0;
+            min-height: calc(100vh - 60px);
+        }
+        @media (max-width: 900px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .panel h3 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        /* Stats */
+        .stat-grid {
+            display: grid;
+            gap: 12px;
+        }
+        .stat-item {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Layer bars */
+        .layer-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .layer-bar-name {
+            width: 60px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .layer-bar-track {
+            flex: 1;
+            height: 8px;
+            background: var(--bg-elevated);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .layer-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .layer-bar-count {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            width: 30px;
+            text-align: right;
+        }
+
+        /* Graph canvas */
+        #graph-container {
+            position: relative;
+            height: 500px;
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        #graph-svg {
+            width: 100%;
+            height: 100%;
+        }
+        .node-circle {
+            cursor: pointer;
+            transition: r 0.2s;
+        }
+        .node-circle:hover { r: 8; }
+        .node-label {
+            font-size: 11px;
+            fill: var(--text-muted);
+            pointer-events: none;
+        }
+        .link-line {
+            stroke: var(--border);
+            stroke-width: 1.5;
+        }
+
+        /* Timeline */
+        .timeline {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .timeline-item {
+            display: flex;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .timeline-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 6px;
+            flex-shrink: 0;
+        }
+        .timeline-content {
+            flex: 1;
+        }
+        .timeline-time {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+        .timeline-text {
+            font-size: 0.85rem;
+            margin-top: 2px;
+        }
+        .timeline-tag {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            margin-top: 4px;
+        }
+
+        /* Trace viewer */
+        .trace-path {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        .trace-step {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .trace-arrow {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            background: var(--accent);
+            color: #000;
+        }
+        .btn:hover { opacity: 0.9; }
+
+        .query-box {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .query-box input {
+            flex: 1;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+        .query-box input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="container">
+            <div class="logo">MemCtrl Visualizer</div>
+            <a href="index.html" class="back-link">&larr; Back to MemCtrl</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="dashboard">
+            <!-- Left sidebar: Stats & Layers -->
+            <div class="left-col">
+                <div class="panel">
+                    <h3>Statistics</h3>
+                    <div class="stat-grid">
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-total">0</div>
+                            <div class="stat-label">Total Memories</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="stat-triggers">0</div>
+                            <div class="stat-label">Reflection Events</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top: 20px;">
+                    <h3>Layers</h3>
+                    <div id="layer-bars"></div>
+                </div>
+            </div>
+
+            <!-- Center: Graph -->
+            <div class="center-col">
+                <div class="panel">
+                    <h3>Memory Graph</h3>
+                    <div id="graph-container">
+                        <svg id="graph-svg"></svg>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top: 20px;">
+                    <h3>Retrieval Trace</h3>
+                    <p style="color: var(--text-muted); font-size: 0.85rem;">Query the memory system and see the exact reasoning path.</p>
+                    <div class="query-box">
+                        <input type="text" id="trace-query" placeholder="e.g., what is our auth method?" value="what is our tech stack?">
+                        <button class="btn" onclick="simulateTrace()">Trace</button>
+                    </div>
+                    <div class="trace-path" id="trace-output"></div>
+                </div>
+            </div>
+
+            <!-- Right sidebar: Timeline -->
+            <div class="right-col">
+                <div class="panel">
+                    <h3>Timeline</h3>
+                    <div class="timeline" id="timeline"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Demo data — in production this would come from memctrl API
+        const demoData = {
+            memories: [
+                { id: 'm1', layer: 'project', content: 'Tech stack: FastAPI + PostgreSQL + Redis', tags: ['tech_stack'], created: '2026-05-01' },
+                { id: 'm2', layer: 'project', content: 'JWT auth: access 15min, refresh 7 days', tags: ['auth', 'jwt'], created: '2026-05-02' },
+                { id: 'm3', layer: 'project', content: 'Database: UUID primary keys, soft deletes', tags: ['database'], created: '2026-05-03' },
+                { id: 'm4', layer: 'session', content: 'Fixed CORS bug on /login endpoint', tags: ['bugfix', 'cors'], created: '2026-05-20' },
+                { id: 'm5', layer: 'session', content: 'Refactored user service to repository pattern', tags: ['refactor'], created: '2026-05-21' },
+                { id: 'm6', layer: 'session', content: 'Added pytest fixtures for auth middleware', tags: ['testing'], created: '2026-05-22' },
+                { id: 'm7', layer: 'user', content: 'Prefers dark mode in all tools', tags: ['preference'], created: '2026-05-10' },
+                { id: 'm8', layer: 'user', content: 'Likes concise commit messages', tags: ['preference'], created: '2026-05-11' },
+            ],
+            triggers: [
+                { event: 'on_commit', action: 'consolidate session -> project', timestamp: '2026-05-15', affected: 2 },
+                { event: 'on_session_end', action: 'summarize session -> user', timestamp: '2026-05-22', affected: 1 },
+            ]
+        };
+
+        const layerColors = {
+            project: '#4ade80',
+            session: '#fbbf24',
+            user: '#60a5fa'
+        };
+
+        function renderStats() {
+            document.getElementById('stat-total').textContent = demoData.memories.length;
+            document.getElementById('stat-triggers').textContent = demoData.triggers.length;
+        }
+
+        function renderLayerBars() {
+            const counts = {};
+            demoData.memories.forEach(m => {
+                counts[m.layer] = (counts[m.layer] || 0) + 1;
+            });
+            const total = demoData.memories.length;
+            const container = document.getElementById('layer-bars');
+            container.innerHTML = Object.entries(counts).map(([layer, count]) => {
+                const pct = (count / total * 100).toFixed(0);
+                return `
+                    <div class="layer-bar">
+                        <div class="layer-bar-name" style="color: ${layerColors[layer] || '#fff'}">${layer}</div>
+                        <div class="layer-bar-track">
+                            <div class="layer-bar-fill" style="width: ${pct}%; background: ${layerColors[layer] || '#fff'}"></div>
+                        </div>
+                        <div class="layer-bar-count">${count}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderTimeline() {
+            const events = [];
+            demoData.memories.forEach(m => {
+                events.push({
+                    time: m.created,
+                    type: 'memory',
+                    layer: m.layer,
+                    text: m.content,
+                    tags: m.tags
+                });
+            });
+            demoData.triggers.forEach(t => {
+                events.push({
+                    time: t.timestamp,
+                    type: 'trigger',
+                    layer: '',
+                    text: `${t.event}: ${t.action}`,
+                    tags: []
+                });
+            });
+            events.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+            const container = document.getElementById('timeline');
+            container.innerHTML = events.map(e => {
+                const color = e.type === 'trigger' ? '#a78bfa' : (layerColors[e.layer] || '#fff');
+                const tagStr = e.tags.map(t => `<span class="timeline-tag">${t}</span>`).join(' ');
+                return `
+                    <div class="timeline-item">
+                        <div class="timeline-dot" style="background: ${color}"></div>
+                        <div class="timeline-content">
+                            <div class="timeline-time">${e.time}</div>
+                            <div class="timeline-text">${e.text}</div>
+                            ${tagStr}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderGraph() {
+            const svg = document.getElementById('graph-svg');
+            const rect = svg.getBoundingClientRect();
+            const w = rect.width || 600;
+            const h = rect.height || 500;
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+            // Simple force-directed-ish layout
+            const nodes = [];
+            const layers = { project: [], session: [], user: [] };
+            demoData.memories.forEach((m, i) => {
+                layers[m.layer].push({ ...m, index: i });
+            });
+
+            let yOffset = 80;
+            Object.entries(layers).forEach(([layer, items]) => {
+                const xStep = w / (items.length + 1);
+                items.forEach((item, i) => {
+                    nodes.push({
+                        id: item.id,
+                        x: xStep * (i + 1),
+                        y: yOffset,
+                        layer: item.layer,
+                        content: item.content
+                    });
+                });
+                yOffset += 140;
+            });
+
+            // Links: connect within same tag groups
+            const links = [];
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const m1 = demoData.memories.find(m => m.id === nodes[i].id);
+                    const m2 = demoData.memories.find(m => m.id === nodes[j].id);
+                    const shared = m1.tags.filter(t => m2.tags.includes(t));
+                    if (shared.length > 0) {
+                        links.push({ source: nodes[i], target: nodes[j], strength: shared.length });
+                    }
+                }
+            }
+
+            // Draw links
+            const linksHtml = links.map(l => `
+                <line class="link-line" x1="${l.source.x}" y1="${l.source.y}" x2="${l.target.x}" y2="${l.target.y}" opacity="${0.2 + l.strength * 0.2}" />
+            `).join('');
+
+            // Draw nodes
+            const nodesHtml = nodes.map(n => `
+                <g transform="translate(${n.x}, ${n.y})">
+                    <circle class="node-circle" r="6" fill="${layerColors[n.layer]}" stroke="var(--bg-card)" stroke-width="2" />
+                    <text class="node-label" x="0" y="20" text-anchor="middle">${n.content.slice(0, 25)}${n.content.length > 25 ? '...' : ''}</text>
+                </g>
+            `).join('');
+
+            // Layer labels
+            const layerLabels = Object.keys(layers).map((layer, i) => `
+                <text x="20" y="${80 + i * 140}" fill="${layerColors[layer]}" font-size="11" font-weight="700" opacity="0.6">${layer.toUpperCase()}</text>
+            `).join('');
+
+            svg.innerHTML = linksHtml + nodesHtml + layerLabels;
+        }
+
+        function simulateTrace() {
+            const query = document.getElementById('trace-query').value;
+            const output = document.getElementById('trace-output');
+
+            // Simulate a trace based on keywords
+            const keywords = query.toLowerCase().split(/\s+/);
+            const matched = demoData.memories.filter(m =>
+                keywords.some(k => m.content.toLowerCase().includes(k) || m.tags.some(t => t.includes(k)))
+            );
+
+            if (matched.length === 0) {
+                output.innerHTML = '<div class="trace-step">No relevant memories found</div>';
+                return;
+            }
+
+            const trace = ['root', 'keyword_search'];
+            const layers = [...new Set(matched.map(m => m.layer))];
+            trace.push(...layers);
+            trace.push(matched[0].content.slice(0, 30));
+
+            output.innerHTML = trace.map((step, i) =>
+                i < trace.length - 1
+                    ? `<div class="trace-step">${step}</div><span class="trace-arrow">-></span>`
+                    : `<div class="trace-step">${step}</div>`
+            ).join('');
+        }
+
+        // Initialize
+        renderStats();
+        renderLayerBars();
+        renderTimeline();
+        setTimeout(renderGraph, 100);
+        simulateTrace();
+
+        window.addEventListener('resize', renderGraph);
+    </script>
+</body>
+</html>
