@@ -35,9 +35,11 @@ console = Console()
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_store():
     """Get MemoryStore instance with default DB path."""
     from memctrl.store import MemoryStore
+
     db_path = os.environ.get("MEMCTRL_DB_PATH")
     return MemoryStore(db_path)
 
@@ -45,12 +47,14 @@ def _get_store():
 def _get_engine():
     """Get RuleEngine instance."""
     from memctrl.rules import RuleEngine
+
     return RuleEngine()
 
 
 # ---------------------------------------------------------------------------
 # Callback (version)
 # ---------------------------------------------------------------------------
+
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -66,13 +70,17 @@ def main(
 # Commands
 # ---------------------------------------------------------------------------
 
+
 @app.command()
 def install(
     tool: Optional[str] = typer.Option(None, help="Specific tool to install for"),
-    project: bool = typer.Option(False, help="Install at project level (.claude/ etc.)"),
+    project: bool = typer.Option(
+        False, help="Install at project level (.claude/ etc.)"
+    ),
 ):
     """Register SKILL.md with AI coding tools (Claude Code, Cursor, etc.)"""
     from memctrl.installer import install_skill
+
     paths = install_skill(tool=tool, project=project, verbose=True)
     if paths:
         console.print(f"\n[green]Installed to {len(paths)} location(s)[/green]")
@@ -87,7 +95,9 @@ def init(
     """Create .memoryrc in current directory"""
     dest = Path(".memoryrc")
     if dest.exists() and not force:
-        console.print(f"[yellow]{dest} already exists. Use --force to overwrite.[/yellow]")
+        console.print(
+            f"[yellow]{dest} already exists. Use --force to overwrite.[/yellow]"
+        )
         raise typer.Exit(1)
 
     example = Path(__file__).parent / ".memoryrc.example"
@@ -109,7 +119,9 @@ def add(
     """Manually add a memory"""
     store = _get_store()
     mid = store.insert_memory(layer=layer, content=content, source=source)
-    console.print(f"[green]Added memory[/green] [dim]{mid}[/dim] to [bold]{layer}[/bold]")
+    console.print(
+        f"[green]Added memory[/green] [dim]{mid}[/dim] to [bold]{layer}[/bold]"
+    )
 
 
 @app.command()
@@ -120,7 +132,7 @@ def query(
     """Retrieve relevant memories with reasoning trace"""
     store = _get_store()
     engine = _get_engine()
-    rules = engine.load()
+    engine.load()
 
     memories = store.list_memories(layer=layer)
     if not memories:
@@ -132,6 +144,7 @@ def query(
 
     # Build tree
     from memctrl.tree import MemoryTreeBuilder
+
     builder = MemoryTreeBuilder()
 
     async def _do_query():
@@ -140,15 +153,18 @@ def query(
 
         # Retrieve
         from memctrl.retriever import MemoryRetriever
+
         retriever = MemoryRetriever()
-        result = await retriever.retrieve(query_text, tree_dict, memory_lookup=memory_lookup)
+        result = await retriever.retrieve(
+            query_text, tree_dict, memory_lookup=memory_lookup
+        )
         return result
 
     result = asyncio.run(_do_query())
 
     if result.facts:
         console.print(Panel(f"[bold]Query:[/bold] {query_text}", title="memctrl"))
-        console.print(f"\n[bold green]Facts:[/bold green]")
+        console.print("\n[bold green]Facts:[/bold green]")
         for i, fact in enumerate(result.facts, 1):
             console.print(f"  {i}. {fact}")
         console.print(f"\n[bold blue]Trace:[/bold blue] {' -> '.join(result.trace)}")
@@ -199,6 +215,7 @@ def tree():
         return
 
     from memctrl.tree import MemoryTreeBuilder
+
     builder = MemoryTreeBuilder()
 
     async def _do_tree():
@@ -275,7 +292,7 @@ def trigger_cmd(
     """Manually fire a trigger"""
     store = _get_store()
     engine = _get_engine()
-    rules = engine.load()
+    engine.load()
 
     ctx = {}
     if context:
@@ -286,7 +303,9 @@ def trigger_cmd(
             return
 
     ids = engine.fire_trigger(event, ctx, store)
-    console.print(f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected")
+    console.print(
+        f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected"
+    )
 
 
 @app.command()
@@ -339,7 +358,13 @@ def heatmap():
         pct = count / total * 100
         bar_len = int(pct / 5)
         bar = "#" * bar_len + "-" * (20 - bar_len)
-        color = "green" if layer == "project" else "yellow" if layer == "session" else "blue"
+        color = (
+            "green"
+            if layer == "project"
+            else "yellow"
+            if layer == "session"
+            else "blue"
+        )
         console.print(f"  [{color}]{layer:10}[/{color}] {bar} {count:3} ({pct:.0f}%)")
 
     # Tag distribution
@@ -376,31 +401,45 @@ def timeline(
     # Merge and sort events
     events = []
     for mem in memories:
-        events.append({
-            "ts": mem.created_at,
-            "type": "memory",
-            "layer": mem.layer,
-            "content": mem.content[:60],
-            "icon": "[mem]",
-        })
+        events.append(
+            {
+                "ts": mem.created_at,
+                "type": "memory",
+                "layer": mem.layer,
+                "content": mem.content[:60],
+                "icon": "[mem]",
+            }
+        )
     for log in logs:
-        events.append({
-            "ts": log.timestamp,
-            "type": "trigger",
-            "layer": "",
-            "content": f"{log.event}: {log.action}",
-            "icon": "[refl]",
-        })
+        events.append(
+            {
+                "ts": log.timestamp,
+                "type": "trigger",
+                "layer": "",
+                "content": f"{log.event}: {log.action}",
+                "icon": "[refl]",
+            }
+        )
 
     events.sort(key=lambda x: x["ts"], reverse=True)
 
     for ev in events[:limit]:
         ts = ev["ts"].strftime("%Y-%m-%d %H:%M") if ev["ts"] else "?"
         if ev["type"] == "memory":
-            color = "green" if ev["layer"] == "project" else "yellow" if ev["layer"] == "session" else "blue"
-            console.print(f"  [dim]{ts}[/dim] [{color}]{ev['icon']}[/{color}] ({ev['layer']}) {ev['content']}")
+            color = (
+                "green"
+                if ev["layer"] == "project"
+                else "yellow"
+                if ev["layer"] == "session"
+                else "blue"
+            )
+            console.print(
+                f"  [dim]{ts}[/dim] [{color}]{ev['icon']}[/{color}] ({ev['layer']}) {ev['content']}"
+            )
         else:
-            console.print(f"  [dim]{ts}[/dim] [magenta]{ev['icon']}[/magenta] {ev['content']}")
+            console.print(
+                f"  [dim]{ts}[/dim] [magenta]{ev['icon']}[/magenta] {ev['content']}"
+            )
 
 
 @app.command()
@@ -413,6 +452,7 @@ def serve(
     console.print("[dim]Use Ctrl+C to stop[/dim]")
 
     from memctrl.mcp_server import serve_mcp
+
     asyncio.run(serve_mcp(host=host, port=port))
 
 
@@ -420,8 +460,9 @@ def serve(
 # Default .memoryrc content
 # ---------------------------------------------------------------------------
 
+
 def _default_memoryrc() -> str:
-    return '''# MemCtrl configuration
+    return """# MemCtrl configuration
 
 [layers]
 project = "architecture decisions, tech stack, ADRs, why we chose X"
@@ -440,4 +481,4 @@ after_days = { session = 7, user = 90 }
 
 [extract]
 confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
-'''
+"""

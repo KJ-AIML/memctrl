@@ -13,7 +13,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -21,15 +21,16 @@ from typing import List, Optional
 # Data models
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Memory:
     """A single memory fact stored in the system."""
 
     id: str
-    layer: str           # 'project' | 'session' | 'user'
-    content: str         # the memory fact
-    source: str          # where it came from
-    confidence: float    # 1.0=explicit, 0.7=inferred, 0.5=mentioned
+    layer: str  # 'project' | 'session' | 'user'
+    content: str  # the memory fact
+    source: str  # where it came from
+    confidence: float  # 1.0=explicit, 0.7=inferred, 0.5=mentioned
     created_at: datetime
     expires_at: Optional[datetime]
     tags: List[str] = field(default_factory=list)
@@ -70,9 +71,9 @@ class TreeNode:
     """
 
     id: str
-    title: str           # e.g. "tech_stack"
-    layer: str           # project / session / user
-    summary: str         # LLM-generated summary of this branch
+    title: str  # e.g. "tech_stack"
+    layer: str  # project / session / user
+    summary: str  # LLM-generated summary of this branch
     memory_ids: List[str] = field(default_factory=list)
     children: List["TreeNode"] = field(default_factory=list)
     confidence: float = 1.0
@@ -148,7 +149,9 @@ class TriggerLog:
             id=row["id"],
             event=row["event"],
             action=row["action"],
-            memories_affected=json.loads(row["memories_affected"]) if row["memories_affected"] else [],
+            memories_affected=json.loads(row["memories_affected"])
+            if row["memories_affected"]
+            else [],
             timestamp=_parse_dt(row["timestamp"]),
         )
 
@@ -156,6 +159,7 @@ class TriggerLog:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _default_db_path() -> str:
     """Default SQLite DB path: ~/.memctrl/memories.db"""
@@ -187,6 +191,7 @@ def _now_iso() -> str:
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
+
 
 class MemoryStore:
     """SQLite-backed store for memories, tree nodes, and trigger logs."""
@@ -267,19 +272,23 @@ class MemoryStore:
                 """INSERT INTO memories (id, layer, content, source, confidence,
                                          created_at, expires_at, tags)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (mid, layer, content, source, confidence,
-                 _now_iso(),
-                 expires_at.isoformat() if expires_at else None,
-                 json.dumps(tags or [])),
+                (
+                    mid,
+                    layer,
+                    content,
+                    source,
+                    confidence,
+                    _now_iso(),
+                    expires_at.isoformat() if expires_at else None,
+                    json.dumps(tags or []),
+                ),
             )
             conn.commit()
         return mid
 
     def get_memory(self, id: str) -> Optional[Memory]:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM memories WHERE id = ?", (id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
             return Memory.from_row(row) if row else None
 
     def list_memories(self, layer: Optional[str] = None) -> List[Memory]:
@@ -347,16 +356,21 @@ class MemoryStore:
             conn.execute("DELETE FROM tree_nodes")
             conn.commit()
 
-    def insert_tree_node(
-        self, node: TreeNode, parent_id: Optional[str] = None
-    ) -> str:
+    def insert_tree_node(self, node: TreeNode, parent_id: Optional[str] = None) -> str:
         with self._connect() as conn:
             conn.execute(
                 """INSERT INTO tree_nodes (id, parent_id, layer, title, summary,
                                             memory_ids, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (node.id, parent_id, node.layer, node.title, node.summary,
-                 json.dumps(node.memory_ids), _now_iso()),
+                (
+                    node.id,
+                    parent_id,
+                    node.layer,
+                    node.title,
+                    node.summary,
+                    json.dumps(node.memory_ids),
+                    _now_iso(),
+                ),
             )
             conn.commit()
             return node.id
@@ -376,7 +390,9 @@ class MemoryStore:
                     "layer": r["layer"],
                     "title": r["title"],
                     "summary": r["summary"],
-                    "memory_ids": json.loads(r["memory_ids"]) if r["memory_ids"] else [],
+                    "memory_ids": json.loads(r["memory_ids"])
+                    if r["memory_ids"]
+                    else [],
                 }
                 for r in rows
             ]
@@ -386,7 +402,6 @@ class MemoryStore:
         nodes = self.get_tree_nodes()
         if not nodes:
             return None
-        by_id = {n["id"]: n for n in nodes}
         children = {}
         root_candidates = []
         for n in nodes:
@@ -413,7 +428,9 @@ class MemoryStore:
         if len(root_candidates) == 1:
             return build(root_candidates[0])
         root = TreeNode(
-            id="root", title="Memory Tree", layer="root",
+            id="root",
+            title="Memory Tree",
+            layer="root",
             summary="Root of all memory layers",
             children=[build(r) for r in root_candidates],
         )
@@ -445,12 +462,8 @@ class MemoryStore:
 
     def stats(self) -> dict:
         with self._connect() as conn:
-            mem_count = conn.execute(
-                "SELECT COUNT(*) FROM memories"
-            ).fetchone()[0]
-            node_count = conn.execute(
-                "SELECT COUNT(*) FROM tree_nodes"
-            ).fetchone()[0]
+            mem_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+            node_count = conn.execute("SELECT COUNT(*) FROM tree_nodes").fetchone()[0]
             trigger_count = conn.execute(
                 "SELECT COUNT(*) FROM triggers_log"
             ).fetchone()[0]

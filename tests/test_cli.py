@@ -12,7 +12,6 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from memctrl.cli import app
@@ -29,12 +28,14 @@ def _temp_cwd():
         finally:
             os.chdir(original)
 
+
 runner = CliRunner()
 
 
 # ---------------------------------------------------------------------------
 # Meta commands
 # ---------------------------------------------------------------------------
+
 
 def test_version():
     result = runner.invoke(app, ["--version"])
@@ -45,6 +46,7 @@ def test_version():
 # ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
+
 
 def test_init():
     with _temp_cwd() as tmpdir:
@@ -71,6 +73,7 @@ def test_init_force():
 # ---------------------------------------------------------------------------
 # Add / List / Forget
 # ---------------------------------------------------------------------------
+
 
 def test_add_memory():
     with _temp_cwd() as tmpdir:
@@ -135,6 +138,7 @@ def test_forget_missing_memory():
 # Tree
 # ---------------------------------------------------------------------------
 
+
 def test_tree_empty():
     with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
@@ -158,6 +162,7 @@ def test_tree_with_memories():
 # ---------------------------------------------------------------------------
 # Trigger (command name is 'trigger-cmd' — Typer converts underscores to hyphens)
 # ---------------------------------------------------------------------------
+
 
 def test_trigger_consolidate():
     with _temp_cwd() as tmpdir:
@@ -184,7 +189,9 @@ def test_trigger_no_match():
 def test_trigger_invalid_json_context():
     with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
-        result = runner.invoke(app, ["trigger-cmd", "on_commit", "--context", "not json"])
+        result = runner.invoke(
+            app, ["trigger-cmd", "on_commit", "--context", "not json"]
+        )
         assert result.exit_code == 0
         assert "Invalid JSON" in result.output
         del os.environ["MEMCTRL_DB_PATH"]
@@ -193,6 +200,7 @@ def test_trigger_invalid_json_context():
 # ---------------------------------------------------------------------------
 # Audit
 # ---------------------------------------------------------------------------
+
 
 def test_audit_empty():
     with _temp_cwd() as tmpdir:
@@ -217,6 +225,7 @@ def test_audit_with_entries():
 # ---------------------------------------------------------------------------
 # Clear
 # ---------------------------------------------------------------------------
+
 
 def test_clear_yes():
     with _temp_cwd() as tmpdir:
@@ -255,6 +264,7 @@ def test_clear_by_layer():
 # Heatmap
 # ---------------------------------------------------------------------------
 
+
 def test_heatmap_empty():
     with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
@@ -279,6 +289,7 @@ def test_heatmap_with_memories():
 # ---------------------------------------------------------------------------
 # Timeline
 # ---------------------------------------------------------------------------
+
 
 def test_timeline_empty():
     with _temp_cwd() as tmpdir:

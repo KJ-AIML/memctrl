@@ -26,6 +26,7 @@ def store():
 # Memory CRUD
 # ---------------------------------------------------------------------------
 
+
 def test_insert_and_get_memory(store):
     mid = store.insert_memory("project", "we use FastAPI", "test")
     mem = store.get_memory(mid)
@@ -37,8 +38,9 @@ def test_insert_and_get_memory(store):
 
 
 def test_insert_memory_with_tags(store):
-    mid = store.insert_memory("project", "tagged content", "test",
-                              tags=["important", "arch"])
+    mid = store.insert_memory(
+        "project", "tagged content", "test", tags=["important", "arch"]
+    )
     mem = store.get_memory(mid)
     assert mem.tags == ["important", "arch"]
 
@@ -96,6 +98,7 @@ def test_update_memory_layer_missing(store):
 # Expiration
 # ---------------------------------------------------------------------------
 
+
 def test_expire_old_memories(store):
     expired = datetime.now() - timedelta(days=1)
     store.insert_memory("session", "old", "test", expires_at=expired)
@@ -124,6 +127,7 @@ def test_expire_old_memories_no_expiry(store):
 # Consolidation
 # ---------------------------------------------------------------------------
 
+
 def test_consolidate(store):
     store.insert_memory("session", "task 1", "test")
     store.insert_memory("session", "task 2", "test")
@@ -150,6 +154,7 @@ def test_consolidate_with_tags(store):
 # ---------------------------------------------------------------------------
 # Tree nodes
 # ---------------------------------------------------------------------------
+
 
 def test_tree_nodes(store):
     node = TreeNode(id="n1", title="tech", layer="project", summary="tech stuff")
@@ -216,6 +221,7 @@ def test_clear_tree_nodes(store):
 # Trigger log
 # ---------------------------------------------------------------------------
 
+
 def test_trigger_log(store):
     tid = store.log_trigger("on_commit", "consolidate", ["m1", "m2"])
     assert tid is not None
@@ -244,6 +250,7 @@ def test_trigger_log_returns_triggerlog_type(store):
 # Stats
 # ---------------------------------------------------------------------------
 
+
 def test_stats(store):
     store.insert_memory("project", "test", "test")
     store.insert_memory("session", "test2", "test")
@@ -267,6 +274,7 @@ def test_stats_empty(store):
 # Memory dataclass
 # ---------------------------------------------------------------------------
 
+
 def test_memory_to_dict(store):
     mid = store.insert_memory("project", "test", "test", tags=["a"])
     mem = store.get_memory(mid)
@@ -280,6 +288,7 @@ def test_memory_from_row_requires_row():
     """Memory.from_row requires a sqlite3.Row — tested indirectly via store."""
     mid = "test-id"
     import sqlite3
+
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
     conn = sqlite3.connect(db_path)
@@ -290,7 +299,7 @@ def test_memory_from_row_requires_row():
     """)
     conn.execute(
         "INSERT INTO test_mem VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (mid, "project", "c", "s", 1.0, datetime.now().isoformat(), None, '[]')
+        (mid, "project", "c", "s", 1.0, datetime.now().isoformat(), None, "[]"),
     )
     conn.commit()
     row = conn.execute("SELECT * FROM test_mem WHERE id = ?", (mid,)).fetchone()
@@ -305,23 +314,38 @@ def test_memory_from_row_requires_row():
 # TreeNode helpers
 # ---------------------------------------------------------------------------
 
+
 def test_tree_node_is_leaf():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
-    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
+    leaf = TreeNode(
+        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
+    )
+    parent = TreeNode(
+        id="p1", title="parent", layer="project", summary="s", children=[leaf]
+    )
     assert leaf.is_leaf() is True
     assert parent.is_leaf() is False
 
 
 def test_tree_node_all_memory_ids():
-    leaf1 = TreeNode(id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"])
-    leaf2 = TreeNode(id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"])
-    parent = TreeNode(id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2])
+    leaf1 = TreeNode(
+        id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"]
+    )
+    leaf2 = TreeNode(
+        id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"]
+    )
+    parent = TreeNode(
+        id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2]
+    )
     assert set(parent.all_memory_ids()) == {"m1", "m2"}
 
 
 def test_tree_node_find_node():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
-    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
+    leaf = TreeNode(
+        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
+    )
+    parent = TreeNode(
+        id="p1", title="parent", layer="project", summary="s", children=[leaf]
+    )
     assert parent.find_node("l1") is not None
     assert parent.find_node("xxx") is None
 
@@ -336,10 +360,22 @@ def test_tree_node_serialization():
 
 
 def test_tree_node_roundtrip_with_children():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="leaf summary",
-                    memory_ids=["m1"], confidence=0.8)
-    root = TreeNode(id="r1", title="root", layer="root", summary="root summary",
-                    children=[leaf], confidence=1.0)
+    leaf = TreeNode(
+        id="l1",
+        title="leaf",
+        layer="project",
+        summary="leaf summary",
+        memory_ids=["m1"],
+        confidence=0.8,
+    )
+    root = TreeNode(
+        id="r1",
+        title="root",
+        layer="root",
+        summary="root summary",
+        children=[leaf],
+        confidence=1.0,
+    )
     d = root.to_dict()
     restored = TreeNode.from_dict(d)
     assert len(restored.children) == 1
@@ -351,9 +387,15 @@ def test_tree_node_roundtrip_with_children():
 # TriggerLog dataclass
 # ---------------------------------------------------------------------------
 
+
 def test_triggerlog_to_dict():
-    log = TriggerLog(id="t1", event="on_commit", action="consolidate",
-                     memories_affected=["m1"], timestamp=datetime.now())
+    log = TriggerLog(
+        id="t1",
+        event="on_commit",
+        action="consolidate",
+        memories_affected=["m1"],
+        timestamp=datetime.now(),
+    )
     d = log.to_dict()
     assert d["event"] == "on_commit"
     assert d["memories_affected"] == ["m1"]

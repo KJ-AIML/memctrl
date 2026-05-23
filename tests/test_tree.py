@@ -4,7 +4,6 @@ Covers: grouping, tree building, LLM clustering, fallback clustering, node helpe
 serialization.
 """
 
-import asyncio
 import json
 
 import pytest
@@ -16,6 +15,7 @@ from memctrl.store import TreeNode
 # ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
+
 
 def test_group_by_layer():
     builder = MemoryTreeBuilder()
@@ -63,14 +63,30 @@ def test_group_by_layer_multiple_layers():
 # Tree building (fallback — no LLM)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_build_tree():
     builder = MemoryTreeBuilder()
     memories = [
         {"id": "1", "layer": "project", "content": "we use FastAPI", "confidence": 1.0},
-        {"id": "2", "layer": "project", "content": "we use PostgreSQL", "confidence": 1.0},
-        {"id": "3", "layer": "session", "content": "implementing auth", "confidence": 1.0},
-        {"id": "4", "layer": "user", "content": "prefers async Python", "confidence": 1.0},
+        {
+            "id": "2",
+            "layer": "project",
+            "content": "we use PostgreSQL",
+            "confidence": 1.0,
+        },
+        {
+            "id": "3",
+            "layer": "session",
+            "content": "implementing auth",
+            "confidence": 1.0,
+        },
+        {
+            "id": "4",
+            "layer": "user",
+            "content": "prefers async Python",
+            "confidence": 1.0,
+        },
     ]
     tree = await builder.build_tree(memories)
     assert tree.title == "Memory Tree"
@@ -104,9 +120,24 @@ async def test_build_tree_groups_by_keyword():
     """Fallback clustering groups memories by keyword heuristics."""
     builder = MemoryTreeBuilder()
     memories = [
-        {"id": "1", "layer": "project", "content": "we use FastAPI for backend", "confidence": 1.0},
-        {"id": "2", "layer": "project", "content": "we decided to use Postgres", "confidence": 1.0},
-        {"id": "3", "layer": "project", "content": "implementing auth module", "confidence": 1.0},
+        {
+            "id": "1",
+            "layer": "project",
+            "content": "we use FastAPI for backend",
+            "confidence": 1.0,
+        },
+        {
+            "id": "2",
+            "layer": "project",
+            "content": "we decided to use Postgres",
+            "confidence": 1.0,
+        },
+        {
+            "id": "3",
+            "layer": "project",
+            "content": "implementing auth module",
+            "confidence": 1.0,
+        },
     ]
     tree = await builder.build_tree(memories)
     project_node = [c for c in tree.children if c.layer == "project"][0]
@@ -118,16 +149,23 @@ async def test_build_tree_groups_by_keyword():
 # LLM clustering
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_cluster_with_llm_success():
     """Test LLM clustering with a mock client."""
+
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "clusters": [
-                {"title": "backend", "summary": "backend tech",
-                 "memory_ids": ["1"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "clusters": [
+                    {
+                        "title": "backend",
+                        "summary": "backend tech",
+                        "memory_ids": ["1"],
+                    },
+                ]
+            }
+        )
 
     builder = MemoryTreeBuilder(llm_client=mock_llm)
     memories = [
@@ -142,6 +180,7 @@ async def test_cluster_with_llm_success():
 @pytest.mark.asyncio
 async def test_cluster_with_llm_invalid_json_falls_back():
     """LLM returns invalid JSON → falls back to keyword clustering."""
+
     async def bad_llm(prompt, json_mode=False):
         return "not json"
 
@@ -157,6 +196,7 @@ async def test_cluster_with_llm_invalid_json_falls_back():
 @pytest.mark.asyncio
 async def test_cluster_with_llm_exception_falls_back():
     """LLM raises exception → falls back to keyword clustering."""
+
     async def failing_llm(prompt, json_mode=False):
         raise RuntimeError("LLM down")
 
@@ -171,6 +211,7 @@ async def test_cluster_with_llm_exception_falls_back():
 @pytest.mark.asyncio
 async def test_cluster_with_llm_empty_clusters_falls_back():
     """LLM returns empty clusters → falls back."""
+
     async def empty_llm(prompt, json_mode=False):
         return json.dumps({"clusters": []})
 
@@ -186,11 +227,22 @@ async def test_cluster_with_llm_empty_clusters_falls_back():
 # Fallback clustering detail
 # ---------------------------------------------------------------------------
 
+
 def test_cluster_fallback_tech_stack():
     builder = MemoryTreeBuilder()
     memories = [
-        {"id": "1", "layer": "project", "content": "we use FastAPI framework", "confidence": 1.0},
-        {"id": "2", "layer": "project", "content": "using PostgreSQL database", "confidence": 1.0},
+        {
+            "id": "1",
+            "layer": "project",
+            "content": "we use FastAPI framework",
+            "confidence": 1.0,
+        },
+        {
+            "id": "2",
+            "layer": "project",
+            "content": "using PostgreSQL database",
+            "confidence": 1.0,
+        },
     ]
     node = builder._cluster_fallback("project", memories)
     assert node.title == "Project"
@@ -203,8 +255,18 @@ def test_cluster_fallback_tech_stack():
 def test_cluster_fallback_decisions():
     builder = MemoryTreeBuilder()
     memories = [
-        {"id": "1", "layer": "project", "content": "we decided to use Redis", "confidence": 1.0},
-        {"id": "2", "layer": "project", "content": "ADR-001: chose LangGraph", "confidence": 1.0},
+        {
+            "id": "1",
+            "layer": "project",
+            "content": "we decided to use Redis",
+            "confidence": 1.0,
+        },
+        {
+            "id": "2",
+            "layer": "project",
+            "content": "ADR-001: chose LangGraph",
+            "confidence": 1.0,
+        },
     ]
     node = builder._cluster_fallback("project", memories)
     cluster_titles = [c.title for c in node.children]
@@ -214,8 +276,18 @@ def test_cluster_fallback_decisions():
 def test_cluster_fallback_tasks():
     builder = MemoryTreeBuilder()
     memories = [
-        {"id": "1", "layer": "session", "content": "implementing auth module", "confidence": 1.0},
-        {"id": "2", "layer": "session", "content": "fixing bug in login", "confidence": 1.0},
+        {
+            "id": "1",
+            "layer": "session",
+            "content": "implementing auth module",
+            "confidence": 1.0,
+        },
+        {
+            "id": "2",
+            "layer": "session",
+            "content": "fixing bug in login",
+            "confidence": 1.0,
+        },
     ]
     node = builder._cluster_fallback("session", memories)
     assert node.title == "Session"
@@ -226,7 +298,12 @@ def test_cluster_fallback_other():
     """Memories not matching any keyword go to 'other' group."""
     builder = MemoryTreeBuilder()
     memories = [
-        {"id": "1", "layer": "project", "content": "hello world general note", "confidence": 1.0},
+        {
+            "id": "1",
+            "layer": "project",
+            "content": "hello world general note",
+            "confidence": 1.0,
+        },
     ]
     node = builder._cluster_fallback("project", memories)
     # Should end up in "other" group
@@ -238,13 +315,16 @@ def test_cluster_fallback_other():
 # Parse clusters
 # ---------------------------------------------------------------------------
 
+
 def test_parse_clusters_valid_json():
     builder = MemoryTreeBuilder()
-    response = json.dumps({
-        "clusters": [
-            {"title": "t1", "summary": "s1", "memory_ids": ["m1", "m2"]},
-        ]
-    })
+    response = json.dumps(
+        {
+            "clusters": [
+                {"title": "t1", "summary": "s1", "memory_ids": ["m1", "m2"]},
+            ]
+        }
+    )
     clusters = builder._parse_clusters(response)
     assert len(clusters) == 1
     assert clusters[0]["title"] == "t1"
@@ -252,7 +332,7 @@ def test_parse_clusters_valid_json():
 
 def test_parse_clusters_markdown_code_block():
     builder = MemoryTreeBuilder()
-    response = "```json\n{\"clusters\": [{\"title\": \"t1\", \"summary\": \"s1\", \"memory_ids\": [\"m1\"]}]}\n```"
+    response = '```json\n{"clusters": [{"title": "t1", "summary": "s1", "memory_ids": ["m1"]}]}\n```'
     clusters = builder._parse_clusters(response)
     assert len(clusters) == 1
 
@@ -273,6 +353,7 @@ def test_parse_clusters_no_clusters_key():
 # Build cluster prompt
 # ---------------------------------------------------------------------------
 
+
 def test_build_cluster_prompt():
     builder = MemoryTreeBuilder()
     memories = [
@@ -288,25 +369,40 @@ def test_build_cluster_prompt():
 # TreeNode helpers
 # ---------------------------------------------------------------------------
 
+
 def test_tree_node_is_leaf():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
-    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
+    leaf = TreeNode(
+        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
+    )
+    parent = TreeNode(
+        id="p1", title="parent", layer="project", summary="s", children=[leaf]
+    )
     assert leaf.is_leaf() is True
     assert parent.is_leaf() is False
 
 
 def test_tree_node_all_memory_ids():
-    leaf1 = TreeNode(id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"])
-    leaf2 = TreeNode(id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"])
-    parent = TreeNode(id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2])
+    leaf1 = TreeNode(
+        id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"]
+    )
+    leaf2 = TreeNode(
+        id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"]
+    )
+    parent = TreeNode(
+        id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2]
+    )
     ids = parent.all_memory_ids()
     assert "m1" in ids
     assert "m2" in ids
 
 
 def test_tree_node_find_node():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
-    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
+    leaf = TreeNode(
+        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
+    )
+    parent = TreeNode(
+        id="p1", title="parent", layer="project", summary="s", children=[leaf]
+    )
     assert parent.find_node("l1") is not None
     assert parent.find_node("l1").id == "l1"
     assert parent.find_node("xxx") is None
@@ -331,7 +427,9 @@ def test_tree_serialization():
 
 
 def test_tree_serialization_with_children():
-    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
+    leaf = TreeNode(
+        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
+    )
     root = TreeNode(id="r1", title="root", layer="root", summary="s", children=[leaf])
     d = root.to_dict()
     restored = TreeNode.from_dict(d)
@@ -343,6 +441,7 @@ def test_tree_serialization_with_children():
 # ---------------------------------------------------------------------------
 # Avg confidence helper
 # ---------------------------------------------------------------------------
+
 
 def test_avg_confidence():
     mem_by_id = {
@@ -361,6 +460,7 @@ def test_avg_confidence_empty():
 # ---------------------------------------------------------------------------
 # Integration: build + serialize roundtrip
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_build_tree_roundtrip():

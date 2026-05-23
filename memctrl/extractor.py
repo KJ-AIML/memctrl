@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timedelta
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Callable, Coroutine, List, Optional
 
 # Type alias
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
@@ -119,7 +119,10 @@ class MemoryExtractor:
     # --- LLM extraction ---
 
     async def _llm_extract(
-        self, text: str, layer: str, rules,
+        self,
+        text: str,
+        layer: str,
+        rules,
     ) -> List[dict]:
         """Use LLM to extract memories with confidence scoring."""
         prompt = self._build_extraction_prompt(text, layer, rules)
@@ -128,6 +131,7 @@ class MemoryExtractor:
         try:
             data = {"memories": []}
             import json as _json
+
             data = _json.loads(response)
         except Exception:
             return []
@@ -146,20 +150,24 @@ class MemoryExtractor:
 
             confidence = mem.get("confidence", 0.5)
             # Clamp to valid levels
-            valid_levels = list(rules.confidence.values()) if rules.confidence else [0.5, 0.7, 1.0]
+            valid_levels = (
+                list(rules.confidence.values()) if rules.confidence else [0.5, 0.7, 1.0]
+            )
             if valid_levels and confidence not in valid_levels:
                 confidence = min(valid_levels, key=lambda x: abs(x - confidence))
 
-            results.append({
-                "id": str(uuid.uuid4()),
-                "layer": layer,
-                "content": content,
-                "source": "llm_extract",
-                "confidence": confidence,
-                "created_at": datetime.now().isoformat(),
-                "expires_at": None,
-                "tags": mem.get("tags", [layer, "llm-extracted"]),
-            })
+            results.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "layer": layer,
+                    "content": content,
+                    "source": "llm_extract",
+                    "confidence": confidence,
+                    "created_at": datetime.now().isoformat(),
+                    "expires_at": None,
+                    "tags": mem.get("tags", [layer, "llm-extracted"]),
+                }
+            )
 
         return results
 
@@ -195,23 +203,28 @@ class MemoryExtractor:
 
         patterns = [
             # Explicit patterns (1.0)
-            (r"(?i)(we\s+(?:use|use[d]|chose|decided|migrated|switched|implemented)\s+.+)",
-             "explicit", "tech_choice"),
-            (r"(?i)(adr[-\s]?\d+\s*[:\-]?\s*.+)",
-             "explicit", "adr"),
-            (r"(?i)(decided\s+to\s+.+)",
-             "explicit", "decision"),
+            (
+                r"(?i)(we\s+(?:use|use[d]|chose|decided|migrated|switched|implemented)\s+.+)",
+                "explicit",
+                "tech_choice",
+            ),
+            (r"(?i)(adr[-\s]?\d+\s*[:\-]?\s*.+)", "explicit", "adr"),
+            (r"(?i)(decided\s+to\s+.+)", "explicit", "decision"),
             # Migration patterns
-            (r"(?i)(migrated?\s+(?:from\s+)?\w+\s+to\s+\w+.+)",
-             "explicit", "migration"),
+            (
+                r"(?i)(migrated?\s+(?:from\s+)?\w+\s+to\s+\w+.+)",
+                "explicit",
+                "migration",
+            ),
             # Inferred patterns (0.7)
-            (r"(?i)^\s*(?:import|from)\s+(\w+).+",
-             "inferred", "dependency"),
-            (r"(?i)(?:built|written|developed)\s+(?:with|on|using)\s+(\w+).+",
-             "inferred", "framework"),
+            (r"(?i)^\s*(?:import|from)\s+(\w+).+", "inferred", "dependency"),
+            (
+                r"(?i)(?:built|written|developed)\s+(?:with|on|using)\s+(\w+).+",
+                "inferred",
+                "framework",
+            ),
             # Preference patterns
-            (r"(?i)(?:prefer|like|always|never)\s+.+",
-             "explicit", "preference"),
+            (r"(?i)(?:prefer|like|always|never)\s+.+", "explicit", "preference"),
         ]
 
         for line in lines:
@@ -230,23 +243,24 @@ class MemoryExtractor:
                         continue
 
                     # Skip if contains secrets
-                    if any(p.lower() in content.lower()
-                           for p in rules.forget_never):
+                    if any(p.lower() in content.lower() for p in rules.forget_never):
                         continue
                     if self._detect_pii(content):
                         continue
 
                     confidence = rules.confidence.get(level, 0.5)
-                    results.append({
-                        "id": str(uuid.uuid4()),
-                        "layer": layer,
-                        "content": content,
-                        "source": "heuristic_extract",
-                        "confidence": confidence,
-                        "created_at": datetime.now().isoformat(),
-                        "expires_at": None,
-                        "tags": [layer, tag, level],
-                    })
+                    results.append(
+                        {
+                            "id": str(uuid.uuid4()),
+                            "layer": layer,
+                            "content": content,
+                            "source": "heuristic_extract",
+                            "confidence": confidence,
+                            "created_at": datetime.now().isoformat(),
+                            "expires_at": None,
+                            "tags": [layer, tag, level],
+                        }
+                    )
                     break  # One match per line
 
         # Deduplicate by content similarity

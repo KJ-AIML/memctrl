@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 # Type alias
@@ -103,7 +102,6 @@ class MemoryRetriever:
             return self._keyword_retrieve(query, tree, memory_lookup, top_k)
 
         relevant_node_ids = parsed.get("relevant_nodes", [])
-        thinking = parsed.get("thinking", "")
         confidence = parsed.get("confidence", 0.8)
 
         if not relevant_node_ids:
@@ -155,11 +153,11 @@ class MemoryRetriever:
             "Memory Tree Structure:\n"
             f"{tree_json}\n\n"
             "Return ONLY JSON in this exact format:\n"
-            '{\n'
+            "{\n"
             '  "thinking": "reason about which branches are relevant",\n'
             '  "relevant_nodes": ["node_id_1", "node_id_2"],\n'
             '  "confidence": 0.9\n'
-            '}'
+            "}"
         )
 
     def _collect_from_nodes(
@@ -187,7 +185,8 @@ class MemoryRetriever:
             # Also check children recursively
             child_facts, child_sources = self._collect_from_nodes(
                 [c["id"] for c in node.get("children", [])],
-                node, memory_lookup,
+                node,
+                memory_lookup,
             )
             facts.extend(child_facts)
             sources.extend(child_sources)
@@ -217,7 +216,9 @@ class MemoryRetriever:
         if not query_words:
             return RetrievalResult(facts=[], trace=["no_keywords"], confidence=0.0)
 
-        scored_memories: Dict[str, tuple[float, str, str]] = {}  # mem_id -> (score, content, source)
+        scored_memories: Dict[
+            str, tuple[float, str, str]
+        ] = {}  # mem_id -> (score, content, source)
 
         def score_node(node: dict, depth: int = 0):
             node_title = node.get("title", "").lower()
@@ -232,11 +233,17 @@ class MemoryRetriever:
                     continue
                 content = mem.get("content", "").lower()
                 content_score = sum(1 for w in query_words if w in content)
-                total = title_score + summary_score + content_score + (1.0 / (depth + 1))
+                total = (
+                    title_score + summary_score + content_score + (1.0 / (depth + 1))
+                )
                 if total > 0:
                     existing = scored_memories.get(mid, (0, "", ""))
                     if total > existing[0]:
-                        scored_memories[mid] = (total, mem["content"], mem.get("source", ""))
+                        scored_memories[mid] = (
+                            total,
+                            mem["content"],
+                            mem.get("source", ""),
+                        )
 
             for child in node.get("children", []):
                 score_node(child, depth + 1)
@@ -247,9 +254,7 @@ class MemoryRetriever:
         top = sorted_mems[:top_k]
 
         if not top:
-            return RetrievalResult(
-                facts=[], trace=["root", "no_match"], confidence=0.0
-            )
+            return RetrievalResult(facts=[], trace=["root", "no_match"], confidence=0.0)
 
         facts = [s[1] for s in top]
         sources = [s[2] for s in top]
@@ -262,6 +267,8 @@ class MemoryRetriever:
             trace.append(facts[0][:30])
 
         return RetrievalResult(
-            facts=facts, trace=trace, confidence=round(confidence, 2),
+            facts=facts,
+            trace=trace,
+            confidence=round(confidence, 2),
             sources=sources,
         )

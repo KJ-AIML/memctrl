@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # MCP imports (optional — graceful degradation if mcp not installed)
@@ -34,19 +33,23 @@ try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
     from mcp.types import Tool, TextContent
+
     HAS_MCP = True
 except ImportError:
     HAS_MCP = False
 
     # Stub classes for type checking
     class Tool:  # type: ignore
-        def __init__(self, **kwargs): pass
+        def __init__(self, **kwargs):
+            pass
 
     class TextContent:  # type: ignore
-        def __init__(self, type="", text=""): pass
+        def __init__(self, type="", text=""):
+            pass
 
     class Server:  # type: ignore
-        def __init__(self, name): pass
+        def __init__(self, name):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +67,10 @@ MCP_TOOLS = [
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Natural language query"},
-                "layer": {"type": "string", "description": "Optional layer filter (project/session/user)"},
+                "layer": {
+                    "type": "string",
+                    "description": "Optional layer filter (project/session/user)",
+                },
             },
             "required": ["query"],
         },
@@ -76,7 +82,11 @@ MCP_TOOLS = [
             "type": "object",
             "properties": {
                 "content": {"type": "string", "description": "Memory content"},
-                "layer": {"type": "string", "description": "Target layer", "enum": ["project", "session", "user"]},
+                "layer": {
+                    "type": "string",
+                    "description": "Target layer",
+                    "enum": ["project", "session", "user"],
+                },
                 "source": {"type": "string", "default": "mcp"},
             },
             "required": ["content", "layer"],
@@ -116,6 +126,7 @@ MCP_TOOLS = [
 # Server
 # ---------------------------------------------------------------------------
 
+
 async def serve_mcp(host: str = "127.0.0.1", port: int = 8080) -> None:
     """Start MCP server using stdio transport."""
     if not HAS_MCP:
@@ -146,18 +157,22 @@ async def serve_mcp(host: str = "127.0.0.1", port: int = 8080) -> None:
                     content=arguments["content"],
                     source=arguments.get("source", "mcp"),
                 )
-                return [TextContent(
-                    type="text",
-                    text=json.dumps({"id": mid, "status": "stored"}),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"id": mid, "status": "stored"}),
+                    )
+                ]
 
             elif name == "memctrl_query":
                 memories = store.list_memories(arguments.get("layer"))
                 if not memories:
-                    return [TextContent(
-                        type="text",
-                        text=json.dumps({"facts": [], "trace": ["no_memories"]}),
-                    )]
+                    return [
+                        TextContent(
+                            type="text",
+                            text=json.dumps({"facts": [], "trace": ["no_memories"]}),
+                        )
+                    ]
 
                 mem_dicts = [m.to_dict() for m in memories]
                 memory_lookup = {m.id: m.to_dict() for m in memories}
@@ -172,54 +187,68 @@ async def serve_mcp(host: str = "127.0.0.1", port: int = 8080) -> None:
                     tree_dict,
                     memory_lookup=memory_lookup,
                 )
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(result.to_dict()),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(result.to_dict()),
+                    )
+                ]
 
             elif name == "memctrl_tree":
                 memories = store.list_memories()
                 mem_dicts = [m.to_dict() for m in memories]
                 builder = MemoryTreeBuilder()
                 tree = await builder.build_tree(mem_dicts)
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(tree.to_dict()),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(tree.to_dict()),
+                    )
+                ]
 
             elif name == "memctrl_audit":
                 logs = store.get_trigger_log(arguments.get("limit", 50))
-                return [TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "logs": [l.to_dict() for l in logs],
-                    }),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "logs": [log.to_dict() for log in logs],
+                            }
+                        ),
+                    )
+                ]
 
             elif name == "memctrl_trigger":
-                rules = engine.load()
+                engine.load()
                 ids = engine.fire_trigger(
                     arguments["event"],
                     arguments.get("context", {}),
                     store,
                 )
-                return [TextContent(
-                    type="text",
-                    text=json.dumps({
-                        "status": "fired",
-                        "event": arguments["event"],
-                        "affected": len(ids),
-                    }),
-                )]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "status": "fired",
+                                "event": arguments["event"],
+                                "affected": len(ids),
+                            }
+                        ),
+                    )
+                ]
 
             else:
                 return [TextContent(type="text", text="Unknown tool")]
 
         except Exception as exc:
-            return [TextContent(
-                type="text",
-                text=json.dumps({"error": str(exc)}),
-            )]
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"error": str(exc)}),
+                )
+            ]
 
     # Use stdio transport (standard for MCP)
     async with stdio_server(server) as (read_stream, write_stream):

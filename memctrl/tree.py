@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from memctrl.store import TreeNode
@@ -46,7 +44,9 @@ class MemoryTreeBuilder:
         """
         if not memories:
             return TreeNode(
-                id="root", title="Memory Tree", layer="root",
+                id="root",
+                title="Memory Tree",
+                layer="root",
                 summary="Empty memory store",
             )
 
@@ -68,7 +68,7 @@ class MemoryTreeBuilder:
             title="Memory Tree",
             layer="root",
             summary=f"Root node with {len(layer_nodes)} layers, "
-                    f"{len(memories)} total memories",
+            f"{len(memories)} total memories",
             children=layer_nodes,
         )
         return root
@@ -104,8 +104,7 @@ class MemoryTreeBuilder:
 
         for cluster in clusters:
             cluster_mem_ids = [
-                mid for mid in cluster.get("memory_ids", [])
-                if mid in mem_by_id
+                mid for mid in cluster.get("memory_ids", []) if mid in mem_by_id
             ]
             if not cluster_mem_ids:
                 continue
@@ -142,8 +141,7 @@ class MemoryTreeBuilder:
             summary=f"{len(memories)} memories in layer '{layer}'",
             memory_ids=[m["id"] for m in memories],
             children=children,
-            confidence=self._avg_confidence(
-                [m["id"] for m in memories], mem_by_id),
+            confidence=self._avg_confidence([m["id"] for m in memories], mem_by_id),
         )
 
     def _build_cluster_prompt(self, layer: str, memories: List[dict]) -> str:
@@ -160,7 +158,7 @@ class MemoryTreeBuilder:
             f'{{"clusters": [\n'
             f'  {{"title": "short_name", "summary": "what this group covers", '
             f'"memory_ids": ["id1", "id2"]}}\n'
-            f']}}'
+            f"]}}"
         )
 
     def _parse_clusters(self, response: str) -> List[dict]:
@@ -181,14 +179,44 @@ class MemoryTreeBuilder:
     def _cluster_fallback(self, layer: str, memories: List[dict]) -> TreeNode:
         """Simple fallback: group by keyword matching."""
         keyword_groups = {
-            "tech_stack": ["use", "using", "framework", "library", "database",
-                           "backend", "frontend", "api", "service"],
-            "decisions": ["decided", "adr", "choice", "chose", "migrate",
-                          "switch", "architecture"],
-            "preferences": ["prefer", "like", "style", "pattern", "convention",
-                            "always", "never"],
-            "tasks": ["implement", "building", "working", "task", "wip",
-                      "feature", "fix"],
+            "tech_stack": [
+                "use",
+                "using",
+                "framework",
+                "library",
+                "database",
+                "backend",
+                "frontend",
+                "api",
+                "service",
+            ],
+            "decisions": [
+                "decided",
+                "adr",
+                "choice",
+                "chose",
+                "migrate",
+                "switch",
+                "architecture",
+            ],
+            "preferences": [
+                "prefer",
+                "like",
+                "style",
+                "pattern",
+                "convention",
+                "always",
+                "never",
+            ],
+            "tasks": [
+                "implement",
+                "building",
+                "working",
+                "task",
+                "wip",
+                "feature",
+                "fix",
+            ],
             "team": ["team", "meeting", "review", "standup", "sprint"],
         }
 
@@ -231,7 +259,8 @@ class MemoryTreeBuilder:
                 memory_ids=[m["id"] for m in group_mems],
                 children=leaf_nodes,
                 confidence=self._avg_confidence(
-                    [m["id"] for m in group_mems], mem_by_id),
+                    [m["id"] for m in group_mems], mem_by_id
+                ),
             )
             children.append(cluster)
 
@@ -242,8 +271,7 @@ class MemoryTreeBuilder:
             summary=f"{len(memories)} memories in layer '{layer}'",
             memory_ids=[m["id"] for m in memories],
             children=children,
-            confidence=self._avg_confidence(
-                [m["id"] for m in memories], mem_by_id),
+            confidence=self._avg_confidence([m["id"] for m in memories], mem_by_id),
         )
 
     # --- Helpers ---
@@ -252,6 +280,5 @@ class MemoryTreeBuilder:
     def _avg_confidence(mem_ids: List[str], mem_by_id: Dict[str, dict]) -> float:
         if not mem_ids:
             return 1.0
-        total = sum(mem_by_id.get(mid, {}).get("confidence", 1.0)
-                    for mid in mem_ids)
+        total = sum(mem_by_id.get(mid, {}).get("confidence", 1.0) for mid in mem_ids)
         return round(total / len(mem_ids), 2)

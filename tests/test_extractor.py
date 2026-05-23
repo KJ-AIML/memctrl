@@ -16,6 +16,7 @@ from memctrl.rules import DEFAULT_RULES
 # Fallback extraction (no LLM)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_fallback_extract():
     extractor = MemoryExtractor()
@@ -97,6 +98,7 @@ def test_fallback_extract_tags():
 # Secret detection
 # ---------------------------------------------------------------------------
 
+
 def test_has_secrets():
     extractor = MemoryExtractor()
     assert extractor._has_secrets("password = secret123", ["password"]) is True
@@ -119,8 +121,12 @@ def test_has_secrets_aws_key():
 
 def test_has_secrets_private_key():
     extractor = MemoryExtractor()
-    assert extractor._has_secrets(
-        "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAx...", []) is True
+    assert (
+        extractor._has_secrets(
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEAx...", []
+        )
+        is True
+    )
 
 
 def test_has_secrets_env_file():
@@ -138,17 +144,24 @@ def test_has_secrets_token():
 def test_has_secrets_false_positive_safe():
     """Normal text should not trigger secret detection."""
     extractor = MemoryExtractor()
-    assert extractor._has_secrets(
-        "We discussed the API design and chose REST over GraphQL", []) is False
+    assert (
+        extractor._has_secrets(
+            "We discussed the API design and chose REST over GraphQL", []
+        )
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
 # Sanitization
 # ---------------------------------------------------------------------------
 
+
 def test_sanitize_text():
     extractor = MemoryExtractor()
-    text = "API key is sk-abc123XYZabcdefghijklmnopqrstuvwx and email is test@example.com"
+    text = (
+        "API key is sk-abc123XYZabcdefghijklmnopqrstuvwx and email is test@example.com"
+    )
     cleaned = extractor._sanitize_text(text)
     assert "sk-abc123XYZabcdefghijklmnopqrstuvwx" not in cleaned
     assert "test@example.com" not in cleaned
@@ -199,6 +212,7 @@ def test_sanitize_text_phone():
 # PII detection
 # ---------------------------------------------------------------------------
 
+
 def test_detect_pii():
     extractor = MemoryExtractor()
     pii = extractor._detect_pii("Contact: user@example.com or 555-1234")
@@ -226,7 +240,8 @@ def test_detect_pii_none():
 def test_detect_pii_multiple():
     extractor = MemoryExtractor()
     pii = extractor._detect_pii(
-        "Email user@example.com, phone 555-555-5555, SSN 123-45-6789")
+        "Email user@example.com, phone 555-555-5555, SSN 123-45-6789"
+    )
     assert "EMAIL" in pii
     assert "PHONE" in pii
     assert "SSN" in pii
@@ -236,15 +251,21 @@ def test_detect_pii_multiple():
 # LLM extraction
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_llm_extract_success():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "we use FastAPI", "confidence": 1.0,
-                 "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {
+                        "content": "we use FastAPI",
+                        "confidence": 1.0,
+                        "tags": ["project"],
+                    },
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor._llm_extract("we use FastAPI", "project", DEFAULT_RULES)
@@ -255,12 +276,17 @@ async def test_llm_extract_success():
 @pytest.mark.asyncio
 async def test_llm_extract_skips_secrets_in_content():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "password is secret123", "confidence": 1.0,
-                 "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {
+                        "content": "password is secret123",
+                        "confidence": 1.0,
+                        "tags": ["project"],
+                    },
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor._llm_extract("some text", "project", DEFAULT_RULES)
@@ -270,12 +296,17 @@ async def test_llm_extract_skips_secrets_in_content():
 @pytest.mark.asyncio
 async def test_llm_extract_skips_pii():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "email me at user@example.com", "confidence": 1.0,
-                 "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {
+                        "content": "email me at user@example.com",
+                        "confidence": 1.0,
+                        "tags": ["project"],
+                    },
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor._llm_extract("some text", "project", DEFAULT_RULES)
@@ -285,11 +316,13 @@ async def test_llm_extract_skips_pii():
 @pytest.mark.asyncio
 async def test_llm_extract_skips_short_content():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "hi", "confidence": 1.0, "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {"content": "hi", "confidence": 1.0, "tags": ["project"]},
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor._llm_extract("some text", "project", DEFAULT_RULES)
@@ -309,12 +342,17 @@ async def test_llm_extract_invalid_json():
 @pytest.mark.asyncio
 async def test_llm_extract_clamps_confidence():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "we use FastAPI", "confidence": 0.99,
-                 "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {
+                        "content": "we use FastAPI",
+                        "confidence": 0.99,
+                        "tags": ["project"],
+                    },
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor._llm_extract("text", "project", DEFAULT_RULES)
@@ -327,9 +365,12 @@ async def test_llm_extract_clamps_confidence():
 # Build extraction prompt
 # ---------------------------------------------------------------------------
 
+
 def test_build_extraction_prompt():
     extractor = MemoryExtractor()
-    prompt = extractor._build_extraction_prompt("we use FastAPI", "project", DEFAULT_RULES)
+    prompt = extractor._build_extraction_prompt(
+        "we use FastAPI", "project", DEFAULT_RULES
+    )
     assert "project" in prompt
     assert "FastAPI" in prompt
     assert "memories" in prompt
@@ -340,15 +381,21 @@ def test_build_extraction_prompt():
 # Full extract async path
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_extract_with_llm():
     async def mock_llm(prompt, json_mode=False):
-        return json.dumps({
-            "memories": [
-                {"content": "we use FastAPI", "confidence": 1.0,
-                 "tags": ["project"]},
-            ]
-        })
+        return json.dumps(
+            {
+                "memories": [
+                    {
+                        "content": "we use FastAPI",
+                        "confidence": 1.0,
+                        "tags": ["project"],
+                    },
+                ]
+            }
+        )
 
     extractor = MemoryExtractor(llm_client=mock_llm)
     results = await extractor.extract("we use FastAPI", "project", DEFAULT_RULES)
@@ -381,6 +428,7 @@ async def test_extract_with_sanitization():
 @pytest.mark.asyncio
 async def test_extract_llm_exception_falls_back():
     """LLM exception triggers fallback."""
+
     async def failing_llm(prompt, json_mode=False):
         raise RuntimeError("LLM down")
 

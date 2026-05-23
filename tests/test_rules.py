@@ -5,20 +5,20 @@ extraction helpers, expiry computation.
 """
 
 import os
-import sys
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from memctrl.rules import RuleEngine, Rules, DEFAULT_RULES
+from memctrl.rules import RuleEngine, DEFAULT_RULES
 from memctrl.store import Memory, MemoryStore
 
 
 # ---------------------------------------------------------------------------
 # Default rules
 # ---------------------------------------------------------------------------
+
 
 def test_default_rules():
     assert "project" in DEFAULT_RULES.layers
@@ -54,6 +54,7 @@ def test_rules_get_ttl_days():
 # Loading
 # ---------------------------------------------------------------------------
 
+
 def test_load_missing_file():
     engine = RuleEngine("/tmp/nonexistent.memoryrc")
     rules = engine.load()
@@ -62,7 +63,7 @@ def test_load_missing_file():
 
 
 def test_load_real_file():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write('[layers]\nproject = "test desc"\n')
         path = f.name
     engine = RuleEngine(path)
@@ -73,7 +74,7 @@ def test_load_real_file():
 
 
 def test_load_with_triggers():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write('[triggers]\non_commit = "consolidate session -> project"\n')
         path = f.name
     engine = RuleEngine(path)
@@ -83,7 +84,7 @@ def test_load_with_triggers():
 
 
 def test_load_with_forget():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write('[forget]\nnever = ["tokens"]\nafter_days = { session = 1 }\n')
         path = f.name
     engine = RuleEngine(path)
@@ -94,8 +95,8 @@ def test_load_with_forget():
 
 
 def test_load_with_extract_confidence():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
-        f.write('[extract]\nconfidence = { explicit = 1.0, inferred = 0.8 }\n')
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
+        f.write("[extract]\nconfidence = { explicit = 1.0, inferred = 0.8 }\n")
         path = f.name
     engine = RuleEngine(path)
     rules = engine.load()
@@ -104,7 +105,7 @@ def test_load_with_extract_confidence():
 
 
 def test_load_invalid_toml():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write("this is not valid toml {{\n")
         path = f.name
     engine = RuleEngine(path)
@@ -114,7 +115,7 @@ def test_load_invalid_toml():
 
 
 def test_reload():
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write('[layers]\nproject = "initial"\n')
         path = f.name
     engine = RuleEngine(path)
@@ -122,7 +123,7 @@ def test_reload():
     assert rules1.layers["project"] == "initial"
 
     # Update file
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         f.write('[layers]\nproject = "updated"\n')
     rules2 = engine.reload()
     assert rules2.layers["project"] == "updated"
@@ -131,7 +132,7 @@ def test_reload():
 
 def test_load_with_trigger_dict_format():
     """TOML can have nested dicts under [triggers] — test compact + flat merging."""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.memoryrc', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".memoryrc", delete=False) as f:
         f.write('[triggers.on_file]\n"*.md" = "extract -> project"\n')
         path = f.name
     engine = RuleEngine(path)
@@ -145,13 +146,19 @@ def test_load_with_trigger_dict_format():
 # Forget rules
 # ---------------------------------------------------------------------------
 
+
 def test_should_forget_expired():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="test", source="t",
-        confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1), tags=[]
+        id="1",
+        layer="session",
+        content="test",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is True
 
@@ -160,9 +167,14 @@ def test_should_not_forget_password():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="the password is secret123",
-        source="t", confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1), tags=[]
+        id="1",
+        layer="session",
+        content="the password is secret123",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -171,9 +183,14 @@ def test_should_not_forget_no_expiry():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="test", source="t",
-        confidence=1.0, created_at=datetime.now(),
-        expires_at=None, tags=[]
+        id="1",
+        layer="session",
+        content="test",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=None,
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -183,9 +200,14 @@ def test_should_not_forget_no_ttl():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="project", content="test", source="t",
-        confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1000), tags=[]
+        id="1",
+        layer="project",
+        content="test",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1000),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -195,9 +217,14 @@ def test_should_forget_api_key():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="the api_key is abc123",
-        source="t", confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1), tags=[]
+        id="1",
+        layer="session",
+        content="the api_key is abc123",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -207,9 +234,14 @@ def test_should_forget_secret():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="the secret token is xyz",
-        source="t", confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1), tags=[]
+        id="1",
+        layer="session",
+        content="the secret token is xyz",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -219,9 +251,14 @@ def test_should_forget_case_insensitive():
     engine = RuleEngine()
     rules = engine.load()
     mem = Memory(
-        id="1", layer="session", content="THE PASSWORD IS SECRET",
-        source="t", confidence=1.0, created_at=datetime.now(),
-        expires_at=datetime.now() - timedelta(days=1), tags=[]
+        id="1",
+        layer="session",
+        content="THE PASSWORD IS SECRET",
+        source="t",
+        confidence=1.0,
+        created_at=datetime.now(),
+        expires_at=datetime.now() - timedelta(days=1),
+        tags=[],
     )
     assert engine.should_forget(mem, rules) is False
 
@@ -229,6 +266,7 @@ def test_should_forget_case_insensitive():
 # ---------------------------------------------------------------------------
 # Trigger execution
 # ---------------------------------------------------------------------------
+
 
 def test_fire_trigger_consolidate(tmp_path):
     os.chdir(tmp_path)
@@ -279,6 +317,7 @@ def test_fire_trigger_case_insensitive(tmp_path):
 # ---------------------------------------------------------------------------
 # Action parsing
 # ---------------------------------------------------------------------------
+
 
 def test_parse_action_consolidate():
     engine = RuleEngine()
@@ -334,6 +373,7 @@ def test_parse_action_case_insensitive():
 # Execute actions
 # ---------------------------------------------------------------------------
 
+
 def test_execute_consolidate(tmp_path):
     os.chdir(tmp_path)
     store = MemoryStore(str(tmp_path / "test.db"))
@@ -374,6 +414,7 @@ def test_execute_unknown():
 # ---------------------------------------------------------------------------
 # Extraction helpers
 # ---------------------------------------------------------------------------
+
 
 def test_extract_memories_basic():
     engine = RuleEngine()
@@ -437,6 +478,7 @@ def test_heuristic_confidence_tech_stack():
 # ---------------------------------------------------------------------------
 # Expiry computation
 # ---------------------------------------------------------------------------
+
 
 def test_compute_expiry_session():
     engine = RuleEngine()

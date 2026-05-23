@@ -10,7 +10,6 @@ clean syntax for rules, no external parser needed on 3.11+.
 from __future__ import annotations
 
 import copy
-import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -33,6 +32,7 @@ else:
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Rules:
@@ -64,8 +64,16 @@ DEFAULT_RULES = Rules(
         'on_file "docs/ADR-*.md"': "extract -> project",
         'on_file "*.md"': "extract -> project if contains decision",
     },
-    forget_never=["passwords", "keys", "PII", "secrets", "api_key",
-                   "token", "secret", "password"],
+    forget_never=[
+        "passwords",
+        "keys",
+        "PII",
+        "secrets",
+        "api_key",
+        "token",
+        "secret",
+        "password",
+    ],
     forget_after_days={"session": 7, "user": 90},
     confidence={"explicit": 1.0, "inferred": 0.7, "mentioned": 0.5},
 )
@@ -74,6 +82,7 @@ DEFAULT_RULES = Rules(
 # ---------------------------------------------------------------------------
 # Rule engine
 # ---------------------------------------------------------------------------
+
 
 class RuleEngine:
     """Parse .memoryrc (TOML), validate, and execute rules.
@@ -138,8 +147,9 @@ class RuleEngine:
         if "extract" in data:
             extract = data["extract"]
             if "confidence" in extract:
-                rules.confidence = {k: float(v)
-                                    for k, v in extract["confidence"].items()}
+                rules.confidence = {
+                    k: float(v) for k, v in extract["confidence"].items()
+                }
 
         self.rules = rules
         return rules
@@ -279,12 +289,14 @@ class RuleEngine:
 
             confidence = self._heuristic_confidence(line, rules)
             if confidence >= 0.5:
-                results.append({
-                    "content": line,
-                    "confidence": confidence,
-                    "source": "heuristic",
-                    "tags": [layer, "auto-extracted"],
-                })
+                results.append(
+                    {
+                        "content": line,
+                        "confidence": confidence,
+                        "source": "heuristic",
+                        "tags": [layer, "auto-extracted"],
+                    }
+                )
 
         return results
 

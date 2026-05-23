@@ -45,6 +45,7 @@ TOOL_PATHS = {
 # Install logic
 # ---------------------------------------------------------------------------
 
+
 def detect_installed_tools() -> List[str]:
     """Check which tool config directories exist. Returns tool names."""
     installed = []

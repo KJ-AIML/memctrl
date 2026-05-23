@@ -30,6 +30,7 @@ from memctrl.rules import RuleEngine
 try:
     from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.types import StateSnapshot
+
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     BaseCheckpointSaver = object
@@ -77,7 +78,9 @@ class MemCtrlMemory:
         memory_lookup = {m["id"]: m for m in memories}
 
         result = asyncio.run(
-            self.retriever.retrieve(query, tree_dict, top_k=top_k, memory_lookup=memory_lookup)
+            self.retriever.retrieve(
+                query, tree_dict, top_k=top_k, memory_lookup=memory_lookup
+            )
         )
         return result.facts
 
@@ -92,7 +95,9 @@ class MemCtrlMemory:
         memory_lookup = {m["id"]: m for m in memories}
 
         result = asyncio.run(
-            self.retriever.retrieve(query, tree_dict, top_k=top_k, memory_lookup=memory_lookup)
+            self.retriever.retrieve(
+                query, tree_dict, top_k=top_k, memory_lookup=memory_lookup
+            )
         )
         return {
             "facts": result.facts,
@@ -100,7 +105,9 @@ class MemCtrlMemory:
             "confidence": result.confidence,
         }
 
-    def consolidate(self, event: str = "on_commit", context: Optional[Dict] = None) -> List[str]:
+    def consolidate(
+        self, event: str = "on_commit", context: Optional[Dict] = None
+    ) -> List[str]:
         """Fire a trigger rule to consolidate memories."""
         return self.engine.fire_trigger(event, context or {}, self.store)
 
@@ -136,7 +143,11 @@ class MemoryNode:
             messages = state["messages"]
             if messages:
                 latest = messages[-1]
-                content = latest.get("content", "") if isinstance(latest, dict) else str(latest)
+                content = (
+                    latest.get("content", "")
+                    if isinstance(latest, dict)
+                    else str(latest)
+                )
                 if len(content) > 20:
                     self.memory.remember(
                         content=content[:500],
