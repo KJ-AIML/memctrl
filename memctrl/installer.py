@@ -38,6 +38,10 @@ TOOL_PATHS = {
     "pi": [
         "~/.pi/agent/skills/memctrl/SKILL.md",
     ],
+    "kimi": [
+        "~/.kimi/skills/memctrl/SKILL.md",
+        ".kimi/skills/memctrl/SKILL.md",
+    ],
 }
 
 
@@ -66,7 +70,7 @@ def install_skill(
     """Install SKILL.md for specified tool or all detected tools.
 
     Args:
-        tool: Specific tool name (claude_code, cursor, codex, etc.)
+        tool: Specific tool name (claude_code, cursor, codex, kimi, etc.)
         project: If True, install to project-level paths (e.g., .claude/)
         verbose: Print summary
 
@@ -118,6 +122,6 @@ def install_skill(
                 for p in paths:
                     print(f"  {tool_name}: {p}")
             print("\nTo force install for a specific tool, use:")
-            print("  memctrl install --tool claude_code")
+            print("  memctrl install --tool kimi")
 
     return installed_paths
