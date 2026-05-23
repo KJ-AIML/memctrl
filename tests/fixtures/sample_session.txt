@@ -1,0 +1,6 @@
+Today we decided to use FastAPI for the backend API.
+We also chose PostgreSQL as our primary database.
+The team discussed using Redis for caching but hasn't decided yet.
+I'm currently working on the authentication module.
+We migrated from Flask to FastAPI for better async support.
+ADR-001: We chose LangGraph over CrewAI for state control.

@@ -1,0 +1,28 @@
+[project]
+name = "memctrl"
+version = "1.0.0"
+description = "Rule-governed memory layer for AI coding assistants"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "MemCtrl Contributors"}
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "mcp>=1.0.0",
+    "watchdog>=4.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+llm = ["litellm>=1.0.0", "openai>=1.0.0"]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "pytest-cov>=4.0.0"]
+
+[project.scripts]
+memctrl = "memctrl.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

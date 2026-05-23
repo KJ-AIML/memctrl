@@ -1,0 +1,14 @@
+[layers]
+project = "architecture decisions, tech stack"
+session = "current tasks"
+user = "preferences"
+
+[triggers]
+on_commit = "consolidate session -> project"
+
+[forget]
+never = ["passwords", "keys"]
+after_days = { session = 1 }
+
+[extract]
+confidence = { explicit = 1.0, inferred = 0.7 }

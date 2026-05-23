@@ -1,0 +1,17 @@
+[layers]
+project = "architecture decisions, tech stack, ADRs, why we chose X"
+session = "current task, WIP, what was done this session"
+user = "preferences, working style, patterns, personal rules"
+
+[triggers]
+on_commit = "consolidate session → project"
+on_session_end = "summarize session → user"
+'on_file "docs/ADR-*.md"' = "extract → project"
+'on_file "*.md"' = "extract → project if contains decision"
+
+[forget]
+never = ["passwords", "keys", "PII", "secrets"]
+after_days = { session = 7, user = 90 }
+
+[extract]
+confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
