@@ -1,12 +1,13 @@
-# MemCtrl
-
 <p align="center">
   <img src="docs/memctrl_logo.png" alt="MemCtrl Logo" width="180">
 </p>
 
-> **Cognitive Memory Runtime for AI Agents**
->
-> An operating system for long-lived agent memory — hierarchical, explainable, and self-managing.
+<h1 align="center">MemCtrl</h1>
+
+<p align="center">
+  <strong>Cognitive Memory Runtime for AI Agents</strong><br>
+  An operating system for long-lived agent memory — hierarchical, explainable, and self-managing.
+</p>
 
 [![CI](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml/badge.svg)](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
