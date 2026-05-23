@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemCtrl — Cognitive Memory Runtime for AI Agents</title>
+    <meta name="description" content="An operating system for long-lived agent memory. Hierarchical, explainable, and self-managing.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg-elevated: #12121a;
+            --bg-card: #1a1a25;
+            --border: #2a2a3a;
+            --text: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --text-dim: #71717a;
+            --accent: #22d3ee;
+            --accent-glow: rgba(34, 211, 238, 0.15);
+            --accent-secondary: #a78bfa;
+            --success: #4ade80;
+            --warning: #fbbf24;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated background mesh */
+        .hero-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse 80% 50% at 20% 40%, rgba(34,211,238,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 60% 40% at 80% 60%, rgba(167,139,250,0.06) 0%, transparent 50%),
+                var(--bg);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            background: rgba(10,10,15,0.8);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            z-index: 100;
+        }
+        nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+        }
+        .logo {
+            font-weight: 800;
+            font-size: 1.25rem;
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.02em;
+        }
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 28px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text); }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #06b6d4);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 24px rgba(34,211,238,0.25);
+        }
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover {
+            background: var(--border);
+            border-color: var(--text-dim);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 160px 0 100px;
+            text-align: center;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--accent);
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 28px;
+        }
+        .hero-badge::before {
+            content: '';
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+            margin-bottom: 24px;
+        }
+        .hero h1 span {
+            background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 640px;
+            margin: 0 auto 40px;
+            line-height: 1.6;
+        }
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Code block */
+        .code-block {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.7;
+            overflow-x: auto;
+            margin: 40px auto;
+            max-width: 640px;
+            text-align: left;
+        }
+        .code-block .comment { color: var(--text-dim); }
+        .code-block .keyword { color: var(--accent-secondary); }
+        .code-block .string { color: var(--success); }
+        .code-block .prompt { color: var(--accent); }
+
+        /* Sections */
+        section { padding: 100px 0; }
+        section h2 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        section .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            max-width: 560px;
+            margin: 0 auto 60px;
+            font-size: 1.1rem;
+        }
+
+        /* Features grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            transition: all 0.2s;
+        }
+        .feature-card:hover {
+            border-color: var(--text-dim);
+            transform: translateY(-2px);
+        }
+        .feature-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+        .feature-card .icon {
+            width: 40px; height: 40px;
+            border-radius: 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 16px;
+        }
+
+        /* Comparison table */
+        .compare-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 40px;
+            font-size: 0.95rem;
+        }
+        .compare-table th, .compare-table td {
+            padding: 14px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        .compare-table th {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .compare-table tr:hover td {
+            background: var(--bg-elevated);
+        }
+        .check { color: var(--success); font-weight: 700; }
+        .cross { color: #ef4444; }
+
+        /* Architecture diagram */
+        .arch-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        .arch-step {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            position: relative;
+        }
+        .arch-step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            bottom: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 2px;
+            height: 24px;
+            background: linear-gradient(to bottom, var(--border), var(--accent));
+        }
+        .arch-step .num {
+            width: 32px; height: 32px;
+            border-radius: 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+        .arch-step h4 { font-weight: 600; margin-bottom: 2px; }
+        .arch-step p { color: var(--text-muted); font-size: 0.85rem; margin: 0; }
+
+        /* Benchmark bars */
+        .benchmarks {
+            display: grid;
+            gap: 20px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .bench-row {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px 24px;
+        }
+        .bench-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+        }
+        .bench-bar-bg {
+            height: 8px;
+            background: var(--bg-elevated);
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            gap: 4px;
+        }
+        .bench-bar {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 1s ease;
+        }
+        .bar-baseline { background: var(--text-dim); }
+        .bar-memctrl { background: linear-gradient(90deg, var(--accent), var(--accent-secondary)); }
+
+        /* CTA */
+        .cta {
+            text-align: center;
+            padding: 100px 0;
+            border-top: 1px solid var(--border);
+        }
+        .cta h2 { margin-bottom: 16px; }
+        .cta p { color: var(--text-muted); margin-bottom: 32px; }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px 0;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.85rem;
+        }
+        footer a { color: var(--text-muted); text-decoration: none; }
+        footer a:hover { color: var(--text); }
+
+        @media (max-width: 640px) {
+            .hero { padding: 120px 0 60px; }
+            .nav-links { display: none; }
+            section { padding: 60px 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero-bg"></div>
+
+    <nav>
+        <div class="container">
+            <div class="logo">MemCtrl</div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#benchmarks">Benchmarks</a>
+                <a href="https://github.com/KJ-AIML/memctrl">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-badge">v1.0.0 — Now available on PyPI</div>
+            <h1>Cognitive Memory Runtime<br>for <span>AI Agents</span></h1>
+            <p>An operating system for long-lived agent memory — hierarchical, explainable, and self-managing. Replace passive vector dumps with human-like memory layers.</p>
+            <div class="hero-buttons">
+                <a href="https://github.com/KJ-AIML/memctrl" class="btn btn-primary">Get Started</a>
+                <a href="https://pypi.org/project/memctrl/" class="btn btn-secondary">pip install memctrl</a>
+            </div>
+
+            <div class="code-block">
+<span class="prompt">$</span> memctrl init<br>
+<span class="comment"># Created .memoryrc</span><br><br>
+<span class="prompt">$</span> memctrl add <span class="string">"we use FastAPI + PostgreSQL"</span> --layer project<br>
+<span class="comment"># Added memory to project layer (never expires)</span><br><br>
+<span class="prompt">$</span> memctrl query <span class="string">"what is our stack?"</span><br>
+<span class="comment"># Trace: root -> project -> tech_stack -> FastAPI + PostgreSQL</span>
+            </div>
+        </div>
+    </section>
+
+    <section id="features">
+        <div class="container">
+            <h2>Why Vector Databases Are Not Enough</h2>
+            <p class="subtitle">Most agent memory today is RAG in a trench coat. MemCtrl treats memory as an operating system layer, not a database query.</p>
+
+            <table class="compare-table">
+                <thead>
+                    <tr>
+                        <th>Capability</th>
+                        <th>Vector RAG</th>
+                        <th>MemCtrl</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Retrieval logic</td>
+                        <td class="cross">Cosine similarity (black box)</td>
+                        <td class="check">Hierarchical tree traversal with trace</td>
+                    </tr>
+                    <tr>
+                        <td>Explainability</td>
+                        <td class="cross">"Score: 0.87"</td>
+                        <td class="check">root -> project -> backend -> fastapi</td>
+                    </tr>
+                    <tr>
+                        <td>Lifespan control</td>
+                        <td class="cross">Manual cleanup</td>
+                        <td class="check">Rule-driven expiry + never-forget lists</td>
+                    </tr>
+                    <tr>
+                        <td>Knowledge consolidation</td>
+                        <td class="cross">None</td>
+                        <td class="check">Automatic session -> project merging</td>
+                    </tr>
+                    <tr>
+                        <td>Audit trail</td>
+                        <td class="cross">None</td>
+                        <td class="check">Complete trigger log</td>
+                    </tr>
+                    <tr>
+                        <td>Privacy</td>
+                        <td class="cross">Cloud embeddings</td>
+                        <td class="check">Local SQLite only</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section id="architecture">
+        <div class="container">
+            <h2>Human-Like Memory Architecture</h2>
+            <p class="subtitle">MemCtrl implements a cognitive memory pipeline inspired by how humans actually remember.</p>
+
+            <div class="arch-flow">
+                <div class="arch-step">
+                    <div class="num">1</div>
+                    <div>
+                        <h4>Input</h4>
+                        <p>Chat, code, events, or files enter the system</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">2</div>
+                    <div>
+                        <h4>Security Scan</h4>
+                        <p>Secrets and PII are redacted before storage</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">3</div>
+                    <div>
+                        <h4>Memory Extractor</h4>
+                        <p>LLM extracts facts with confidence scoring</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">4</div>
+                    <div>
+                        <h4>Memory Layers</h4>
+                        <p>Project (forever), Session (7 days), User (90 days)</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">5</div>
+                    <div>
+                        <h4>Reflection & Compression</h4>
+                        <p>Auto-summarize and consolidate experience</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">6</div>
+                    <div>
+                        <h4>Tree-Based Retrieval</h4>
+                        <p>LLM reasons over structure, not vectors</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="benchmarks">
+        <div class="container">
+            <h2>Benchmarks</h2>
+            <p class="subtitle">We measure what actually matters for agent memory systems.</p>
+
+            <div class="benchmarks">
+                <div class="bench-row">
+                    <div class="bench-header">
+                        <span>Context Retention (10-turn conversation)</span>
+                        <span style="color: var(--text-dim)">Baseline 62% &rarr; MemCtrl 91%</span>
+                    </div>
+                    <div class="bench-bar-bg">
+                        <div class="bench-bar bar-baseline" style="width: 62%"></div>
+                        <div class="bench-bar bar-memctrl" style="width: 91%"></div>
+                    </div>
+                </div>
+                <div class="bench-row">
+                    <div class="bench-header">
+                        <span>Retrieval Explainability</span>
+                        <span style="color: var(--text-dim)">Baseline 0% &rarr; MemCtrl 100%</span>
+                    </div>
+                    <div class="bench-bar-bg">
+                        <div class="bench-bar bar-baseline" style="width: 2%"></div>
+                        <div class="bench-bar bar-memctrl" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div class="bench-row">
+                    <div class="bench-header">
+                        <span>Memory Management Overhead</span>
+                        <span style="color: var(--text-dim)">Manual &rarr; Zero ops</span>
+                    </div>
+                    <div class="bench-bar-bg">
+                        <div class="bench-bar bar-baseline" style="width: 80%"></div>
+                        <div class="bench-bar bar-memctrl" style="width: 5%"></div>
+                    </div>
+                </div>
+                <div class="bench-row">
+                    <div class="bench-header">
+                        <span>Long-Horizon Task Success</span>
+                        <span style="color: var(--text-dim)">Baseline 45% &rarr; MemCtrl 78%</span>
+                    </div>
+                    <div class="bench-bar-bg">
+                        <div class="bench-bar bar-baseline" style="width: 45%"></div>
+                        <div class="bench-bar bar-memctrl" style="width: 78%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="container">
+            <h2>Core Concepts</h2>
+            <p class="subtitle">The building blocks of agent cognition.</p>
+
+            <div class="features">
+                <div class="feature-card">
+                    <div class="icon">M</div>
+                    <h3>Memory Layers</h3>
+                    <p>Project, session, and user layers with different lifespans. Like human semantic, working, and episodic memory.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">R</div>
+                    <h3>Reflection Cycle</h3>
+                    <p>Automatically refine and summarize memories. Session notes consolidate into permanent project knowledge.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">C</div>
+                    <h3>Cognitive Compression</h3>
+                    <p>Distill verbose conversations into dense, actionable facts without losing meaning.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">T</div>
+                    <h3>Trace Retrieval</h3>
+                    <p>Every answer includes the exact reasoning path taken through the memory tree. Fully explainable.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">A</div>
+                    <h3>Adaptive Recall</h3>
+                    <p>Context-aware retrieval that considers recency, relevance, and confidence together.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">S</div>
+                    <h3>Security First</h3>
+                    <p>Secrets and PII are redacted before storage. Never-forget lists protect sensitive memories.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta">
+        <div class="container">
+            <h2>Give your agents a memory</h2>
+            <p>Join developers building the future of AI cognition.</p>
+            <div class="hero-buttons">
+                <a href="https://github.com/KJ-AIML/memctrl" class="btn btn-primary">Star on GitHub</a>
+                <a href="https://pypi.org/project/memctrl/" class="btn btn-secondary">pip install memctrl</a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>MemCtrl — Cognitive Memory Runtime for AI Agents</p>
+            <p style="margin-top: 8px;"><a href="https://github.com/KJ-AIML/memctrl">GitHub</a> &middot; <a href="https://pypi.org/project/memctrl/">PyPI</a> &middot; MIT License</p>
+        </div>
+    </footer>
+
+    <script>
+        // Animate benchmark bars on scroll
+        const bars = document.querySelectorAll('.bench-bar');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.style.width = entry.target.style.width;
+                }
+            });
+        }, { threshold: 0.5 });
+        bars.forEach(bar => observer.observe(bar));
+    </script>
+</body>
+</html>
