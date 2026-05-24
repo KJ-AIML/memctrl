@@ -17,9 +17,14 @@ This enables:
 
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from memctrl.store import MemoryStore
 
 
 @dataclass
@@ -147,16 +152,29 @@ class ProvenanceTracker:
     compliance, and security analysis of memory retrieval.
     """
 
-    def __init__(self, max_history: int = 100):
+    def __init__(
+        self,
+        max_history: int = 100,
+        store: Optional["MemoryStore"] = None,
+        persist: bool = True,
+    ):
         """Initialize with max history size.
 
         Args:
             max_history: Maximum number of retrieval operations to keep
                 in memory. Older records are discarded. This prevents
                 unbounded memory growth in long-running sessions.
+            store: Optional MemoryStore for SQLite persistence. When
+                provided, provenance records are written to the
+                ``provenance`` table and survive process restarts.
+            persist: Whether to write to SQLite when *store* is given.
+                Set to False for testing or when SQLite persistence
+                is not desired.
         """
         self._history: List[RetrievalProvenance] = []
         self._max_history = max_history
+        self._store = store
+        self._persist = persist and (store is not None)
 
     def record_retrieval(
         self,
@@ -230,6 +248,14 @@ class ProvenanceTracker:
         # Enforce max history to prevent unbounded growth
         if len(self._history) > self._max_history:
             self._history = self._history[-self._max_history :]
+
+        # Persist to SQLite for audit trail across restarts
+        if self._persist and self._store is not None:
+            try:
+                self._store.save_provenance(provenance.to_dict())
+            except Exception:
+                # Persistence failure must not break retrieval
+                pass
 
         return provenance
 

@@ -14,11 +14,15 @@ by replacing vector search with LLM tree traversal. Each retrieval:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from memctrl.provenance import ProvenanceTracker, RetrievalProvenance
+from memctrl.sanitize import sanitize_text
+
+logger = logging.getLogger("memctrl.retriever")
 
 # Type alias
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
@@ -158,7 +162,8 @@ class MemoryRetriever:
         try:
             response = await self.llm_client(prompt, json_mode=True)
             parsed = json.loads(response)
-        except Exception:
+        except Exception as exc:
+            logger.warning("LLM retrieval failed for query '%s': %s", query, exc)
             # Fall back to keyword search on any error
             return self._keyword_retrieve_with_sources(
                 query, tree, memory_lookup, top_k
@@ -203,9 +208,9 @@ class MemoryRetriever:
         """Remove full memory content, keep structure for LLM."""
         result = {
             "id": tree.get("id", ""),
-            "title": tree.get("title", ""),
+            "title": sanitize_text(tree.get("title", "")),
             "layer": tree.get("layer", ""),
-            "summary": tree.get("summary", ""),
+            "summary": sanitize_text(tree.get("summary", "")),
             "memory_count": len(tree.get("memory_ids", [])),
             "children": [self._strip_leaves(c) for c in tree.get("children", [])],
         }
@@ -218,7 +223,7 @@ class MemoryRetriever:
             "You are a memory retrieval expert. Given a user query and a "
             "hierarchical memory tree, identify which tree nodes are most "
             "likely to contain relevant information.\n\n"
-            f"Query: {query}\n\n"
+            f"Query: {sanitize_text(query)}\n\n"
             "Memory Tree Structure:\n"
             f"{tree_json}\n\n"
             "Return ONLY JSON in this exact format:\n"

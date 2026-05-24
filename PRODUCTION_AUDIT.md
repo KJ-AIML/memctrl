@@ -12,16 +12,16 @@
 
 ## 1. Production Readiness Score
 
-### **Score: 3.5 / 10**
+### **Score: 3.5 / 10** (pre-Phase-A) → **5.5 / 10** (post-Phase-A)
 
-| Category | Score | Why |
-|----------|-------|-----|
-| Single-user local CLI | 6/10 | Works for one person, one project, short sessions |
-| Multi-agent concurrent | 1/10 | SQLite locking will corrupt or deadlock |
-| Long-running (>1 week) | 2/10 | Decay doesn't run automatically; cache leaks; WAL not enabled |
-| Crash recovery | 2/10 | No checksums, no corruption detection, no replay |
-| Observability at scale | 3/10 | OTel exporter is in-memory only; no async batching |
-| Security | 3/10 | Redaction is regex-naive; provenance is trust-me-bro |
+| Category | Pre | Post | Why |
+|----------|-----|------|-----|
+| Single-user local CLI | 6/10 | 7/10 | WAL + busy timeout; atomic reflection; provenance persists |
+| Multi-agent concurrent | 1/10 | 3/10 | WAL reduces lock contention but no retry logic yet |
+| Long-running (>1 week) | 2/10 | 4/10 | Spans and provenance persist to SQLite; bounded growth |
+| Crash recovery | 2/10 | 4/10 | Atomic transactions prevent half-migrated state |
+| Observability at scale | 3/10 | 5/10 | OTel spans persist to SQLite; in-memory FIFO cap |
+| Security | 3/10 | 5/10 | ALL LLM prompts now sanitized; storage redaction centralized |
 
 **Verdict**: MemCtrl is a **well-designed prototype**, not production infrastructure. It is suitable for personal AI assistant experiments, small single-developer projects, and demos. It is **not suitable** for teams, multi-agent deployments, or any system where data loss or inconsistency has consequences.
 
@@ -593,31 +593,83 @@ test_operational.py
 
 ---
 
+## Phase A Fixes (Post-Audit Hardening)
+
+The following critical and high-risk items have been addressed in the
+hardening phase after the initial audit:
+
+| Finding | Status | Fix Details |
+|---------|--------|-------------|
+| CR-1: SQLite no WAL | **FIXED** | `_connect()` now enables `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=30000` |
+| CR-2: Non-atomic reflection | **FIXED** | `store.consolidate_with_audit()` wraps move + insert + log in a single SQLite transaction |
+| CR-3: Double-consolidation | **FIXED** | `_consolidate()` returns early when session layer is empty; atomic method prevents partial state |
+| CR-4: Unbounded OTel spans | **FIXED** | `MemoryOTelExporter` accepts `max_spans` (default 10K) with FIFO in-memory rotation; optional `db_path` persists to SQLite with automatic pruning |
+| CR-6: In-memory provenance | **FIXED** | `ProvenanceTracker` accepts optional `store`; records written to `provenance` table survive restarts |
+| CR-7: LLM prompt secret leak | **FIXED** | `_sanitize_for_llm()` (now `sanitize_text()`) redacts secrets/PII in ALL LLM prompts: tree clustering, retrieval, reflection summary |
+| HR-1: Silent degradation | **FIXED** | All LLM fallback paths now log at `WARNING` level instead of silent `except: pass` |
+
+### New SQLite Schema
+
+Two tables were added to support persistence:
+
+```sql
+CREATE TABLE provenance (
+    id          TEXT PRIMARY KEY,
+    query       TEXT NOT NULL,
+    timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    method      TEXT NOT NULL,
+    tree_version INTEGER DEFAULT 0,
+    total_memories_searched INTEGER DEFAULT 0,
+    avg_confidence REAL DEFAULT 0.0,
+    sources_json TEXT NOT NULL
+);
+
+CREATE TABLE otel_spans (
+    id          TEXT PRIMARY KEY,
+    trace_id    TEXT NOT NULL,
+    span_id     TEXT NOT NULL,
+    operation   TEXT NOT NULL,
+    timestamp   REAL NOT NULL,
+    duration_ms REAL NOT NULL,
+    memory_id   TEXT,
+    layer       TEXT,
+    memory_type TEXT,
+    confidence  REAL,
+    query       TEXT,
+    top_k       INTEGER,
+    results_count INTEGER,
+    status      TEXT NOT NULL,
+    error_message TEXT,
+    attributes_json TEXT,
+    service_name TEXT NOT NULL
+);
+```
+
+---
+
 ## Final Verdict
 
-**MemCtrl v1.2.0 is a promising prototype with a strong conceptual foundation, but it is NOT production infrastructure.**
+**MemCtrl v1.2.0+ (post-Phase-A) is a hardened prototype. Critical
+durability and observability gaps have been closed, but it remains**
+**NOT production infrastructure for high-stakes deployments.**
 
 It is suitable for:
 - ✅ Personal AI assistant experiments
 - ✅ Single-developer side projects
 - ✅ Demos and proof-of-concepts
 - ✅ Short-lived sessions (< 1 day)
+- ✅ Small team trials with awareness of remaining limits
 
 It is NOT suitable for:
-- ❌ Multi-agent deployments
-- ❌ Team environments
-- ❌ Long-running services
-- ❌ Systems where data loss matters
-- ❌ Security-sensitive applications
+- ❌ Multi-agent deployments with high concurrency
+- ❌ Systems where data loss has legal/financial consequences
+- ❌ Security-sensitive applications (redaction is regex-only, no crypto)
 
 **To reach production readiness (score 7+), the following MUST be fixed:**
-1. Enable SQLite WAL mode + busy timeout
-2. Add retry logic for database locking
-3. Make reflection atomic (single transaction)
-4. Prevent double-consolidation
-5. Cap OTel span memory with rotation
-6. Fix keyword retrieval (stemming + stop words)
-7. Run decay automatically (background thread or trigger)
-8. Add real benchmarks with statistical validity
+1. Add retry logic for database locking (WAL helps but isn't magic)
+2. Fix keyword retrieval (stemming + stop words)
+3. Run decay automatically (background thread or trigger)
+4. Add real benchmarks with statistical validity
+5. Cryptographic provenance (Merkle tree or signed audit log)
 
-**Estimated effort to production-ready: 4-6 weeks of focused engineering.**
+**Estimated effort to production-ready: 2-3 weeks of focused engineering.**

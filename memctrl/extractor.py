@@ -16,25 +16,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Coroutine, List, Optional
 
+from memctrl.sanitize import _PII_PATTERNS, has_secrets, sanitize_text
+
 # Type alias
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
-
-# Secret patterns to redact/detect
-_SECRET_PATTERNS = [
-    (r"\b(sk-[a-zA-Z0-9]{20,})\b", "API_KEY"),
-    (r"\b([A-Za-z0-9/+=]{40,})\b", "TOKEN"),
-    (r"\b(password\s*[=:]\s*\S+)", "PASSWORD"),
-    (r"\b(secret\s*[=:]\s*\S+)", "SECRET"),
-    (r"\b(AKIA[0-9A-Z]{16})\b", "AWS_KEY"),
-    (r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "PRIVATE_KEY"),
-]
-
-_PII_PATTERNS = [
-    (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "EMAIL"),
-    (r"\b\d{3}-\d{2}-\d{4}\b", "SSN"),
-    (r"\b\d{3}-\d{3}-\d{4}\b", "PHONE"),
-    (r"\b\d{10,12}\b", "PHONE_INTL"),
-]
 
 
 class MemoryExtractor:
@@ -97,16 +82,11 @@ class MemoryExtractor:
         for pattern in never_list:
             if pattern.lower() in text_lower:
                 return True
-        for pattern, _ in _SECRET_PATTERNS:
-            if re.search(pattern, text, re.I):
-                return True
-        return False
+        return has_secrets(text)
 
     def _sanitize_text(self, text: str) -> str:
         """Redact secrets and PII from text."""
-        for pattern, label in _SECRET_PATTERNS + _PII_PATTERNS:
-            text = re.sub(pattern, f"[REDACTED_{label}]", text, flags=re.I)
-        return text
+        return sanitize_text(text)
 
     def _detect_pii(self, text: str) -> List[str]:
         """Detect PII in text. Returns list of found PII types."""

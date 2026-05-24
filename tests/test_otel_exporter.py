@@ -1043,3 +1043,67 @@ class TestNoOpNotStarted:
         exp.stop()
         exp.record_store("m2", "session", "c", 1.0, 1.0)
         assert len(exp.get_spans()) == 1  # Second not recorded
+
+
+# ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+
+
+class TestSQLitePersistence:
+    def test_spans_persist_to_sqlite(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        exp = MemoryOTelExporter(db_path=db_path, max_spans=100)
+        exp.start()
+        exp.record_store("m1", "project", "we use FastAPI", 1.0, 5.0)
+        exp.stop()
+
+        # New exporter instance loads from same DB
+        exp2 = MemoryOTelExporter(db_path=db_path, max_spans=100)
+        exp2.start()
+        spans = exp2.get_spans()
+        assert len(spans) == 1
+        assert spans[0].operation == "store"
+        exp2.stop()
+        os.unlink(db_path)
+
+    def test_in_memory_bound_enforced(self):
+        exp = MemoryOTelExporter(max_spans=3)
+        exp.start()
+        for i in range(5):
+            exp.record_store(f"m{i}", "project", "c", 1.0, 1.0)
+        spans = exp.get_spans()
+        assert len(spans) == 3
+        exp.stop()
+
+    def test_sqlite_prune_oldest(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        exp = MemoryOTelExporter(db_path=db_path, max_spans=2)
+        exp.start()
+        for i in range(5):
+            exp.record_store(f"m{i}", "project", "c", 1.0, 1.0)
+        exp.stop()
+
+        exp2 = MemoryOTelExporter(db_path=db_path, max_spans=2)
+        exp2.start()
+        spans = exp2.get_spans()
+        # Should only have the last 2 spans because pruning happens per-insert
+        assert len(spans) <= 2
+        exp2.stop()
+        os.unlink(db_path)
+
+    def test_clear_clears_sqlite(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        exp = MemoryOTelExporter(db_path=db_path)
+        exp.start()
+        exp.record_store("m1", "project", "c", 1.0, 1.0)
+        exp.clear()
+
+        exp2 = MemoryOTelExporter(db_path=db_path)
+        exp2.start()
+        assert len(exp2.get_spans()) == 0
+        exp2.stop()
+        os.unlink(db_path)

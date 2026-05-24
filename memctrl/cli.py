@@ -32,10 +32,21 @@ from memctrl.span import SpanTracker
 # requiring the user to manage cache state.
 _query_cache = QueryCache()
 
-# Module-level provenance tracker — records retrieval history across queries.
-# WHY: Provenance must persist across CLI calls within the same process
-# so that `memctrl provenance` can report on the history of retrievals.
-_provenance_tracker = ProvenanceTracker()
+# ---------------------------------------------------------------------------
+# Provenance tracker factory
+# ---------------------------------------------------------------------------
+
+
+def _get_provenance_tracker():
+    """Get a ProvenanceTracker backed by SQLite for cross-process persistence.
+
+    WHY: CLI commands run in separate processes, so an in-memory tracker
+    loses all history on exit. Wiring the tracker to the same SQLite DB
+    as the store ensures provenance survives across invocations.
+    """
+    from memctrl.provenance import ProvenanceTracker
+    store = _get_store()
+    return ProvenanceTracker(store=store, persist=True)
 
 app = typer.Typer(
     name="memctrl",
@@ -219,7 +230,7 @@ def query(
             # why specific memories were returned, enabling trust and debugging.
             from memctrl.retriever import MemoryRetriever
 
-            retriever = MemoryRetriever(provenance_tracker=_provenance_tracker)
+            retriever = MemoryRetriever(provenance_tracker=_get_provenance_tracker())
             result = await retriever.retrieve(
                 query_text, tree_dict, memory_lookup=memory_lookup
             )
@@ -431,7 +442,8 @@ def provenance(
     Without a query argument, shows a summary of recent retrieval history.
     With a query, shows provenance for that specific query.
     """
-    history = _provenance_tracker.get_history()
+    tracker = _get_provenance_tracker()
+    history = tracker.get_history()
 
     if not history:
         console.print(
@@ -497,13 +509,13 @@ def provenance(
         console.print("[dim]No memories retrieved in this operation.[/dim]")
 
     # Detect anomalies
-    low_conf = _provenance_tracker.detect_low_confidence_retrievals(threshold=0.5)
+    low_conf = tracker.detect_low_confidence_retrievals(threshold=0.5)
     if low_conf:
         console.print(
             f"\n[yellow]⚠ {len(low_conf)} low-confidence retrieval(s) detected.[/yellow]"
         )
 
-    imbalance = _provenance_tracker.detect_source_type_imbalance()
+    imbalance = tracker.detect_source_type_imbalance()
     if imbalance:
         console.print(
             f"\n[yellow]⚠ Source imbalance detected:[/yellow] {imbalance['message']}"

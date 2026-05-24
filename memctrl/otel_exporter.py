@@ -32,6 +32,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 import time
 import uuid
@@ -519,7 +520,12 @@ class MemoryOTelExporter:
         exporter.stop()
     """
 
-    def __init__(self, service_name: str = "memctrl") -> None:
+    def __init__(
+        self,
+        service_name: str = "memctrl",
+        db_path: Optional[str] = None,
+        max_spans: int = 10000,
+    ) -> None:
         """Initialize the exporter.
 
         Args:
@@ -527,8 +533,19 @@ class MemoryOTelExporter:
                 becomes the ``service.name`` resource attribute in OTLP
                 export and is visible in backends such as Datadog and
                 Honeycomb.
+            db_path: Optional path to a SQLite database for persistent
+                span storage. When provided, every recorded span is also
+                written to the ``otel_spans`` table, and :meth:`get_spans`
+                loads from SQLite instead of in-memory list. This prevents
+                data loss across process restarts and bounds memory usage.
+            max_spans: Maximum number of spans to keep in memory when
+                *db_path* is not provided. When the limit is exceeded,
+                oldest spans are dropped (FIFO). With *db_path*, this
+                controls the SQLite table size via automatic pruning.
         """
         self.service_name = service_name
+        self._db_path = db_path
+        self._max_spans = max_spans
         self._spans: List[MemorySpan] = []
         self._active = False
         self._trace_id = str(uuid.uuid4())
@@ -536,6 +553,7 @@ class MemoryOTelExporter:
         self._otel_provider: Any = None
         self._otel_exporter: Any = None
         self._otel_tracer: Any = None
+        self._span_count: int = 0  # approximate counter for pruning
 
     def start(self) -> None:
         """Start collecting spans.
@@ -630,8 +648,100 @@ class MemoryOTelExporter:
         with self._lock:
             if self._active:
                 self._spans.append(span)
+                # Enforce in-memory bound (FIFO)
+                if len(self._spans) > self._max_spans:
+                    self._spans = self._spans[-self._max_spans :]
+                self._span_count += 1
+
+        # Persist to SQLite for cross-process durability
+        if self._db_path is not None:
+            try:
+                self._persist_span(span)
+            except Exception:
+                # Persistence failure must not break tracing
+                pass
 
         return span
+
+    def _persist_span(self, span: MemorySpan) -> None:
+        """Write a single span to SQLite.
+
+        Uses a direct sqlite3 connection to avoid coupling to
+        MemoryStore. The ``otel_spans`` table is created lazily if
+        it does not exist.
+        """
+        conn = sqlite3.connect(self._db_path)
+        try:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS otel_spans (
+                    id          TEXT PRIMARY KEY,
+                    trace_id    TEXT NOT NULL,
+                    span_id     TEXT NOT NULL,
+                    operation   TEXT NOT NULL,
+                    timestamp   REAL NOT NULL,
+                    duration_ms REAL NOT NULL,
+                    memory_id   TEXT,
+                    layer       TEXT,
+                    memory_type TEXT,
+                    confidence  REAL,
+                    query       TEXT,
+                    top_k       INTEGER,
+                    results_count INTEGER,
+                    status      TEXT NOT NULL,
+                    error_message TEXT,
+                    attributes_json TEXT,
+                    service_name TEXT NOT NULL
+                )"""
+            )
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS idx_otel_spans_trace
+                   ON otel_spans(trace_id)"""
+            )
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS idx_otel_spans_op
+                   ON otel_spans(operation)"""
+            )
+            sid = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO otel_spans (id, trace_id, span_id, operation,
+                                            timestamp, duration_ms, memory_id,
+                                            layer, memory_type, confidence, query,
+                                            top_k, results_count, status,
+                                            error_message, attributes_json,
+                                            service_name)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    sid,
+                    span.trace_id,
+                    span.span_id,
+                    span.operation,
+                    span.timestamp,
+                    span.duration_ms,
+                    span.memory_id,
+                    span.layer,
+                    span.memory_type,
+                    span.confidence,
+                    span.query,
+                    span.top_k,
+                    span.results_count,
+                    span.status,
+                    span.error_message,
+                    json.dumps(span.attributes),
+                    span.service_name,
+                ),
+            )
+            # Prune oldest rows to keep table bounded
+            conn.execute(
+                """DELETE FROM otel_spans
+                   WHERE id NOT IN (
+                       SELECT id FROM otel_spans
+                       ORDER BY timestamp DESC LIMIT ?
+                   )""",
+                (self._max_spans,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     # -- Public recording API -----------------------------------------------
 
@@ -859,11 +969,62 @@ class MemoryOTelExporter:
     def get_spans(self) -> List[MemorySpan]:
         """Get all recorded spans.
 
+        When ``db_path`` was provided at construction, this loads from
+        SQLite (survives restarts). Otherwise returns the in-memory list.
+
         Returns:
             List of MemorySpan objects in chronological order.
         """
+        if self._db_path is not None:
+            return self._load_spans_from_db()
         with self._lock:
             return list(self._spans)
+
+    def _load_spans_from_db(self) -> List[MemorySpan]:
+        """Load spans from SQLite and reconstruct MemorySpan objects.
+
+        Loads ALL spans regardless of trace_id so that audit history
+        survives across exporter restarts (each restart gets a new
+        trace_id, but the user expects to see previous spans).
+        """
+        conn = sqlite3.connect(self._db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT * FROM otel_spans
+                   ORDER BY timestamp ASC"""
+            ).fetchall()
+            spans: List[MemorySpan] = []
+            for r in rows:
+                try:
+                    spans.append(
+                        MemorySpan(
+                            span_id=r["span_id"],
+                            trace_id=r["trace_id"],
+                            operation=r["operation"],
+                            timestamp=r["timestamp"],
+                            duration_ms=r["duration_ms"],
+                            memory_id=r["memory_id"],
+                            layer=r["layer"],
+                            memory_type=r["memory_type"],
+                            confidence=r["confidence"],
+                            query=r["query"],
+                            top_k=r["top_k"],
+                            results_count=r["results_count"],
+                            status=r["status"],
+                            error_message=r["error_message"],
+                            attributes=json.loads(r["attributes_json"])
+                            if r["attributes_json"]
+                            else {},
+                            service_name=r["service_name"],
+                        )
+                    )
+                except Exception:
+                    # Skip corrupted rows
+                    continue
+            return spans
+        finally:
+            conn.close()
 
     def get_spans_by_operation(self, operation: str) -> List[MemorySpan]:
         """Get spans filtered by operation type.
@@ -901,8 +1062,7 @@ class MemoryOTelExporter:
                 - ``error_rate``: Fraction of spans with errors (0.0-1.0).
                 - ``by_layer``: Dict mapping layer -> count.
         """
-        with self._lock:
-            spans = list(self._spans)
+        spans = self.get_spans()
 
         total = len(spans)
         if total == 0:
@@ -950,14 +1110,14 @@ class MemoryOTelExporter:
         Args:
             path: File path to write JSON to.
         """
-        with self._lock:
-            data = {
-                "service_name": self.service_name,
-                "trace_id": self._trace_id,
-                "exported_at": _iso_now(),
-                "span_count": len(self._spans),
-                "spans": [s.to_dict() for s in self._spans],
-            }
+        spans = self.get_spans()
+        data = {
+            "service_name": self.service_name,
+            "trace_id": self._trace_id,
+            "exported_at": _iso_now(),
+            "span_count": len(spans),
+            "spans": [s.to_dict() for s in spans],
+        }
 
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
@@ -992,9 +1152,8 @@ class MemoryOTelExporter:
         Args:
             path: File path to write OTLP JSON to.
         """
-        with self._lock:
-            spans = list(self._spans)
-            service = self.service_name
+        spans = self.get_spans()
+        service = self.service_name
 
         otel_spans = [s.to_otel_dict() for s in spans]
 
@@ -1038,6 +1197,15 @@ class MemoryOTelExporter:
         with self._lock:
             self._spans.clear()
             self._trace_id = str(uuid.uuid4())
+            self._span_count = 0
+        if self._db_path is not None:
+            try:
+                conn = sqlite3.connect(self._db_path)
+                conn.execute("DELETE FROM otel_spans")
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
 
     # -- Context manager support --------------------------------------------
 

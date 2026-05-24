@@ -16,13 +16,17 @@ When reflection fires:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, List, Optional
 
+from memctrl.sanitize import sanitize_text
 from memctrl.store import MemoryStore
 from memctrl.rules import RuleEngine
+
+logger = logging.getLogger("memctrl.reflection")
 
 
 @dataclass
@@ -171,6 +175,10 @@ class ReflectionEngine:
         4. Create reflection-sourced memories in target layers
         5. Log the trigger execution for audit
 
+        All database writes are wrapped in a single atomic transaction via
+        :py:meth:`MemoryStore.consolidate_with_audit` so a crash midway
+        never leaves the system in a half-migrated state.
+
         Args:
             event: The trigger event name (e.g., "explicit", "on_commit",
                 "on_session_end")
@@ -181,6 +189,8 @@ class ReflectionEngine:
         session_memories = self.store.list_memories(layer="session")
 
         if not session_memories:
+            # No work to do — idempotent guard against double-consolidation.
+            logger.info("Reflection (%s): no session memories; skipping", event)
             return ReflectionResult(
                 triggered=True,
                 event=event,
@@ -190,41 +200,31 @@ class ReflectionEngine:
         mem_dicts = [m.to_dict() for m in session_memories]
         summary = self._generate_summary(mem_dicts)
 
-        # Ensure rules are loaded before firing triggers
-        self.engine.load()
+        # Build reflection content (empty summary still creates a record)
+        reflection_content = f"Session reflection ({event}): {summary}"
 
-        # Fire trigger rule — this performs the actual consolidation
-        consolidated_ids = self.engine.fire_trigger(
-            event, {"summary": summary}, self.store
+        # Atomically consolidate, create reflection memory, and log trigger.
+        # This replaces the old non-atomic sequence:
+        #   consolidate() -> insert_memory() -> log_trigger()
+        consolidated_ids, rid = self.store.consolidate_with_audit(
+            from_layer="session",
+            to_layer="project",
+            reflection_content=reflection_content,
+            reflection_source="reflection",
+            event=event,
+            action="reflection_consolidate",
         )
 
-        # If the trigger didn't match any rule patterns, fall back to
-        # default session -> project consolidation so reflection always
-        # does something useful.
-        if not consolidated_ids:
-            consolidated_ids = self.store.consolidate("session", "project")
-
-        # Create a reflection memory in the project layer with the summary
         new_memories: List[dict] = []
-        if summary:
-            rid = self.store.insert_memory(
-                layer="project",
-                content=f"Session reflection ({event}): {summary}",
-                source="reflection",
-                confidence=0.9,
-                tags=["reflection", event, "auto-consolidated"],
-            )
+        if rid:
             new_memories.append(
                 {
                     "id": rid,
                     "layer": "project",
-                    "content": summary,
+                    "content": reflection_content,
                     "source": "reflection",
                 }
             )
-
-        # Log trigger execution for audit trail
-        self.store.log_trigger(event, "reflection_consolidate", consolidated_ids)
 
         return ReflectionResult(
             triggered=True,
@@ -253,7 +253,7 @@ class ReflectionEngine:
 
         if self.llm_client is not None:
             try:
-                lines = [f"- {m.get('content', '')}" for m in memories]
+                lines = [f"- {sanitize_text(m.get('content', ''))}" for m in memories]
                 prompt = (
                     "Summarize the following session memories into a concise "
                     "paragraph (2-3 sentences) capturing what was accomplished:\n\n"
@@ -262,7 +262,8 @@ class ReflectionEngine:
                 summary = self.llm_client(prompt)
                 if summary and isinstance(summary, str):
                     return summary.strip()
-            except Exception:
+            except Exception as exc:
+                logger.warning("LLM summary generation failed: %s", exc)
                 # LLM failed — fall through to heuristic
                 pass
 

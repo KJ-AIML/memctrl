@@ -12,10 +12,14 @@ sub_nodes[]}. We replace page references with memory metadata.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
+from memctrl.sanitize import sanitize_text
 from memctrl.store import TreeNode
+
+logger = logging.getLogger("memctrl.tree")
 
 # Type alias for async LLM callable
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
@@ -197,11 +201,13 @@ class MemoryTreeBuilder:
         try:
             response = await self.llm_client(prompt, json_mode=True)
             clusters = self._parse_clusters(response)
-        except Exception:
+        except Exception as exc:
+            logger.warning("LLM clustering failed for layer '%s': %s", layer, exc)
             clusters = []
 
         if not clusters:
             # Fallback: one cluster per memory
+            logger.info("Using keyword fallback for layer '%s' (%d memories)", layer, len(memories))
             return self._cluster_fallback(layer, memories)
 
         # Build cluster nodes
@@ -253,7 +259,7 @@ class MemoryTreeBuilder:
     def _build_cluster_prompt(self, layer: str, memories: List[dict]) -> str:
         """Build LLM prompt for clustering memories."""
         mem_lines = "\n".join(
-            f"  [{i}] id={m['id']} | {m['content'][:200]}"
+            f"  [{i}] id={m['id']} | {sanitize_text(m['content'])[:200]}"
             for i, m in enumerate(memories)
         )
         return (

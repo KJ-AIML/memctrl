@@ -786,3 +786,69 @@ def test_to_dict_contains_all_sources():
     assert d["total_memories_searched"] == 20
     assert d["retrieval_method"] == "hybrid"
     assert d["tree_version"] == 3
+
+
+# ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+
+
+def test_provenance_tracker_persists_to_store():
+    import os
+    import tempfile
+
+    from memctrl.store import MemoryStore
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    store = MemoryStore(db_path)
+    tracker = ProvenanceTracker(store=store, persist=True, max_history=10)
+
+    tracker.record_retrieval(
+        query="what is our stack?",
+        results=[
+            {
+                "id": "m1",
+                "content": "we use FastAPI",
+                "layer": "project",
+                "source": "explicit",
+                "confidence": 1.0,
+            }
+        ],
+        method="keyword",
+        tree_version=2,
+    )
+
+    # In-memory history
+    assert len(tracker.get_history()) == 1
+
+    # SQLite persistence
+    records = store.get_provenance(limit=10)
+    assert len(records) == 1
+    assert records[0]["query"] == "what is our stack?"
+
+    os.unlink(db_path)
+
+
+def test_provenance_tracker_persist_false_skips_db():
+    import os
+    import tempfile
+
+    from memctrl.store import MemoryStore
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    store = MemoryStore(db_path)
+    tracker = ProvenanceTracker(store=store, persist=False, max_history=10)
+
+    tracker.record_retrieval(
+        query="q",
+        results=[{"id": "m1", "content": "c", "layer": "project", "source": "explicit", "confidence": 1.0}],
+        method="keyword",
+        tree_version=1,
+    )
+
+    records = store.get_provenance(limit=10)
+    assert len(records) == 0
+
+    os.unlink(db_path)

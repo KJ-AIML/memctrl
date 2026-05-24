@@ -399,3 +399,202 @@ def test_triggerlog_to_dict():
     d = log.to_dict()
     assert d["event"] == "on_commit"
     assert d["memories_affected"] == ["m1"]
+
+
+# ---------------------------------------------------------------------------
+# Atomic consolidation with audit
+# ---------------------------------------------------------------------------
+
+
+def test_consolidate_with_audit_moves_and_reflects(store):
+    m1 = store.insert_memory("session", "discussed auth", "test")
+    m2 = store.insert_memory("session", "chose FastAPI", "test")
+
+    consolidated_ids, rid = store.consolidate_with_audit(
+        from_layer="session",
+        to_layer="project",
+        reflection_content="Session reflection (explicit): worked on auth",
+        reflection_source="reflection",
+        event="explicit",
+        action="reflection_consolidate",
+    )
+
+    assert set(consolidated_ids) == {m1, m2}
+    assert rid is not None
+
+    # Memories moved to project
+    for mid in [m1, m2]:
+        mem = store.get_memory(mid)
+        assert mem.layer == "project"
+
+    # Reflection memory created
+    rmem = store.get_memory(rid)
+    assert rmem.layer == "project"
+    assert "worked on auth" in rmem.content
+    assert rmem.source == "reflection"
+
+    # Trigger logged
+    logs = store.get_trigger_log(limit=10)
+    assert any(l.event == "explicit" for l in logs)
+
+
+def test_consolidate_with_audit_empty_session(store):
+    consolidated_ids, rid = store.consolidate_with_audit(
+        from_layer="session",
+        to_layer="project",
+        reflection_content="No work done",
+        reflection_source="reflection",
+        event="explicit",
+        action="reflection_consolidate",
+    )
+    assert consolidated_ids == []
+    assert rid is None
+
+
+# ---------------------------------------------------------------------------
+# Provenance persistence
+# ---------------------------------------------------------------------------
+
+
+def test_save_and_get_provenance(store):
+    pid = store.save_provenance(
+        {
+            "query": "what is our stack?",
+            "timestamp": datetime.now().isoformat(),
+            "method": "keyword",
+            "tree_version": 3,
+            "total_memories_searched": 12,
+            "avg_confidence": 0.85,
+            "sources": [
+                {"memory_id": "m1", "layer": "project", "confidence": 1.0}
+            ],
+        }
+    )
+    assert pid
+
+    records = store.get_provenance(limit=10)
+    assert len(records) == 1
+    assert records[0]["query"] == "what is our stack?"
+    assert records[0]["avg_confidence"] == 0.85
+    assert len(records[0]["sources"]) == 1
+
+
+def test_clear_provenance(store):
+    store.save_provenance({"query": "q1", "sources": []})
+    store.clear_provenance()
+    assert store.get_provenance() == []
+
+
+# ---------------------------------------------------------------------------
+# OTel span persistence
+# ---------------------------------------------------------------------------
+
+
+def test_save_and_get_otel_spans(store):
+    sid = store.save_otel_span(
+        {
+            "trace_id": "t1",
+            "span_id": "s1",
+            "operation": "store",
+            "timestamp": 1700000000.0,
+            "duration_ms": 5.0,
+            "memory_id": "m1",
+            "layer": "project",
+            "status": "ok",
+            "attributes": {"content": "we use FastAPI"},
+            "service_name": "memctrl",
+        }
+    )
+    assert sid
+
+    spans = store.get_otel_spans(limit=10)
+    assert len(spans) == 1
+    assert spans[0]["operation"] == "store"
+    assert spans[0]["attributes"]["content"] == "we use FastAPI"
+
+
+def test_get_otel_spans_by_trace_id(store):
+    store.save_otel_span(
+        {
+            "trace_id": "trace-a",
+            "span_id": "s1",
+            "operation": "store",
+            "timestamp": 1.0,
+            "duration_ms": 1.0,
+            "status": "ok",
+            "service_name": "memctrl",
+        }
+    )
+    store.save_otel_span(
+        {
+            "trace_id": "trace-b",
+            "span_id": "s2",
+            "operation": "retrieve",
+            "timestamp": 2.0,
+            "duration_ms": 1.0,
+            "status": "ok",
+            "service_name": "memctrl",
+        }
+    )
+    spans = store.get_otel_spans(trace_id="trace-a")
+    assert len(spans) == 1
+    assert spans[0]["span_id"] == "s1"
+
+
+def test_prune_otel_spans(store):
+    for i in range(5):
+        store.save_otel_span(
+            {
+                "trace_id": "t1",
+                "span_id": f"s{i}",
+                "operation": "store",
+                "timestamp": float(i),
+                "duration_ms": 1.0,
+                "status": "ok",
+                "service_name": "memctrl",
+            }
+        )
+    deleted = store.prune_otel_spans(max_rows=2)
+    assert deleted == 3
+    assert len(store.get_otel_spans()) == 2
+
+
+def test_clear_otel_spans(store):
+    store.save_otel_span(
+        {
+            "trace_id": "t1",
+            "span_id": "s1",
+            "operation": "store",
+            "timestamp": 1.0,
+            "duration_ms": 1.0,
+            "status": "ok",
+            "service_name": "memctrl",
+        }
+    )
+    store.clear_otel_spans()
+    assert store.get_otel_spans() == []
+
+
+# ---------------------------------------------------------------------------
+# Stats include provenance and spans
+# ---------------------------------------------------------------------------
+
+
+def test_stats_include_new_tables(store):
+    store.save_provenance({"query": "q", "sources": []})
+    store.save_otel_span(
+        {
+            "trace_id": "t1",
+            "span_id": "s1",
+            "operation": "store",
+            "timestamp": 1.0,
+            "duration_ms": 1.0,
+            "status": "ok",
+            "service_name": "memctrl",
+        }
+    )
+    s = store.stats()
+    assert "provenance_records" in s
+    assert "otel_spans" in s
+    assert s["provenance_records"] == 1
+    assert s["otel_spans"] == 1
