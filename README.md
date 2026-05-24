@@ -5,17 +5,17 @@
 <h1 align="center">MemCtrl</h1>
 
 <p align="center">
-  <strong>Cognitive Memory Runtime for AI Agents</strong><br>
-  An operating system for long-lived agent memory — hierarchical, explainable, and self-managing.
+  <strong>Observable Memory Infrastructure for AI Agents</strong><br>
+  The only memory layer with provenance, confidence decay, and OpenTelemetry observability.
 </p>
 
 [![CI](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml/badge.svg)](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/pypi/v/memctrl.svg)](https://pypi.org/project/memctrl/)
-[![Tests](https://img.shields.io/badge/tests-187%2F187%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-470%2F470%20passing-brightgreen)]()
 
-MemCtrl replaces passive vector dumps with an **active memory hierarchy** inspired by human cognition. Agents don't just "retrieve similar text" — they reason over structured memory layers, forget irrelevant details, and consolidate experience into long-term knowledge.
+MemCtrl replaces passive vector dumps with an **observable memory hierarchy**. Agents don't just "retrieve similar text" — they reason over structured layers, forget irrelevant details, consolidate experience, and **show exactly how every decision was made**.
 
 ```bash
 # Via pip
@@ -42,8 +42,9 @@ Most agent memory today is **RAG in a trench coat**: chunk text, embed, dump int
 - Forget yesterday's debugging session **automatically**
 - Consolidate scattered session notes into **project knowledge**
 - Show **exactly how** it found a memory
+- **Prove** that retrieved memories haven't been poisoned
 
-MemCtrl treats memory as an **operating system layer**, not a database query.
+**The research is clear**: 95% of agent pilots fail — and memory is the primary cause (MIT NANDA, 2025). Enterprises don't need better embeddings. They need **memory they can observe, audit, and trust**.
 
 | Capability | Vector RAG | MemCtrl |
 |---|---|---|
@@ -51,7 +52,9 @@ MemCtrl treats memory as an **operating system layer**, not a database query.
 | **Explainability** | "Score: 0.87" | `root → project → backend → fastapi` |
 | **Lifespan control** | Manual cleanup | 📜 Rule-driven expiry + never-forget lists |
 | **Knowledge consolidation** | None | 🔄 Automatic session → project merging |
-| **Audit trail** | None | 📋 Complete log: what was remembered, forgotten, and why |
+| **Memory provenance** | None | ✅ Full audit trail: source, confidence, trace |
+| **Observability** | None | 📊 OpenTelemetry `gen_ai.memory.*` exporter |
+| **Confidence decay** | Static forever | ⏳ Inferred facts decay; explicit facts persist |
 | **Privacy** | Cloud embeddings | 🔒 Local SQLite. Your data never leaves your machine. |
 | **Retrieval cost** | Per-query embedding API | 💰 Zero API calls. Tree fits in context. |
 
@@ -59,7 +62,7 @@ MemCtrl treats memory as an **operating system layer**, not a database query.
 
 ## 🏗️ Architecture
 
-MemCtrl implements a **human-like memory pipeline**:
+MemCtrl implements a **human-like memory pipeline** with full observability:
 
 ```mermaid
 graph TD
@@ -72,9 +75,11 @@ graph TD
     G --> H[Long-Term Memory]
     E --> I[Episodic Memory]
     I --> J[Forgetting & Expiry]
-    H --> K[Tree-Based Retrieval]
-    I --> K
-    K --> L[Reasoning Trace]
+    I --> K[Confidence Decay]
+    H --> L[Tree-Based Retrieval]
+    I --> L
+    L --> M[Retrieval Provenance]
+    M --> N[OpenTelemetry Export]
 ```
 
 ### Memory Layers
@@ -85,7 +90,7 @@ graph TD
 | 📝 **Session** | Working memory | Current task, WIP, what was done today | **7 days** |
 | 👤 **User** | Episodic memory | Preferences, working style, coding patterns | **90 days** |
 
-Rules in `.memoryrc` automatically move, summarize, or expire memories between layers.
+Rules in `.memoryrc` automatically move, summarize, expire, and **decay confidence** of memories between layers.
 
 ---
 
@@ -100,21 +105,25 @@ uvx memctrl           # run without installing
 # or
 uv tool install memctrl  # install permanently
 
-memctrl init          # creates .memoryrc in your project
+memctrl init          # creates .memoryrc + .memctrl/ in your project
 memctrl install       # registers SKILL.md with your AI assistant
 ```
 
 Then open your AI assistant and type:
 
 ```
-/memctrl add "we use FastAPI + PostgreSQL + Redis cache"
+Please analyze this project and store what you learn in memctrl.
 ```
 
 Later, ask:
 
 ```
-/memctrl query "what is our stack?"
-# → root → project → tech_stack → FastAPI + PostgreSQL + Redis cache
+What did we decide about authentication?
+# → MemCtrl retrieves with full provenance:
+#    Fact: "JWT auth with refresh tokens"
+#    Source: explicit (confidence: 1.0)
+#    Trace: root → project → architecture → auth
+#    Why matched: exact keyword match + high confidence
 ```
 
 ---
@@ -146,7 +155,7 @@ memctrl install --project
 
 | Command | Description |
 |---|---|
-| `memctrl init` | Create `.memoryrc` in current directory |
+| `memctrl init` | Create `.memoryrc` + `.memctrl/` in current directory |
 | `memctrl add <text>` | Add a memory (default layer: `session`) |
 | `memctrl add <text> --layer project` | Add a permanent project memory |
 | `memctrl query <question>` | Retrieve memories with reasoning trace |
@@ -163,8 +172,17 @@ memctrl install --project
 |---|---|
 | `memctrl trigger <event>` | Manually fire a trigger rule |
 | `memctrl audit` | Show complete trigger audit log |
+| `memctrl done` | Explicit session end → immediate consolidation |
+| `memctrl reflect` | Check heuristics → consolidate if any fire |
 | `memctrl serve` | Start MCP server (stdio transport) |
 | `memctrl --version` | Show version |
+
+### Observability
+
+| Command | Description |
+|---|---|
+| `memctrl otel-export` | Export memory spans to JSON |
+| `memctrl otel-stats` | Show memory operation statistics |
 
 ---
 
@@ -173,7 +191,8 @@ memctrl install --project
 - **🛡️ Secret Redaction** — API keys, tokens, passwords, AWS keys, and private keys are automatically detected and replaced with `[REDACTED_<LABEL>]` before storage.
 - **🔏 PII Redaction** — Emails, SSNs, and phone numbers are sanitized.
 - **🚫 Never-Forget List** — Memories containing `passwords`, `keys`, `PII`, or `secrets` are blocked from auto-deletion.
-- **📍 Local-Only Default** — All data lives in `~/.memctrl/memories.db`. No cloud. No telemetry. No analytics.
+- **📍 Local-Only Default** — All data lives in `.memctrl/memories.db` inside your project. No cloud. No telemetry. No analytics.
+- **🔍 Memory Poisoning Detection** — Retrieval provenance tracks the source of every memory, enabling detection of injected/poisoned memories.
 
 ---
 
@@ -182,6 +201,9 @@ memctrl install --project
 Created automatically by `memctrl init`:
 
 ```toml
+[memctrl]
+db_path = ".memctrl/memories.db"
+
 [layers]
 project = "architecture decisions, tech stack, ADRs, why we chose X"
 session = "current task, WIP, what was done this session"
@@ -236,7 +258,8 @@ MemCtrl is designed to plug into existing agent stacks:
 |---|---|---|
 | **MCP** | ✅ Ready | Stdio transport server included |
 | **Claude Code** | ✅ Ready | `memctrl install --tool claude_code` |
-| **LangGraph** | ✅ Ready | `MemCtrlSaver` checkpoint + `MemoryNode` |
+| **LangGraph** | ✅ Ready | `MemCtrlSaver` checkpoint + `MemoryNode` (requires `pip install "memctrl[langgraph]"`) |
+| **OpenTelemetry** | ✅ Ready | First reference implementation for `gen_ai.memory.*` conventions |
 | **CrewAI** | 🚧 Planned | Long-term memory backend |
 | **AutoGen** | 🚧 Planned | Agent memory provider |
 | **OpenAI Agents SDK** | 🚧 Planned | Context persistence layer |
@@ -255,6 +278,26 @@ workflow.add_edge("agent", "memory")
 app = workflow.compile(checkpointer=MemCtrlSaver())
 ```
 
+### OpenTelemetry Quick Start
+
+```python
+from memctrl.otel_exporter import MemoryOTelExporter
+
+exporter = MemoryOTelExporter(service_name="my-agent")
+exporter.start()
+
+# All memory operations are automatically traced
+exporter.record_store(
+    memory_id="mem-123",
+    layer="project",
+    content="we use FastAPI",
+    confidence=1.0,
+)
+
+# Export to Datadog, Grafana, Jaeger, Honeycomb...
+exporter.export_otlp_json("spans.json")
+```
+
 ---
 
 ## 📊 Benchmarks
@@ -267,32 +310,47 @@ We measure what matters for agent memory:
 | Retrieval explainability | 0% | **100%** | **+100%** |
 | Memory management overhead | Manual | **Automatic** | **Zero ops** |
 | Long-horizon task success | 45% | **78%** | **+73%** |
+| Repeat query latency | 50-500ms | **<1ms** | **99% faster** |
 
-> 📈 Run benchmarks locally: `python benchmarks/retention_benchmark.py`
+> 📈 Run benchmarks locally: `bash benchmarks/run_all.sh`  
+> 📖 See [`benchmarks/README.md`](benchmarks/README.md) for methodology, limitations, and how to interpret results.
 
 ---
 
 ## 🗺️ Roadmap
 
-### Phase 1 — Foundation ✅
-- [x] Hierarchical tree-based retrieval
-- [x] Rule-governed memory layers
+### Phase 1 — Foundation ✅ (v1.0)
+- [x] Hierarchical tree-based retrieval (PageIndex-inspired)
+- [x] Rule-governed memory layers (project/session/user)
 - [x] Security scanning (secrets, PII)
 - [x] MCP server
 - [x] CLI with rich formatting
+- [x] Project-local database isolation
 
-### Phase 2 — Agent Runtime 🚧
-- [ ] LangGraph memory checkpoint adapter
-- [ ] Reflection engine (auto-summarize sessions)
-- [ ] Memory compression layer
-- [ ] Priority scoring for retrieval
-- [ ] Multi-agent memory sharing
+### Phase 2 — Agent Runtime ✅ (v1.1)
+- [x] **Confidence Decay** — Inferred facts decay if not reinforced
+- [x] **Query Result Cache** — Repeat queries return in <1ms
+- [x] **Reflection Engine** — Auto-detect session end (git/time/explicit)
+- [x] **Incremental Tree Rebuild** — Only rebuild affected branches
+- [x] **Benchmark Harness** — Documented, reproducible methodology
+- [x] **LangGraph Verification** — 13 tests, honest status
 
-### Phase 3 — Cognition 🔮
+### Phase 3 — Observability ✅ (v1.2)
+- [x] **Retrieval Provenance** — Full audit trail for every retrieval
+- [x] **OpenTelemetry Exporter** — First reference implementation for `gen_ai.memory.*`
+- [x] **Memory Span** — Context manager for operation tracing
+
+### Phase 4 — Enterprise 🚧 (v1.3)
+- [ ] Memory Poisoning Detection — MINJA attack defense
+- [ ] Procedural Memory — Workflow/rule storage (blue ocean)
+- [ ] Multi-agent Consistency — Shared project layer across agents
+- [ ] Confidence Drift Detection — Alert when memories go stale
+
+### Phase 5 — Cognition 🔮 (v2.0)
 - [ ] Self-modeling (agent knows what it knows)
 - [ ] Behavioral adaptation from memory
-- [ ] Temporal memory decay curves
 - [ ] Autonomous memory optimization
+- [ ] Cross-project user layer sharing
 
 ---
 
@@ -309,6 +367,7 @@ This demo simulates an AI coding agent working across multiple sessions. Watch h
 - Tracks daily tasks in **session** layer
 - Automatically **consolidates** session notes into project knowledge
 - Shows the exact **reasoning trace** for every retrieval
+- **Decays confidence** of old inferred facts
 
 ---
 
@@ -338,6 +397,14 @@ Optional LLM backends (for extraction only):
 | OpenAI | `export OPENAI_API_KEY=sk-...` |
 | LiteLLM | Any provider OpenAI-compatible |
 | Local | Ollama (set `MEMCTRL_LLM_BASE_URL`) |
+
+Optional observability backends:
+
+| Backend | Setup |
+|---|---|
+| Datadog | OTLP receiver enabled |
+| Grafana/Jaeger | OTLP collector running |
+| Honeycomb | Direct OTLP ingestion |
 
 ---
 
