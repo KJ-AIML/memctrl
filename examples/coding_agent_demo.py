@@ -46,7 +46,7 @@ def main() -> None:
     console.print(
         Panel.fit(
             "[bold]MemCtrl Demo[/bold]\n"
-            "Cognitive Memory Runtime for AI Agents\n"
+            "Observable Memory Infrastructure for AI Agents\n"
             f"Temp DB: {db_path}",
             border_style="green",
         )

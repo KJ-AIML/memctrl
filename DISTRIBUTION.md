@@ -189,7 +189,7 @@ Would love to hear from others building persistent agent memory. What's your app
 ## 4. Release Notes (for GitHub Release)
 
 ```markdown
-## MemCtrl v1.0.0 — Cognitive Memory Runtime for AI Agents
+## MemCtrl v1.0.0 — Observable Memory Infrastructure for AI Agents
 
 ### What's New
 

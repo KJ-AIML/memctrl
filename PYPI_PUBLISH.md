@@ -47,7 +47,7 @@ Trusted Publishing uses OpenID Connect (OIDC) — no API tokens needed.
 1. Go to https://github.com/KJ-AIML/memctrl/releases
 2. Click **"Draft a new release"**
 3. Choose tag: `v1.0.0` (create new tag)
-4. Release title: `MemCtrl v1.0.0 — Cognitive Memory Runtime`
+4. Release title: `MemCtrl v1.0.0 — Observable Memory Infrastructure`
 5. Description: copy from `DISTRIBUTION.md` → Release Notes section
 6. Click **"Publish release"**
 

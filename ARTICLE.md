@@ -64,7 +64,7 @@ Human brains don't remember every meal you ate. They remember patterns: "I usual
 
 ---
 
-## A Better Model: The Cognitive Memory Runtime
+## A Better Model: The Observable Memory Infrastructure
 
 What if agent memory worked like human memory? What if it had:
 
