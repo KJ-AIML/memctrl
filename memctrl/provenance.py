@@ -266,6 +266,10 @@ class ProvenanceTracker:
         retrieval provenance. This aggregates across operations to
         show patterns in what memories are being retrieved.
 
+        Loads from SQLite when a store was configured, ensuring the
+        report survives process restarts. Falls back to in-memory
+        history when no store is available.
+
         Args:
             query: If provided, filter to records matching this query.
                    If None, aggregate across all recorded retrievals.
@@ -274,9 +278,21 @@ class ProvenanceTracker:
             Dict with retrieval count, source breakdown, layer breakdown,
             average confidence, and method breakdown.
         """
-        records = self._history
+        records: List[dict] = []
+
+        # Load from SQLite for cross-process durability
+        if self._persist and self._store is not None:
+            try:
+                db_records = self._store.get_provenance(limit=10000)
+                records = db_records
+            except Exception:
+                records = []
+        else:
+            # In-memory only
+            records = [r.to_dict() for r in self._history]
+
         if query:
-            records = [r for r in records if r.query == query]
+            records = [r for r in records if r.get("query") == query]
 
         if not records:
             return {
@@ -289,32 +305,30 @@ class ProvenanceTracker:
                 "method_breakdown": {},
             }
 
-        all_sources: List[MemorySource] = []
+        all_sources: List[dict] = []
         for r in records:
-            all_sources.extend(r.sources)
+            all_sources.extend(r.get("sources", []))
 
         # Aggregate layer breakdown
         layer_counts: Dict[str, int] = {}
         for s in all_sources:
-            layer_counts[s.layer] = layer_counts.get(s.layer, 0) + 1
+            layer_counts[s.get("layer", "unknown")] = layer_counts.get(s.get("layer", "unknown"), 0) + 1
 
         # Aggregate source type breakdown
         source_type_counts: Dict[str, int] = {}
         for s in all_sources:
-            source_type_counts[s.source_type] = (
-                source_type_counts.get(s.source_type, 0) + 1
-            )
+            st = s.get("source_type", "unknown")
+            source_type_counts[st] = source_type_counts.get(st, 0) + 1
 
         # Aggregate method breakdown
         method_counts: Dict[str, int] = {}
         for r in records:
-            method_counts[r.retrieval_method] = (
-                method_counts.get(r.retrieval_method, 0) + 1
-            )
+            method = r.get("method") or r.get("retrieval_method", "unknown")
+            method_counts[method] = method_counts.get(method, 0) + 1
 
         # Average confidence across all sources
         avg_conf = (
-            sum(s.confidence for s in all_sources) / len(all_sources)
+            sum(s.get("confidence", 0.0) for s in all_sources) / len(all_sources)
             if all_sources
             else 0.0
         )
@@ -322,12 +336,48 @@ class ProvenanceTracker:
         return {
             "query": query,
             "retrieval_count": len(records),
-            "sources": [s.to_dict() for s in all_sources],
+            "sources": all_sources,
             "layer_breakdown": layer_counts,
             "source_type_breakdown": source_type_counts,
             "avg_confidence": avg_conf,
             "method_breakdown": method_counts,
         }
+
+    def _load_history(self) -> List[RetrievalProvenance]:
+        """Load provenance records from SQLite or return in-memory copy.
+
+        WHY: All analysis methods should work with the full durable
+        history when a store is configured, not just the recent
+        in-memory window.
+        """
+        if self._persist and self._store is not None:
+            try:
+                db_records = self._store.get_provenance(limit=10000)
+                return [
+                    RetrievalProvenance(
+                        query=r.get("query", ""),
+                        timestamp=datetime.fromisoformat(r.get("timestamp", "")),
+                        sources=[
+                            MemorySource(
+                                memory_id=s.get("memory_id", ""),
+                                content=s.get("content", ""),
+                                layer=s.get("layer", "unknown"),
+                                source_type=s.get("source_type", "unknown"),
+                                confidence=s.get("confidence", 0.0),
+                                match_reason=s.get("match_reason", ""),
+                                trace_path=s.get("trace_path", []),
+                            )
+                            for s in r.get("sources", [])
+                        ],
+                        total_memories_searched=r.get("total_memories_searched", 0),
+                        retrieval_method=r.get("method", ""),
+                        tree_version=r.get("tree_version", 0),
+                    )
+                    for r in db_records
+                ]
+            except Exception:
+                pass
+        return list(self._history)
 
     def get_history(self) -> List[RetrievalProvenance]:
         """Get all provenance records.
@@ -335,7 +385,7 @@ class ProvenanceTracker:
         WHY: Direct access to the full history enables custom analysis
         and debugging of retrieval behavior over time.
         """
-        return list(self._history)
+        return self._load_history()
 
     def detect_low_confidence_retrievals(
         self, threshold: float = 0.5
@@ -355,7 +405,8 @@ class ProvenanceTracker:
         Returns:
             List of RetrievalProvenance records below the threshold.
         """
-        return [r for r in self._history if r.avg_confidence < threshold]
+        records = self._load_history()
+        return [r for r in records if r.avg_confidence < threshold]
 
     def detect_source_type_imbalance(
         self, ratio_threshold: float = 0.9
@@ -377,8 +428,9 @@ class ProvenanceTracker:
             Dict with the imbalanced source type and its ratio, or None
             if no imbalance is detected.
         """
+        records = self._load_history()
         all_sources: List[MemorySource] = []
-        for r in self._history:
+        for r in records:
             all_sources.extend(r.sources)
 
         if not all_sources:

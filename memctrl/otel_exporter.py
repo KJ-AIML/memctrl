@@ -344,6 +344,7 @@ class _TracedStore:
         """Insert a memory and record a store span."""
         start = _now()
         error_message: Optional[str] = None
+        memory_id: Optional[str] = None
         try:
             memory_id = self._store.insert_memory(*args, **kwargs)
             return memory_id
@@ -354,14 +355,8 @@ class _TracedStore:
             duration_ms = (_now() - start) * 1000
             layer = args[0] if args else kwargs.get("layer", "unknown")
             confidence = kwargs.get("confidence")
-            memory_id_for_span = None
-            # Try to get the memory_id if the call succeeded
-            if error_message is None:
-                # We don't have the ID here without capturing return value,
-                # so we record what we can
-                memory_id_for_span = None
             self._exporter.record_store(
-                memory_id=memory_id_for_span,
+                memory_id=memory_id,
                 layer=layer,
                 content=args[1] if len(args) > 1 else kwargs.get("content", ""),
                 confidence=confidence if confidence is not None else 1.0,
@@ -1029,6 +1024,10 @@ class MemoryOTelExporter:
     def get_spans_by_operation(self, operation: str) -> List[MemorySpan]:
         """Get spans filtered by operation type.
 
+        When ``db_path`` was provided at construction, this loads from
+        SQLite (survives restarts) before filtering. Otherwise returns
+        from the in-memory list.
+
         Args:
             operation: One of ``store``, ``retrieve``, ``search``,
                 ``update``, ``delete``.
@@ -1043,8 +1042,8 @@ class MemoryOTelExporter:
             raise ValueError(
                 f"Invalid operation '{operation}'. Must be one of: {VALID_OPERATIONS}"
             )
-        with self._lock:
-            return [s for s in self._spans if s.operation == operation]
+        spans = self.get_spans()
+        return [s for s in spans if s.operation == operation]
 
     def get_stats(self) -> dict:
         """Get aggregate statistics from all recorded spans.

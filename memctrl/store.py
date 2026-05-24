@@ -424,6 +424,54 @@ class MemoryStore:
                 conn.commit()
             return ids
 
+    def consolidate_and_log(
+        self,
+        from_layer: str,
+        to_layer: str,
+        event: str,
+        action: str,
+    ) -> List[str]:
+        """Atomically consolidate memories and log trigger.
+
+        Unlike ``consolidate_with_audit()``, this does NOT create a
+        reflection memory. It is intended for rule-governed transitions
+        where the trigger log is the only audit artifact needed.
+
+        Returns:
+            List of consolidated memory IDs.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM memories WHERE layer = ?", (from_layer,)
+            ).fetchall()
+            ids = [r["id"] for r in rows]
+
+            if not ids:
+                conn.commit()
+                return []
+
+            placeholders = ",".join("?" * len(ids))
+            conn.execute(
+                f"UPDATE memories SET layer = ? WHERE id IN ({placeholders})",
+                (to_layer, *ids),
+            )
+
+            lid = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO triggers_log (id, event, action, memories_affected, timestamp)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    lid,
+                    event,
+                    action,
+                    json.dumps(ids),
+                    _now_iso(),
+                ),
+            )
+
+            conn.commit()
+            return ids
+
     def consolidate_with_audit(
         self,
         from_layer: str,
@@ -625,7 +673,7 @@ class MemoryStore:
                     pid,
                     provenance.get("query", ""),
                     provenance.get("timestamp", _now_iso()),
-                    provenance.get("method", ""),
+                    provenance.get("method", provenance.get("retrieval_method", "")),
                     provenance.get("tree_version", 0),
                     provenance.get("total_memories_searched", 0),
                     provenance.get("avg_confidence", 0.0),

@@ -206,6 +206,9 @@ class RuleEngine:
         """Execute matching trigger rule. Return affected memory IDs.
 
         Parse actions like 'consolidate session -> project'.
+        Consolidation and trigger logging happen atomically in a single
+        SQLite transaction so a crash mid-operation never leaves
+        half-migrated state.
         """
         matched_ids: List[str] = []
 
@@ -214,10 +217,8 @@ class RuleEngine:
             if event.lower() in pattern.lower():
                 parsed = self._parse_action(action)
                 if parsed:
-                    ids = self._execute_action(parsed, context, store)
+                    ids = self._execute_action(parsed, context, store, event, action)
                     matched_ids.extend(ids)
-                    # Log trigger execution
-                    store.log_trigger(event, action, ids)
 
         return matched_ids
 
@@ -246,13 +247,25 @@ class RuleEngine:
 
         return {"verb": "unknown", "raw": action}
 
-    def _execute_action(self, parsed: dict, context: dict, store) -> List[str]:
+    def _execute_action(
+        self,
+        parsed: dict,
+        context: dict,
+        store,
+        event: str,
+        action: str,
+    ) -> List[str]:
         verb = parsed.get("verb", "")
         if verb == "consolidate":
-            return store.consolidate(parsed["from"], parsed["to"])
+            # Atomic: move memories + log trigger in one transaction
+            return store.consolidate_and_log(
+                parsed["from"], parsed["to"], event, action
+            )
         elif verb == "summarize":
-            # For now: consolidate + mark as summarized
-            return store.consolidate(parsed["from"], parsed["to"])
+            # For now: consolidate + mark as summarized (also atomic)
+            return store.consolidate_and_log(
+                parsed["from"], parsed["to"], event, action
+            )
         elif verb == "extract":
             # Extract is handled by extractor module
             return []
