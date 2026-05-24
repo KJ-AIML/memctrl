@@ -29,10 +29,19 @@ class MemoryTreeBuilder:
         2. Within each layer, use LLM to cluster memories into semantic groups
         3. Each cluster becomes a tree node with LLM-generated summary
         4. Leaf nodes contain individual memory facts
+
+    Incremental rebuild:
+        - Cache built layer nodes to avoid full rebuilds
+        - Rebuild only the affected layer when memories change
+        - O(branch_size) not O(total_memories) per change
     """
 
     def __init__(self, llm_client: Optional[LLMCallable] = None):
         self.llm_client = llm_client
+        # Cache for incremental rebuilds: layer_name -> TreeNode
+        self._layer_cache: Dict[str, TreeNode] = {}
+        # Track memory count per layer for cache invalidation
+        self._layer_counts: Dict[str, int] = {}
 
     # --- Public API ---
 
@@ -41,8 +50,12 @@ class MemoryTreeBuilder:
 
         memories: list of dicts with keys: id, layer, content, confidence
         Returns root TreeNode with layer children.
+
+        Also populates the layer cache for subsequent incremental rebuilds.
         """
         if not memories:
+            self._layer_cache.clear()
+            self._layer_counts.clear()
             return TreeNode(
                 id="root",
                 title="Memory Tree",
@@ -54,12 +67,17 @@ class MemoryTreeBuilder:
         by_layer = self._group_by_layer(memories)
 
         # 2. Build layer nodes (with LLM clustering inside each)
+        # Also cache for incremental rebuilds
+        self._layer_cache.clear()
+        self._layer_counts.clear()
         layer_nodes: List[TreeNode] = []
         for layer_name, mems in by_layer.items():
             if self.llm_client:
                 node = await self._cluster_with_llm(layer_name, mems)
             else:
                 node = self._cluster_fallback(layer_name, mems)
+            self._layer_cache[layer_name] = node
+            self._layer_counts[layer_name] = len(mems)
             layer_nodes.append(node)
 
         # 3. Build root
@@ -72,6 +90,94 @@ class MemoryTreeBuilder:
             children=layer_nodes,
         )
         return root
+
+    # --- Incremental rebuild ---
+
+    async def build_tree_incremental(
+        self,
+        memories: List[dict],
+        changed_layer: Optional[str] = None,
+    ) -> TreeNode:
+        """Build tree, reusing cached layer nodes when possible.
+
+        If changed_layer is specified, only that layer's branch is rebuilt.
+        Other layers use cached nodes from the previous build.
+
+        This reduces cost from O(total_memories) to O(branch_size) when
+        only a single layer changes (the common case).
+
+        Args:
+            memories: Full list of memory dicts
+            changed_layer: Which layer changed (project/session/user)
+                           If None, performs full rebuild.
+
+        Returns:
+            Root TreeNode with layer children
+        """
+        if not memories:
+            self._layer_cache.clear()
+            self._layer_counts.clear()
+            return TreeNode(
+                id="root",
+                title="Memory Tree",
+                layer="root",
+                summary="Empty memory store",
+            )
+
+        by_layer = self._group_by_layer(memories)
+
+        # If no specific layer changed, rebuild all with caching
+        if changed_layer is None or changed_layer not in by_layer:
+            return await self.build_tree(memories)
+
+        # Rebuild only the changed layer
+        layer_nodes: List[TreeNode] = []
+        for layer_name, mems in by_layer.items():
+            if layer_name == changed_layer:
+                # Rebuild this layer
+                if self.llm_client:
+                    node = await self._cluster_with_llm(layer_name, mems)
+                else:
+                    node = self._cluster_fallback(layer_name, mems)
+                self._layer_cache[layer_name] = node
+                self._layer_counts[layer_name] = len(mems)
+            elif layer_name in self._layer_cache:
+                # Check if count changed (defensive)
+                cached_count = self._layer_counts.get(layer_name, 0)
+                if cached_count != len(mems):
+                    # Count mismatch — rebuild this layer too
+                    if self.llm_client:
+                        node = await self._cluster_with_llm(layer_name, mems)
+                    else:
+                        node = self._cluster_fallback(layer_name, mems)
+                    self._layer_cache[layer_name] = node
+                    self._layer_counts[layer_name] = len(mems)
+                else:
+                    node = self._layer_cache[layer_name]
+            else:
+                # New layer — build and cache
+                if self.llm_client:
+                    node = await self._cluster_with_llm(layer_name, mems)
+                else:
+                    node = self._cluster_fallback(layer_name, mems)
+                self._layer_cache[layer_name] = node
+                self._layer_counts[layer_name] = len(mems)
+            layer_nodes.append(node)
+
+        root = TreeNode(
+            id="root",
+            title="Memory Tree",
+            layer="root",
+            summary=f"Root node with {len(layer_nodes)} layers, "
+            f"{len(memories)} total memories (incremental: {changed_layer} rebuilt)",
+            children=layer_nodes,
+        )
+        return root
+
+    def invalidate_cache(self) -> None:
+        """Clear the layer cache. Call this when tree structure may be stale."""
+        self._layer_cache.clear()
+        self._layer_counts.clear()
 
     # --- Grouping ---
 

@@ -319,6 +319,43 @@ class MemoryStore:
             conn.commit()
             return cur.rowcount > 0
 
+    def update_memory_confidence(self, id: str, new_confidence: float) -> bool:
+        """Update the confidence score of a memory. Returns True if found."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE memories SET confidence = ? WHERE id = ?",
+                (new_confidence, id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def get_memories_below_confidence(
+        self, threshold: float, layer: Optional[str] = None
+    ) -> List[Memory]:
+        """Get all memories with confidence < threshold, optionally filtered by layer."""
+        with self._connect() as conn:
+            if layer:
+                rows = conn.execute(
+                    "SELECT * FROM memories WHERE confidence < ? AND layer = ?",
+                    (threshold, layer),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM memories WHERE confidence < ?",
+                    (threshold,),
+                ).fetchall()
+            return [Memory.from_row(r) for r in rows]
+
+    def update_memory_timestamp(self, id: str) -> bool:
+        """Update created_at to now (used when a memory is reinforced)."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE memories SET created_at = ? WHERE id = ?",
+                (_now_iso(), id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
     # --- Expiration ---
 
     def expire_old_memories(self) -> int:
