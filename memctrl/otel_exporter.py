@@ -549,6 +549,7 @@ class MemoryOTelExporter:
         self._otel_exporter: Any = None
         self._otel_tracer: Any = None
         self._span_count: int = 0  # approximate counter for pruning
+        self._tables_ensured: bool = False  # lazy DDL guard
 
     def start(self) -> None:
         """Start collecting spans.
@@ -658,44 +659,69 @@ class MemoryOTelExporter:
 
         return span
 
+    def _db_connect(self):
+        """Open SQLite with the same durability settings as MemoryStore.
+
+        WHY: Raw ``sqlite3.connect(path)`` uses default settings
+        (DELETE journal, 0s timeout) which conflict with WAL mode
+        and cause instant lock failures. This helper replicates the
+        store's configuration for consistency.
+        """
+        conn = sqlite3.connect(self._db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
+
+    def _ensure_otel_tables(self, conn) -> None:
+        """Create otel_spans table and indexes if they don't exist.
+
+        WHY: DDL is expensive and holds an exclusive schema lock.
+        We run it once per process lifetime, guarded by a flag.
+        The table may already exist (created by MemoryStore._init_db()).
+        """
+        if self._tables_ensured:
+            return
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS otel_spans (
+                id          TEXT PRIMARY KEY,
+                trace_id    TEXT NOT NULL,
+                span_id     TEXT NOT NULL,
+                operation   TEXT NOT NULL,
+                timestamp   REAL NOT NULL,
+                duration_ms REAL NOT NULL,
+                memory_id   TEXT,
+                layer       TEXT,
+                memory_type TEXT,
+                confidence  REAL,
+                query       TEXT,
+                top_k       INTEGER,
+                results_count INTEGER,
+                status      TEXT NOT NULL,
+                error_message TEXT,
+                attributes_json TEXT,
+                service_name TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            """CREATE INDEX IF NOT EXISTS idx_otel_spans_trace
+               ON otel_spans(trace_id)"""
+        )
+        conn.execute(
+            """CREATE INDEX IF NOT EXISTS idx_otel_spans_op
+               ON otel_spans(operation)"""
+        )
+        self._tables_ensured = True
+
     def _persist_span(self, span: MemorySpan) -> None:
         """Write a single span to SQLite.
 
-        Uses a direct sqlite3 connection to avoid coupling to
-        MemoryStore. The ``otel_spans`` table is created lazily if
-        it does not exist.
+        Uses WAL mode and 30-second busy timeout to match
+        MemoryStore settings, preventing lock contention and
+        silent data loss.
         """
-        conn = sqlite3.connect(self._db_path)
+        conn = self._db_connect()
         try:
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS otel_spans (
-                    id          TEXT PRIMARY KEY,
-                    trace_id    TEXT NOT NULL,
-                    span_id     TEXT NOT NULL,
-                    operation   TEXT NOT NULL,
-                    timestamp   REAL NOT NULL,
-                    duration_ms REAL NOT NULL,
-                    memory_id   TEXT,
-                    layer       TEXT,
-                    memory_type TEXT,
-                    confidence  REAL,
-                    query       TEXT,
-                    top_k       INTEGER,
-                    results_count INTEGER,
-                    status      TEXT NOT NULL,
-                    error_message TEXT,
-                    attributes_json TEXT,
-                    service_name TEXT NOT NULL
-                )"""
-            )
-            conn.execute(
-                """CREATE INDEX IF NOT EXISTS idx_otel_spans_trace
-                   ON otel_spans(trace_id)"""
-            )
-            conn.execute(
-                """CREATE INDEX IF NOT EXISTS idx_otel_spans_op
-                   ON otel_spans(operation)"""
-            )
+            self._ensure_otel_tables(conn)
             sid = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO otel_spans (id, trace_id, span_id, operation,
@@ -982,7 +1008,7 @@ class MemoryOTelExporter:
         survives across exporter restarts (each restart gets a new
         trace_id, but the user expects to see previous spans).
         """
-        conn = sqlite3.connect(self._db_path)
+        conn = self._db_connect()
         try:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -1199,7 +1225,7 @@ class MemoryOTelExporter:
             self._span_count = 0
         if self._db_path is not None:
             try:
-                conn = sqlite3.connect(self._db_path)
+                conn = self._db_connect()
                 conn.execute("DELETE FROM otel_spans")
                 conn.commit()
                 conn.close()
