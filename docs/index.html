@@ -409,11 +409,13 @@
 <span class="prompt">$</span> pip install memctrl<br>
 <span class="comment"># or: uvx memctrl (no install needed)</span><br><br>
 <span class="prompt">$</span> memctrl init<br>
-<span class="comment"># Created .memoryrc</span><br><br>
+<span class="comment"># Created .memoryrc + .memctrl/memories.db</span><br><br>
 <span class="prompt">$</span> memctrl add <span class="string">"we use FastAPI + PostgreSQL"</span> --layer project<br>
 <span class="comment"># Added memory to project layer (never expires)</span><br><br>
 <span class="prompt">$</span> memctrl query <span class="string">"what is our stack?"</span><br>
-<span class="comment"># Trace: root -> project -> tech_stack -> FastAPI + PostgreSQL</span>
+<span class="comment"># Trace: root -> project -> tech_stack -> FastAPI + PostgreSQL</span><br><br>
+<span class="prompt">$</span> memctrl otel-export --output spans.json<br>
+<span class="comment"># Export memory operations to OpenTelemetry</span>
             </div>
         </div>
     </section>
@@ -451,6 +453,21 @@
                         <td>Knowledge consolidation</td>
                         <td class="cross">None</td>
                         <td class="check">Automatic session -> project merging</td>
+                    </tr>
+                    <tr>
+                        <td>Memory provenance</td>
+                        <td class="cross">None</td>
+                        <td class="check">Full audit: source, confidence, trace</td>
+                    </tr>
+                    <tr>
+                        <td>Observability</td>
+                        <td class="cross">None</td>
+                        <td class="check">OpenTelemetry gen_ai.memory.* exporter</td>
+                    </tr>
+                    <tr>
+                        <td>Confidence decay</td>
+                        <td class="cross">Static forever</td>
+                        <td class="check">Inferred facts fade if not reinforced</td>
                     </tr>
                     <tr>
                         <td>Audit trail</td>
@@ -504,15 +521,22 @@
                 <div class="arch-step">
                     <div class="num">5</div>
                     <div>
-                        <h4>Reflection & Compression</h4>
-                        <p>Auto-summarize and consolidate experience</p>
+                        <h4>Reflection & Decay</h4>
+                        <p>Auto-summarize sessions; inferred facts decay if not reinforced</p>
                     </div>
                 </div>
                 <div class="arch-step">
                     <div class="num">6</div>
                     <div>
                         <h4>Tree-Based Retrieval</h4>
-                        <p>LLM reasons over structure, not vectors</p>
+                        <p>LLM reasons over structure with provenance tracking</p>
+                    </div>
+                </div>
+                <div class="arch-step">
+                    <div class="num">7</div>
+                    <div>
+                        <h4>OpenTelemetry Export</h4>
+                        <p>Export memory operations to any OTel-compatible backend</p>
                     </div>
                 </div>
             </div>
@@ -565,6 +589,16 @@
                         <div class="bench-bar bar-memctrl" style="width: 78%"></div>
                     </div>
                 </div>
+                <div class="bench-row">
+                    <div class="bench-header">
+                        <span>Repeat Query Latency</span>
+                        <span style="color: var(--text-dim)">Baseline 50-500ms &rarr; MemCtrl &lt;1ms</span>
+                    </div>
+                    <div class="bench-bar-bg">
+                        <div class="bench-bar bar-baseline" style="width: 80%"></div>
+                        <div class="bench-bar bar-memctrl" style="width: 2%"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -594,6 +628,21 @@
                     <div class="icon">T</div>
                     <h3>Trace Retrieval</h3>
                     <p>Every answer includes the exact reasoning path taken through the memory tree. Fully explainable.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">D</div>
+                    <h3>Confidence Decay</h3>
+                    <p>Inferred facts gradually lose confidence unless reinforced. Explicit facts persist forever. No stale memory pollution.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">P</div>
+                    <h3>Retrieval Provenance</h3>
+                    <p>Every retrieved memory carries a full audit trail: source, confidence, match reason, and trace path.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="icon">O</div>
+                    <h3>OpenTelemetry</h3>
+                    <p>First reference implementation for gen_ai.memory.* conventions. Export to Datadog, Grafana, Jaeger.</p>
                 </div>
                 <div class="feature-card">
                     <div class="icon">A</div>
