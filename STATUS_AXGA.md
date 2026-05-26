@@ -50,12 +50,15 @@ version    ✓
 - Auto-decay: fires automatically on `query` and `add`
 - Secret redaction: `add` sanitizes before DB write
 - WAL checkpoint: prevents unbounded `.db-wal` growth
+- **MCP server: stdio transport works, responds to init + tool calls**
 
 ---
 
-## ⚠️ Known Pre-existing Issue
+## ⚠️ Known Pre-existing Issues
 
-`serve` has an MCP server bug (`async for` on Server object) in `mcp_server.py` — NOT introduced by these fixes. The CLI command starts correctly; the underlying server implementation needs separate attention.
+None critical. The MCP server (`memctrl serve`) now works correctly with stdio transport after fixing the `stdio_server()` call signature.
+
+Minor: `mcp_server.py` uses `host`/`port` in `serve_mcp()` docstring but these parameters were removed since stdio transport doesn't use them.
 
 ---
 
