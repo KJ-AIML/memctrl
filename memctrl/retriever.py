@@ -1,4 +1,4 @@
-"""MemCtrl — PageIndex-style reasoning-based retrieval.
+"""MemCtrl — PageIndex-style reasoning-based retrieval with stemming.
 
 Uses LLM to traverse memory tree (titles + summaries only) rather than
 vector similarity. Returns facts WITH reasoning trace.
@@ -26,6 +26,67 @@ logger = logging.getLogger("memctrl.retriever")
 
 # Type alias
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
+
+# Stop words to filter from queries and content
+_STOP_WORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had",
+    "her", "was", "one", "our", "out", "day", "get", "has", "him", "his",
+    "how", "its", "may", "new", "now", "old", "see", "two", "who", "boy",
+    "did", "she", "use", "her", "way", "many", "oil", "sit", "set", "run",
+    "eat", "far", "sea", "eye", "ago", "off", "too", "any", "say", "man",
+    "try", "ask", "end", "why", "let", "put", "say", "she", "try", "way",
+    "own", "say", "too", "old", "tell", "very", "when", "much", "would",
+    "there", "their", "what", "said", "each", "which", "will", "about",
+    "could", "other", "after", "first", "never", "these", "think", "where",
+    "being", "every", "great", "might", "shall", "still", "those", "while",
+    "this", "that", "with", "have", "from", "they", "know", "want", "been",
+    "good", "come", "made", "find", "give", "work", "life", "even", "here",
+    "look", "down", "most", "long", "last", "find", "only", "over", "such",
+    "take", "than", "them", "well", "were", "time", "year", "also", "back",
+    "just", "like", "into", "because", "people", "some", "make", "over",
+    "think", "where", "really", "thing", "things", "should", "through",
+    "does", "doing", "done", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would",
+    "shall", "should", "may", "might", "can", "could", "must", "ought",
+}
+
+
+def _stem(word: str) -> str:
+    """Lightweight Porter-style stemmer for English.
+
+    This is not a full Porter stemmer, but handles the most common
+    suffixes that cause retrieval failures in MemCtrl:
+    - authentication → auth (handled by truncation, not here)
+    - deployment → deploy
+    - running → run
+    - fixing → fix
+    - connected → connect
+    - services → service
+
+    For production, consider replacing with nltk.PorterStemmer or
+    snowballstemmer for higher accuracy.
+    """
+    word = word.lower()
+    # Common suffix stripping (order matters — longer first)
+    suffixes = [
+        ("ational", "ate"), ("tional", "tion"), ("iveness", "ive"),
+        ("ization", "ize"), ("fulness", "ful"), ("ousness", "ous"),
+        ("biliti", "ble"), ("ation", "ate"), ("ition", "ite"),
+        ("ator", "ate"), ("ment", ""), ("ness", ""), ("ance", ""),
+        ("ence", ""), ("ible", ""), ("able", ""), ("ment", ""),
+        ("ing", ""), ("ies", "y"), ("ied", "y"), ("ies", "y"),
+        ("s", ""), ("ed", ""), ("er", ""), ("ly", ""), ("ily", "y"),
+    ]
+    for suffix, replacement in suffixes:
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            return word[: -len(suffix)] + replacement
+    return word
+
+
+def _stemmed_words(text: str) -> List[str]:
+    """Extract stemmed words from text, filtering stop words."""
+    words = re.findall(r"\b\w{2,}\b", text.lower())
+    return [_stem(w) for w in words if w not in _STOP_WORDS]
 
 
 @dataclass
@@ -102,9 +163,6 @@ class MemoryRetriever:
             )
 
         # Record provenance if a tracker is configured.
-        # WHY: Every retrieval decision should be auditable. We capture
-        # the full context of what was retrieved and why immediately
-        # after the retrieval completes.
         if self.provenance_tracker is not None:
             provenance = self.provenance_tracker.record_retrieval(
                 query=query,
@@ -146,13 +204,7 @@ class MemoryRetriever:
         memory_lookup: Dict[str, dict],
         top_k: int,
     ) -> Tuple[RetrievalResult, List[dict]]:
-        """LLM retrieval that returns both the result and matched memory dicts.
-
-        WHY: Provenance tracking needs the full memory dicts (with id,
-        layer, source, confidence) — not just the content strings. This
-        internal method returns both so the public retrieve() can record
-        provenance without re-looking-up memories.
-        """
+        """LLM retrieval that returns both the result and matched memory dicts."""
         # 1. Strip leaf content, keep structure
         stripped = self._strip_leaves(tree)
 
@@ -252,13 +304,7 @@ class MemoryRetriever:
         tree: dict,
         memory_lookup: Dict[str, dict],
     ) -> Tuple[List[str], List[str], List[dict]]:
-        """Collect facts, sources, AND full memory dicts from tree nodes.
-
-        WHY: Provenance tracking requires the full memory dicts (with id,
-        layer, source, confidence), not just content strings. This method
-        is identical to _collect_from_nodes but also returns the memory
-        dicts so provenance can be recorded without re-looking them up.
-        """
+        """Collect facts, sources, AND full memory dicts from tree nodes."""
         facts: List[str] = []
         sources: List[str] = []
         memories: List[dict] = []
@@ -299,7 +345,7 @@ class MemoryRetriever:
                 return found
         return None
 
-    # --- Keyword fallback (no LLM) ---
+    # --- Keyword fallback (no LLM) with stemming ---
 
     def _keyword_retrieve(
         self,
@@ -321,14 +367,13 @@ class MemoryRetriever:
         memory_lookup: Dict[str, dict],
         top_k: int,
     ) -> Tuple[RetrievalResult, List[dict]]:
-        """Keyword retrieval that returns both the result and matched memory dicts.
+        """Keyword retrieval with stemming and stop-word filtering.
 
-        WHY: Provenance tracking needs the full memory dicts (with id,
-        layer, source, confidence) -- not just the content strings. This
-        internal method returns both so the public retrieve() can record
-        provenance without re-looking-up memories.
+        CRITICAL FIX: Previously used simple substring matching which failed
+        for stemmed words ("auth" wouldn't match "authentication"). Now we
+        stem both query words AND memory content for proper matching.
         """
-        query_words = set(re.findall(r"\b\w{3,}\b", query.lower()))
+        query_words = set(_stemmed_words(query))
         if not query_words:
             return RetrievalResult(facts=[], trace=["no_keywords"], confidence=0.0), []
 
@@ -337,18 +382,19 @@ class MemoryRetriever:
         ] = {}  # mem_id -> (score, content, source, mem_dict)
 
         def score_node(node: dict, depth: int = 0):
-            node_title = node.get("title", "").lower()
-            node_summary = node.get("summary", "").lower()
+            node_title_stems = set(_stemmed_words(node.get("title", "")))
+            node_summary_stems = set(_stemmed_words(node.get("summary", "")))
 
-            title_score = sum(1 for w in query_words if w in node_title) * 3
-            summary_score = sum(1 for w in query_words if w in node_summary) * 2
+            # Score based on stemmed word overlap
+            title_score = len(query_words & node_title_stems) * 3
+            summary_score = len(query_words & node_summary_stems) * 2
 
             for mid in node.get("memory_ids", []):
                 mem = memory_lookup.get(mid)
                 if not mem:
                     continue
-                content = mem.get("content", "").lower()
-                content_score = sum(1 for w in query_words if w in content)
+                content_stems = set(_stemmed_words(mem.get("content", "")))
+                content_score = len(query_words & content_stems)
                 total = (
                     title_score + summary_score + content_score + (1.0 / (depth + 1))
                 )

@@ -23,19 +23,39 @@ from rich.tree import Tree as RichTree
 
 from memctrl import __version__
 from memctrl.cache import QueryCache
+from memctrl.llm_client import create_llm_client
 from memctrl.provenance import ProvenanceTracker
 from memctrl.span import SpanTracker
 
-# Module-level cache instance — shared across CLI invocations in the same process.
-# WHY: A single cache ensures that repeat queries within the same process
-# (e.g., follow-up questions, re-queries) benefit from caching without
-# requiring the user to manage cache state.
-_query_cache = QueryCache()
+
+# ---------------------------------------------------------------------------
+# Cache factory (persistent across CLI invocations)
+# ---------------------------------------------------------------------------
+
+def _get_cache():
+    """Get or create QueryCache with persistent SQLite storage.
+
+    WHY: The module-level cache is fresh per process. By backing it with
+    SQLite, repeat queries across separate CLI invocations hit cache too.
+    """
+    store = _get_store()
+    db_dir = Path(store.db_path).parent
+    cache_db = str(db_dir / "query_cache.db")
+    return QueryCache(db_path=cache_db)
+
+
+# ---------------------------------------------------------------------------
+# LLM client factory
+# ---------------------------------------------------------------------------
+
+def _get_llm_client(provider: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None):
+    """Create LLM client from CLI flags or environment."""
+    return create_llm_client(provider=provider, model=model, api_key=api_key)
+
 
 # ---------------------------------------------------------------------------
 # Provenance tracker factory
 # ---------------------------------------------------------------------------
-
 
 def _get_provenance_tracker():
     """Get a ProvenanceTracker backed by SQLite for cross-process persistence.
@@ -47,6 +67,7 @@ def _get_provenance_tracker():
     from memctrl.provenance import ProvenanceTracker
     store = _get_store()
     return ProvenanceTracker(store=store, persist=True)
+
 
 app = typer.Typer(
     name="memctrl",
@@ -175,12 +196,20 @@ def add(
     content: str = typer.Argument(..., help="Memory content to store"),
     layer: str = typer.Option("session", help="Layer: project/session/user"),
     source: str = typer.Option("manual", help="Source of this memory"),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
+    llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
     """Manually add a memory"""
     store = _get_store()
     mid = store.insert_memory(layer=layer, content=content, source=source)
     # Invalidate cache because the memory tree has changed.
-    _query_cache.invalidate()
+    cache = _get_cache()
+    cache.invalidate()
+    # Run decay if needed
+    from memctrl.decay import ConfidenceDecay
+    decay = ConfidenceDecay(store)
+    store.run_decay_if_needed(decay)
     console.print(
         f"[green]Added memory[/green] [dim]{mid}[/dim] to [bold]{layer}[/bold]"
     )
@@ -190,16 +219,19 @@ def add(
 def query(
     query_text: str = typer.Argument(..., help="Query to search memory"),
     layer: Optional[str] = typer.Option(None, help="Filter by layer"),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
+    llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
     """Retrieve relevant memories with reasoning trace.
 
     Uses the query result cache to skip tree building and retrieval
     for repeat queries against an unchanged memory tree.
     """
+    cache = _get_cache()
+
     # Check cache first — fast path for repeat queries.
-    # WHY: Building the tree and running retrieval is expensive (LLM call
-    # or tree traversal). For repeat queries, the cache returns in <1ms.
-    cached = _query_cache.get(query_text)
+    cached = cache.get(query_text)
     if cached is not None:
         result = cached
     else:
@@ -207,6 +239,14 @@ def query(
         store = _get_store()
         engine = _get_engine()
         engine.load()
+
+        # Run decay if needed before querying
+        from memctrl.decay import ConfidenceDecay
+        decay = ConfidenceDecay(store)
+        store.run_decay_if_needed(decay)
+
+        # WAL checkpoint to prevent unbounded growth
+        store.wal_checkpoint()
 
         memories = store.list_memories(layer=layer)
         if not memories:
@@ -216,30 +256,28 @@ def query(
         mem_dicts = [m.to_dict() for m in memories]
         memory_lookup = {m.id: m.to_dict() for m in memories}
 
-        # Build tree
+        # Build tree (with LLM if configured)
+        llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
         from memctrl.tree import MemoryTreeBuilder
-
-        builder = MemoryTreeBuilder()
+        builder = MemoryTreeBuilder(llm_client=llm_client)
 
         async def _do_query():
             tree = await builder.build_tree(mem_dicts)
             tree_dict = tree.to_dict()
 
-            # Retrieve with provenance tracking.
-            # WHY: Every retrieval decision is recorded so users can audit
-            # why specific memories were returned, enabling trust and debugging.
+            # Retrieve with provenance tracking and optional LLM
             from memctrl.retriever import MemoryRetriever
-
-            retriever = MemoryRetriever(provenance_tracker=_get_provenance_tracker())
+            retriever = MemoryRetriever(
+                llm_client=llm_client,
+                provenance_tracker=_get_provenance_tracker(),
+            )
             result = await retriever.retrieve(
                 query_text, tree_dict, memory_lookup=memory_lookup
             )
             return result
 
         result = asyncio.run(_do_query())
-
-        # Cache the result for future queries.
-        _query_cache.set(query_text, result)
+        cache.set(query_text, result)
 
     if result.facts:
         console.print(Panel(f"[bold]Query:[/bold] {query_text}", title="memctrl"))
@@ -284,7 +322,11 @@ def list_memories(
 
 
 @app.command()
-def tree():
+def tree(
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
+    llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
+):
     """Display memory tree (rich formatted)"""
     store = _get_store()
     memories = store.list_memories()
@@ -293,9 +335,9 @@ def tree():
         console.print("[yellow]No memories to display.[/yellow]")
         return
 
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
     from memctrl.tree import MemoryTreeBuilder
-
-    builder = MemoryTreeBuilder()
+    builder = MemoryTreeBuilder(llm_client=llm_client)
 
     async def _do_tree():
         mem_dicts = [m.to_dict() for m in memories]
@@ -328,8 +370,8 @@ def forget(
     store = _get_store()
     deleted = store.delete_memory(memory_id)
     if deleted:
-        # Invalidate cache because the memory tree has changed.
-        _query_cache.invalidate()
+        cache = _get_cache()
+        cache.invalidate()
         console.print(f"[green]Forgot memory[/green] [dim]{memory_id}[/dim]")
     else:
         console.print(f"[red]Memory not found:[/red] {memory_id}")
@@ -366,9 +408,9 @@ def clear(
             if store.delete_memory(mem.id):
                 deleted_any = True
 
-    # Invalidate cache only if we actually deleted something.
     if deleted_any:
-        _query_cache.invalidate()
+        cache = _get_cache()
+        cache.invalidate()
 
     console.print(f"[green]Cleared {count} memories.[/green]")
 
@@ -393,8 +435,8 @@ def trigger_cmd(
 
     ids = engine.fire_trigger(event, ctx, store)
     if ids:
-        # Invalidate cache because triggers may modify memories.
-        _query_cache.invalidate()
+        cache = _get_cache()
+        cache.invalidate()
     console.print(
         f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected"
     )
@@ -634,7 +676,11 @@ def timeline(
 
 
 @app.command()
-def done():
+def done(
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
+    llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
+):
     """Explicit session end — triggers reflection immediately
 
     This is the shorthand for "I'm done with this session". It forces
@@ -647,7 +693,8 @@ def done():
     engine = _get_engine()
     engine.load()
 
-    reflection = ReflectionEngine(store, engine=engine)
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+    reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=True)
 
     if result.triggered:
@@ -668,7 +715,11 @@ def done():
 
 
 @app.command()
-def reflect():
+def reflect(
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
+    llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
+):
     """Manual reflection — checks heuristics and consolidates if triggered
 
     Checks detection heuristics (time-based, git-based) and runs consolidation
@@ -681,7 +732,8 @@ def reflect():
     engine = _get_engine()
     engine.load()
 
-    reflection = ReflectionEngine(store, engine=engine)
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+    reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=False)
 
     if result.triggered:

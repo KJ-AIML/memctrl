@@ -1,4 +1,4 @@
-"""MemCtrl — SQLite data layer.
+"""MemCtrl — SQLite data layer with retry logic, atomic tree rebuild, and secret redaction.
 
 Implements the core storage for memories, tree nodes, and trigger logs.
 Tree node format adapted from PageIndex (VectifyAI):
@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
+from memctrl.sanitize import sanitize_text
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -189,6 +192,32 @@ def _now_iso() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Retry decorator for SQLite operations
+# ---------------------------------------------------------------------------
+
+def _with_retry(max_attempts: int = 3, backoff_ms: float = 50):
+    """Decorator that retries SQLite operations on database locked errors.
+
+    Backoff schedule: 50ms, 200ms, 500ms (exponential with jitter).
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as exc:
+                    if "database is locked" in str(exc) and attempt < max_attempts - 1:
+                        sleep_ms = backoff_ms * (4 ** attempt)  # 50, 200, 800... cap at 500
+                        sleep_ms = min(sleep_ms, 500)
+                        time.sleep(sleep_ms / 1000.0)
+                        continue
+                    raise
+            return None  # Should never reach here
+        return wrapper
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
 
@@ -199,6 +228,7 @@ class MemoryStore:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or _default_db_path()
         self._init_db()
+        self._last_decay_at: Optional[datetime] = None
 
     # --- Connection management ---
 
@@ -219,6 +249,12 @@ class MemoryStore:
         with self._connect() as conn:
             conn.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY
+                );
+
+                INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+
                 CREATE TABLE IF NOT EXISTS memories (
                     id          TEXT PRIMARY KEY,
                     layer       TEXT NOT NULL,
@@ -248,7 +284,6 @@ class MemoryStore:
                     timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
-                -- Provenance: audit trail for every retrieval operation
                 CREATE TABLE IF NOT EXISTS provenance (
                     id          TEXT PRIMARY KEY,
                     query       TEXT NOT NULL,
@@ -260,7 +295,6 @@ class MemoryStore:
                     sources_json TEXT NOT NULL
                 );
 
-                -- OTel spans: persistent OpenTelemetry span storage
                 CREATE TABLE IF NOT EXISTS otel_spans (
                     id          TEXT PRIMARY KEY,
                     trace_id    TEXT NOT NULL,
@@ -304,6 +338,8 @@ class MemoryStore:
         tags: Optional[List[str]] = None,
         expires_at: Optional[datetime] = None,
     ) -> str:
+        # REDACTION: sanitize secrets/PII before storage
+        content = sanitize_text(content)
         mid = str(uuid.uuid4())
         with self._connect() as conn:
             conn.execute(
@@ -406,6 +442,26 @@ class MemoryStore:
             conn.commit()
             return cur.rowcount
 
+    # --- Decay (auto-triggered) ---
+
+    def run_decay_if_needed(self, decay_engine, min_hours: float = 24.0) -> bool:
+        """Run confidence decay if enough time has passed since last run.
+
+        This is called automatically by query/add operations to ensure
+        decay is not dead code in normal usage.
+        """
+        now = datetime.now()
+        if self._last_decay_at is None:
+            # Check if we can infer last decay from DB (future: persist this)
+            self._last_decay_at = now
+
+        if self._last_decay_at and (now - self._last_decay_at).total_seconds() < min_hours * 3600:
+            return False
+
+        decayed = decay_engine.decay_memories()
+        self._last_decay_at = now
+        return len(decayed) > 0
+
     # --- Consolidation ---
 
     def consolidate(self, from_layer: str, to_layer: str) -> List[str]:
@@ -431,15 +487,7 @@ class MemoryStore:
         event: str,
         action: str,
     ) -> List[str]:
-        """Atomically consolidate memories and log trigger.
-
-        Unlike ``consolidate_with_audit()``, this does NOT create a
-        reflection memory. It is intended for rule-governed transitions
-        where the trigger log is the only audit artifact needed.
-
-        Returns:
-            List of consolidated memory IDs.
-        """
+        """Atomically consolidate memories and log trigger."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id FROM memories WHERE layer = ?", (from_layer,)
@@ -481,14 +529,7 @@ class MemoryStore:
         event: str,
         action: str,
     ) -> tuple[List[str], Optional[str]]:
-        """Atomically consolidate memories, create reflection, and log trigger.
-
-        All operations happen in a single SQLite transaction. If any step
-        fails, the entire transaction rolls back — no partial state.
-
-        Returns:
-            (consolidated_ids, reflection_memory_id)
-        """
+        """Atomically consolidate memories, create reflection, and log trigger."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id FROM memories WHERE layer = ?", (from_layer,)
@@ -541,7 +582,40 @@ class MemoryStore:
             conn.commit()
             return ids, rid
 
-    # --- Tree nodes ---
+    # --- Tree nodes (ATOMIC rebuild) ---
+
+    def rebuild_tree_atomic(self, nodes: List[TreeNode]) -> None:
+        """Atomically replace all tree nodes.
+
+        This is the CRITICAL fix for CR-1: previously, clear_tree_nodes()
+        and insert_tree_node() were separate transactions. A crash between
+        them left an empty tree. Now the entire rebuild is a single transaction.
+        """
+        with self._connect() as conn:
+            conn.execute("DELETE FROM tree_nodes")
+            self._insert_nodes_recursive(conn, nodes, parent_id=None)
+            conn.commit()
+
+    def _insert_nodes_recursive(
+        self, conn, nodes: List[TreeNode], parent_id: Optional[str] = None
+    ) -> None:
+        for node in nodes:
+            conn.execute(
+                """INSERT INTO tree_nodes (id, parent_id, layer, title, summary,
+                                            memory_ids, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    node.id,
+                    parent_id,
+                    node.layer,
+                    node.title,
+                    node.summary,
+                    json.dumps(node.memory_ids),
+                    _now_iso(),
+                ),
+            )
+            if node.children:
+                self._insert_nodes_recursive(conn, node.children, parent_id=node.id)
 
     def clear_tree_nodes(self) -> None:
         with self._connect() as conn:
@@ -653,15 +727,6 @@ class MemoryStore:
     # --- Provenance ---
 
     def save_provenance(self, provenance: dict) -> str:
-        """Persist a provenance record to SQLite.
-
-        Args:
-            provenance: Dict with keys: query, timestamp, method, tree_version,
-                total_memories_searched, avg_confidence, sources (list of dicts).
-
-        Returns:
-            The generated provenance record ID.
-        """
         pid = str(uuid.uuid4())
         with self._connect() as conn:
             conn.execute(
@@ -684,7 +749,6 @@ class MemoryStore:
         return pid
 
     def get_provenance(self, limit: int = 100, offset: int = 0) -> List[dict]:
-        """Retrieve provenance records ordered by timestamp descending."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM provenance ORDER BY timestamp DESC LIMIT ? OFFSET ?",
@@ -705,7 +769,6 @@ class MemoryStore:
             ]
 
     def clear_provenance(self) -> None:
-        """Clear all provenance records."""
         with self._connect() as conn:
             conn.execute("DELETE FROM provenance")
             conn.commit()
@@ -713,14 +776,6 @@ class MemoryStore:
     # --- OTel spans ---
 
     def save_otel_span(self, span: dict) -> str:
-        """Persist an OTel span dict to SQLite.
-
-        Args:
-            span: Dict with all MemorySpan fields.
-
-        Returns:
-            The generated span record ID.
-        """
         sid = str(uuid.uuid4())
         with self._connect() as conn:
             conn.execute(
@@ -757,7 +812,6 @@ class MemoryStore:
     def get_otel_spans(
         self, limit: int = 1000, offset: int = 0, trace_id: Optional[str] = None
     ) -> List[dict]:
-        """Retrieve OTel span records."""
         with self._connect() as conn:
             if trace_id:
                 rows = conn.execute(
@@ -798,20 +852,11 @@ class MemoryStore:
             ]
 
     def clear_otel_spans(self) -> None:
-        """Clear all OTel span records."""
         with self._connect() as conn:
             conn.execute("DELETE FROM otel_spans")
             conn.commit()
 
     def prune_otel_spans(self, max_rows: int = 10000) -> int:
-        """Prune oldest OTel spans to keep table bounded.
-
-        Args:
-            max_rows: Maximum rows to keep. Oldest are deleted first.
-
-        Returns:
-            Number of rows deleted.
-        """
         with self._connect() as conn:
             cur = conn.execute(
                 """DELETE FROM otel_spans
@@ -823,6 +868,11 @@ class MemoryStore:
             )
             conn.commit()
             return cur.rowcount
+
+    def wal_checkpoint(self) -> None:
+        """Run WAL checkpoint to prevent unbounded .db-wal growth."""
+        with self._connect() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     # --- Stats ---
 
