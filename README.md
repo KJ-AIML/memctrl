@@ -229,7 +229,7 @@ Hot-reload enabled: edit `.memoryrc` and changes apply immediately.
 
 ## 🧩 MCP Server
 
-MemCtrl exposes an MCP server for deep IDE integration:
+MemCtrl exposes an MCP server for deep IDE integration using **stdio transport**:
 
 ```bash
 memctrl serve
@@ -242,10 +242,18 @@ memctrl serve
 - `memctrl_tree` — Get structured tree JSON
 - `memctrl_audit` — Read the trigger log
 
-Register with Kimi Code:
+Register with Claude Code / Cursor / Kimi Code via MCP config:
 
-```bash
-kimi mcp add --transport stdio memctrl -- memctrl serve
+```json
+{
+  "mcpServers": {
+    "memctrl": {
+      "command": "memctrl",
+      "args": ["serve"],
+      "env": {}
+    }
+  }
+}
 ```
 
 ---

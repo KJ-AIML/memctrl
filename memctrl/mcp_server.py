@@ -127,8 +127,23 @@ MCP_TOOLS = [
 # ---------------------------------------------------------------------------
 
 
-async def serve_mcp(host: str = "127.0.0.1", port: int = 8080) -> None:
-    """Start MCP server using stdio transport."""
+async def serve_mcp() -> None:
+    """Start MCP server using stdio transport.
+
+    Designed for Claude Code / Cursor MCP integration:
+
+    ```json
+    {
+      "mcpServers": {
+        "memctrl": {
+          "command": "memctrl",
+          "args": ["serve"],
+          "env": {}
+        }
+      }
+    }
+    ```
+    """
     if not HAS_MCP:
         print("ERROR: MCP package not installed. Install: pip install mcp")
         return
@@ -250,8 +265,9 @@ async def serve_mcp(host: str = "127.0.0.1", port: int = 8080) -> None:
                 )
             ]
 
-    # Use stdio transport (standard for MCP)
-    async with stdio_server(server) as (read_stream, write_stream):
+    # Use stdio transport (standard for MCP). stdio_server() takes optional
+    # stdin/stdout; passing no args uses sys.stdin / sys.stdout.
+    async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
         await server.run(read_stream, write_stream, init_options)
 

@@ -24,16 +24,38 @@
 
 ---
 
-## 📊 Commit
+## 📊 Commits
 
-```bash
-git log --oneline -1
-# a2b10ff axga-hardening: atomic rebuild, retry logic, stemming, persistent cache, LLM CLI, auto-decay, secret redaction, WAL checkpoint
+- `c5635ed` — cli: add decay command, fix serve help text
+- `a2b10ff` — axga-hardening: 6 files, 1028 insertions, 166 deletions
+- `3d72979` — status summary
+
+---
+
+## 🧪 Test Results (2026-05-26)
+
+All 21 CLI commands tested and passed:
+
+```
+init       ✓  add        ✓  list       ✓  query      ✓  query(cache) ✓
+tree       ✓  heatmap    ✓  timeline   ✓  forget     ✓  trigger-cmd  ✓
+audit      ✓  provenance ✓  decay      ✓  decay(dry) ✓  reflect      ✓
+done       ✓  spans      ✓  otel-stats ✓  otel-export ✓  clear       ✓
+version    ✓
 ```
 
-**Files changed:** 6  
-**Insertions:** 1,028  
-**Deletions:** 166  
+**Verified behaviors:**
+- Query caching: 2nd identical query hits cache (no tree rebuild)
+- Stemming: "auth" matches "authentication" correctly
+- Auto-decay: fires automatically on `query` and `add`
+- Secret redaction: `add` sanitizes before DB write
+- WAL checkpoint: prevents unbounded `.db-wal` growth
+
+---
+
+## ⚠️ Known Pre-existing Issue
+
+`serve` has an MCP server bug (`async for` on Server object) in `mcp_server.py` — NOT introduced by these fixes. The CLI command starts correctly; the underlying server implementation needs separate attention.
 
 ---
 
@@ -65,8 +87,8 @@ Subagent spawning via `sessions_spawn` fails with `gateway closed (1008): pairin
 ```bash
 cd /root/.openclaw/workspace/memctrl-review
 
-# Check the commit
-git show --stat HEAD
+# Check the commits
+git log --oneline -3
 
 # Test stemming
 python -c "from memctrl.retriever import _stemmed_words; print(_stemmed_words('authentication deployment'))"
@@ -77,8 +99,11 @@ python -c "from memctrl.cache import QueryCache; c = QueryCache(db_path='/tmp/te
 
 # Check LLM client exists
 python -c "from memctrl.llm_client import create_llm_client; print('OK')"
+
+# Run full CLI test suite
+bash /tmp/test_all_cmds.sh
 ```
 
 ---
 
-**Status: P0 COMPLETE. Ready for P1/P2 or push to remote.**
+**Status: P0 COMPLETE + ALL 21 COMMANDS TESTED. Ready for P1/P2 or push to remote.**
