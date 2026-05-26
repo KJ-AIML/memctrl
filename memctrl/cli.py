@@ -416,6 +416,36 @@ def clear(
 
 
 @app.command()
+def decay(
+    dry_run: bool = typer.Option(False, help="Show what would decay without applying"),
+    threshold: float = typer.Option(0.3, help="Confidence threshold below which memories are flagged"),
+):
+    """Run confidence decay on all memories.
+
+    Reduces confidence scores of older memories based on age.
+    Memories that drop below the threshold are flagged for review.
+    """
+    store = _get_store()
+    from memctrl.decay import ConfidenceDecay
+    decay_engine = ConfidenceDecay(store)
+
+    if dry_run:
+        flagged = store.get_memories_below_confidence(threshold)
+        console.print(f"[dim]{len(flagged)} memories below confidence {threshold}[/dim]")
+        for mem in flagged[:20]:
+            console.print(f"  [yellow]{mem.id[:8]}[/yellow] {mem.confidence:.2f} {mem.content[:60]}")
+        return
+
+    decayed = decay_engine.decay_memories()
+    store._last_decay_at = __import__('datetime').datetime.now()
+    console.print(f"[green]Decayed {len(decayed)} memories[/green]")
+
+    flagged = store.get_memories_below_confidence(threshold)
+    if flagged:
+        console.print(f"[yellow]⚠ {len(flagged)} memories now below threshold {threshold}[/yellow]")
+
+
+@app.command()
 def trigger_cmd(
     event: str = typer.Argument(..., help="Event name (e.g., on_session_end)"),
     context: Optional[str] = typer.Option(None, help="JSON context string"),
@@ -868,13 +898,13 @@ def serve(
     port: int = typer.Option(8080, help="Port to run MCP server on"),
     host: str = typer.Option("127.0.0.1", help="Host to bind to"),
 ):
-    """Start MCP server"""
-    console.print(f"[green]Starting MCP server on {host}:{port}[/green]")
+    """Start MCP server (stdio-based, not HTTP)"""
+    console.print(f"[green]Starting MCP server[/green]")
     console.print("[dim]Use Ctrl+C to stop[/dim]")
 
     from memctrl.mcp_server import serve_mcp
 
-    asyncio.run(serve_mcp(host=host, port=port))
+    asyncio.run(serve_mcp())
 
 
 # ---------------------------------------------------------------------------
