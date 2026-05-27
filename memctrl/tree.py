@@ -195,7 +195,39 @@ class MemoryTreeBuilder:
     # --- LLM clustering ---
 
     async def _cluster_with_llm(self, layer: str, memories: List[dict]) -> TreeNode:
-        """Use LLM to cluster memories into 3-8 semantic groups."""
+        """Use LLM to cluster memories into semantic groups.
+
+        If there are more than 20 memories, splits into batches to keep
+        LLM prompt size bounded. Each batch is clustered independently
+        and results are merged under the layer node.
+        """
+        batch_size = 20
+        if len(memories) <= batch_size:
+            return await self._cluster_single_batch(layer, memories)
+
+        # Split into batches and cluster each one
+        batches = [
+            memories[i : i + batch_size] for i in range(0, len(memories), batch_size)
+        ]
+        batch_nodes: List[TreeNode] = []
+        for batch in batches:
+            node = await self._cluster_single_batch(layer, batch)
+            batch_nodes.append(node)
+
+        return TreeNode(
+            id=f"layer_{layer}",
+            title=layer.capitalize(),
+            layer=layer,
+            summary=f"{len(memories)} memories in layer '{layer}' (batched)",
+            memory_ids=[m["id"] for m in memories],
+            children=batch_nodes,
+            confidence=self._avg_confidence(
+                [m["id"] for m in memories], {m["id"]: m for m in memories}
+            ),
+        )
+
+    async def _cluster_single_batch(self, layer: str, memories: List[dict]) -> TreeNode:
+        """Cluster a single batch of memories with the LLM."""
         prompt = self._build_cluster_prompt(layer, memories)
 
         try:
@@ -206,9 +238,8 @@ class MemoryTreeBuilder:
             clusters = []
 
         if not clusters:
-            # Fallback: one cluster per memory
             logger.info(
-                "Using keyword fallback for layer '%s' (%d memories)",
+                "Using keyword fallback for layer '%s' batch (%d memories)",
                 layer,
                 len(memories),
             )

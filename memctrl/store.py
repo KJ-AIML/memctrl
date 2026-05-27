@@ -209,6 +209,14 @@ class MemoryStore:
         self._init_db()
         self._last_decay_at: Optional[datetime] = None
 
+    def close(self) -> None:
+        """No-op for API compatibility.
+
+        Connections are opened and closed per operation. In the future,
+        this may close a pooled connection.
+        """
+        pass
+
     # --- Connection management ---
 
     @contextmanager
