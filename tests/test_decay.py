@@ -20,6 +20,7 @@ def store():
         db_path = f.name
     s = MemoryStore(db_path)
     yield s
+    s.close()
     os.unlink(db_path)
 
 
