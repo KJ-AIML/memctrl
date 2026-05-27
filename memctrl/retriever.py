@@ -28,6 +28,19 @@ logger = logging.getLogger("memctrl.retriever")
 LLMCallable = Callable[[str, bool], Coroutine[Any, Any, str]]
 
 # Stop words to filter from queries and content
+# Common synonyms for retrieval expansion.
+# WHY: Lightweight stemmers miss derivations like "authentication" -> "auth".
+# These mappings are applied before stemming to increase recall on key
+# technical terms without requiring a full thesaurus.
+_SYNONYMS = {
+    "authentication": "auth",
+    "authenticate": "auth",
+    "deploying": "deploy",
+    "deployment": "deploy",
+    "database": "db",
+    "middleware": "middle",
+}
+
 _STOP_WORDS = {
     "the",
     "and",
@@ -254,9 +267,14 @@ def _stem(word: str) -> str:
 
 
 def _stemmed_words(text: str) -> List[str]:
-    """Extract stemmed words from text, filtering stop words."""
+    """Extract stemmed words from text, filtering stop words.
+
+    Applies synonym expansion before stemming so that technical
+    terms like "authentication" match memories containing "auth".
+    """
     words = re.findall(r"\b\w{2,}\b", text.lower())
-    return [_stem(w) for w in words if w not in _STOP_WORDS]
+    expanded = [_SYNONYMS.get(w, w) for w in words if w not in _STOP_WORDS]
+    return [_stem(w) for w in expanded]
 
 
 @dataclass
@@ -537,15 +555,27 @@ class MemoryRetriever:
         memory_lookup: Dict[str, dict],
         top_k: int,
     ) -> Tuple[RetrievalResult, List[dict]]:
-        """Keyword retrieval with stemming and stop-word filtering.
+        """Keyword retrieval with stemming, layer boost, and confidence weighting.
 
-        CRITICAL FIX: Previously used simple substring matching which failed
-        for stemmed words ("auth" wouldn't match "authentication"). Now we
-        stem both query words AND memory content for proper matching.
+        Scoring formula:
+            structural = title_overlap * 1 + summary_overlap * 1 + content_overlap * 3
+            total      = structural * layer_boost * confidence + depth_bonus
+
+        Content match is weighted highest so individual memory relevance
+        dominates coarse node-level grouping.
+
+        Layer boost prioritizes permanent knowledge over ephemeral sessions:
+            project = 2.0, user = 1.2, session = 1.0
+
+        A relative threshold (>= 0.5 * max_score) filters weak matches;
+        an absolute floor of 1.0 provides a backstop for low-variance sets.
         """
         query_words = set(_stemmed_words(query))
         if not query_words:
             return RetrievalResult(facts=[], trace=["no_keywords"], confidence=0.0), []
+
+        layer_boost = {"project": 2.0, "user": 1.2, "session": 1.0}
+        min_score_gate = 1.0
 
         scored_memories: Dict[
             str, Tuple[float, str, str, dict]
@@ -555,20 +585,31 @@ class MemoryRetriever:
             node_title_stems = set(_stemmed_words(node.get("title", "")))
             node_summary_stems = set(_stemmed_words(node.get("summary", "")))
 
-            # Score based on stemmed word overlap
-            title_score = len(query_words & node_title_stems) * 3
-            summary_score = len(query_words & node_summary_stems) * 2
+            # Structural score: node metadata helps guide but should not
+            # dominate over direct content matches.
+            title_score = len(query_words & node_title_stems) * 1
+            summary_score = len(query_words & node_summary_stems) * 1
 
             for mid in node.get("memory_ids", []):
                 mem = memory_lookup.get(mid)
                 if not mem:
                     continue
                 content_stems = set(_stemmed_words(mem.get("content", "")))
-                content_score = len(query_words & content_stems)
-                total = (
-                    title_score + summary_score + content_score + (1.0 / (depth + 1))
-                )
-                if total > 0:
+                # Content match is weighted highest so individual memory
+                # relevance dominates coarse node-level grouping.
+                content_score = len(query_words & content_stems) * 3
+                structural = title_score + summary_score + content_score
+                if structural <= 0:
+                    continue
+
+                # Apply layer boost and confidence multiplier
+                layer = mem.get("layer", "session")
+                boost = layer_boost.get(layer, 1.0)
+                confidence = mem.get("confidence", 0.5)
+                depth_bonus = 1.0 / (depth + 1)
+                total = structural * boost * confidence + depth_bonus
+
+                if total >= min_score_gate:
                     existing = scored_memories.get(mid, (0, "", "", {}))
                     if total > existing[0]:
                         scored_memories[mid] = (
@@ -583,8 +624,25 @@ class MemoryRetriever:
 
         score_node(tree)
 
-        sorted_mems = sorted(scored_memories.values(), key=lambda x: x[0], reverse=True)
-        top = sorted_mems[:top_k]
+        if not scored_memories:
+            return (
+                RetrievalResult(facts=[], trace=["root", "no_match"], confidence=0.0),
+                [],
+            )
+
+        max_score = max(s[0] for s in scored_memories.values())
+        relative_gate = max_score * 0.5
+
+        # Deduplicate by content hash and apply relative threshold
+        seen_contents: set[str] = set()
+        deduped: List[Tuple[float, str, str, dict]] = []
+        for item in sorted(scored_memories.values(), key=lambda x: x[0], reverse=True):
+            content = item[1]
+            if content not in seen_contents and item[0] >= relative_gate:
+                seen_contents.add(content)
+                deduped.append(item)
+
+        top = deduped[:top_k]
 
         if not top:
             return (
@@ -598,10 +656,11 @@ class MemoryRetriever:
         avg_score = sum(s[0] for s in top) / len(top)
         confidence = min(avg_score / 10, 1.0)  # Normalize
 
-        # Build simple trace from matched content
+        # Build trace showing layer of best match for observability
         trace = ["root", "keyword_search"]
-        if facts:
-            trace.append(facts[0][:30])
+        if matched_memories:
+            best_layer = matched_memories[0].get("layer", "unknown")
+            trace.append(best_layer)
 
         return (
             RetrievalResult(

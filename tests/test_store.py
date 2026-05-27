@@ -596,3 +596,30 @@ def test_stats_include_new_tables(store):
     assert "otel_spans" in s
     assert s["provenance_records"] == 1
     assert s["otel_spans"] == 1
+
+
+def test_concurrent_writes_dont_crash(store):
+    """Multiple threads writing simultaneously should not raise unhandled
+    OperationalError thanks to exponential backoff retry."""
+    import threading
+
+    errors = []
+    ids = []
+
+    def worker(i):
+        try:
+            mid = store.insert_memory("session", f"thread {i}", "test")
+            ids.append(mid)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(20)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(errors) == 0, f"Concurrent writes raised errors: {errors}"
+    assert len(ids) == 20
+    mems = store.list_memories()
+    assert len(mems) == 20

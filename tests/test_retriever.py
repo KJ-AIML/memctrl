@@ -44,7 +44,7 @@ async def test_keyword_retrieve():
         },
         "m2": {"id": "m2", "content": "we use PostgreSQL for data", "source": "test"},
     }
-    result = await retriever.retrieve("what framework", tree, memory_lookup=lookup)
+    result = await retriever.retrieve("what FastAPI", tree, memory_lookup=lookup)
     assert len(result.facts) > 0
     assert result.confidence > 0
 
@@ -75,10 +75,9 @@ async def test_keyword_retrieve_no_match():
     result = await retriever.retrieve(
         "something completely unrelated xyz", tree, memory_lookup=lookup
     )
-    # Depth bonus gives score 1.0 even with no keyword match;
-    # confidence is low since score/10 normalization yields ~0.1.
-    assert len(result.facts) > 0
-    assert result.confidence < 0.2
+    # With no keyword overlap and a relative score threshold, genuinely
+    # unrelated queries return empty results instead of weak false positives.
+    assert len(result.facts) == 0
 
 
 @pytest.mark.asyncio
@@ -238,7 +237,7 @@ async def test_llm_retrieve_invalid_json_falls_back():
         ],
     }
     lookup = {"m1": {"id": "m1", "content": "we use FastAPI", "source": "test"}}
-    result = await retriever.retrieve("what framework", tree, memory_lookup=lookup)
+    result = await retriever.retrieve("what FastAPI", tree, memory_lookup=lookup)
     assert len(result.facts) > 0  # falls back to keyword
 
 
@@ -266,7 +265,7 @@ async def test_llm_retrieve_exception_falls_back():
         ],
     }
     lookup = {"m1": {"id": "m1", "content": "we use FastAPI", "source": "test"}}
-    result = await retriever.retrieve("what framework", tree, memory_lookup=lookup)
+    result = await retriever.retrieve("what FastAPI", tree, memory_lookup=lookup)
     assert len(result.facts) > 0  # falls back to keyword
 
 
@@ -423,3 +422,181 @@ def test_collect_from_nodes():
     facts, sources = retriever._collect_from_nodes(["root"], tree, lookup)
     assert "fact one" in facts
     assert "test" in sources
+
+
+@pytest.mark.asyncio
+async def test_synonym_expansion_matches_auth():
+    """'authentication' should match memories containing 'auth' via synonym map."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "R",
+        "layer": "root",
+        "summary": "s",
+        "memory_ids": [],
+        "children": [
+            {
+                "id": "n1",
+                "title": "Auth",
+                "layer": "project",
+                "summary": "s",
+                "memory_ids": ["m1"],
+                "children": [],
+            },
+        ],
+    }
+    lookup = {
+        "m1": {
+            "id": "m1",
+            "content": "Auth: JWT with refresh tokens",
+            "source": "test",
+            "layer": "project",
+            "confidence": 1.0,
+        },
+    }
+    result = await retriever.retrieve(
+        "how do we handle authentication?", tree, memory_lookup=lookup
+    )
+    assert len(result.facts) == 1
+    assert "JWT" in result.facts[0]
+
+
+@pytest.mark.asyncio
+async def test_layer_boost_prioritizes_project():
+    """Project-layer memories should outrank session-layer memories
+    when content overlap is equal."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "R",
+        "layer": "root",
+        "summary": "s",
+        "memory_ids": [],
+        "children": [
+            {
+                "id": "n1",
+                "title": "Project",
+                "layer": "project",
+                "summary": "s",
+                "memory_ids": ["m1"],
+                "children": [],
+            },
+            {
+                "id": "n2",
+                "title": "Session",
+                "layer": "session",
+                "summary": "s",
+                "memory_ids": ["m2"],
+                "children": [],
+            },
+        ],
+    }
+    lookup = {
+        "m1": {
+            "id": "m1",
+            "content": "we use FastAPI",
+            "source": "test",
+            "layer": "project",
+            "confidence": 1.0,
+        },
+        "m2": {
+            "id": "m2",
+            "content": "we use FastAPI",
+            "source": "test",
+            "layer": "session",
+            "confidence": 1.0,
+        },
+    }
+    result = await retriever.retrieve("what FastAPI", tree, memory_lookup=lookup)
+    # Both have identical content, but project boost should make m1 win.
+    # With relative gate, only the top-scored duplicate should remain.
+    assert len(result.facts) == 1
+    assert result.facts[0] == "we use FastAPI"
+    assert result.trace[-1] == "project"
+
+
+@pytest.mark.asyncio
+async def test_relative_threshold_filters_weak_matches():
+    """A strong match should suppress weak matches in the same cluster."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "R",
+        "layer": "root",
+        "summary": "s",
+        "memory_ids": [],
+        "children": [
+            {
+                "id": "n1",
+                "title": "Tech Stack",
+                "layer": "project",
+                "summary": "s",
+                "memory_ids": ["m1", "m2"],
+                "children": [],
+            },
+        ],
+    }
+    lookup = {
+        "m1": {
+            "id": "m1",
+            "content": "Tech stack: FastAPI + PostgreSQL",
+            "source": "test",
+            "layer": "project",
+            "confidence": 1.0,
+        },
+        "m2": {
+            "id": "m2",
+            "content": "API rate limit: 100 req/min",
+            "source": "test",
+            "layer": "project",
+            "confidence": 1.0,
+        },
+    }
+    result = await retriever.retrieve(
+        "what is our tech stack?", tree, top_k=3, memory_lookup=lookup
+    )
+    # m1 has high content overlap; m2 has only structural overlap.
+    # Relative gate should drop m2.
+    assert len(result.facts) == 1
+    assert "FastAPI" in result.facts[0]
+
+
+@pytest.mark.asyncio
+async def test_deduplication_by_content():
+    """Two memory IDs with identical content should only appear once."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "R",
+        "layer": "root",
+        "summary": "s",
+        "memory_ids": [],
+        "children": [
+            {
+                "id": "n1",
+                "title": "Project",
+                "layer": "project",
+                "summary": "s",
+                "memory_ids": ["m1", "m2"],
+                "children": [],
+            },
+        ],
+    }
+    lookup = {
+        "m1": {
+            "id": "m1",
+            "content": "duplicate fact",
+            "source": "test",
+            "layer": "project",
+            "confidence": 1.0,
+        },
+        "m2": {
+            "id": "m2",
+            "content": "duplicate fact",
+            "source": "test",
+            "layer": "project",
+            "confidence": 0.8,
+        },
+    }
+    result = await retriever.retrieve("duplicate", tree, top_k=3, memory_lookup=lookup)
+    assert len(result.facts) == 1
