@@ -1,3 +1,38 @@
+## MemCtrl v1.2.1 — Credibility Hardening Release
+
+### Overview
+
+Production-readiness patch focused on benchmark honesty, retrieval precision, CLI correctness, and SQLite durability.
+
+### What's New
+
+**Benchmarks & Trust**
+- **Honest Capability Benchmark** — Replaced misleading precision comparisons with a capability matrix that accurately shows MemCtrl's strengths (trace explainability, redaction, layer enforcement, lifetime management)
+- **Retrieval Precision Fix** — Added synonym expansion, layer boost, confidence weighting, and relative threshold filtering. Benchmark precision improved from 27% to 100% on the demo harness.
+
+**CLI Polish**
+- **`memctrl serve`** no longer accepts fake `port`/`host` args (stdio transport)
+- **`pyproject.toml` description** aligned with v1.2 "Observable Memory Infrastructure" positioning
+
+**Durability**
+- **SQLite Retry Logic** — All 19 write paths now wrapped with exponential backoff (50ms / 200ms / 500ms) for concurrent CLI + MCP safety
+- **Tree Batching** — LLM clustering capped at 20 memories per prompt to prevent O(N²) blow-up at scale
+
+**Docs & Demos**
+- **Migration Demo** — `examples/migration_demo.py` shows cross-tool memory portability (Claude Code → Cursor)
+- **OTel Spec Submitted** — `gen_ai.memory.*` proposal published to OpenTelemetry GenAI SIG ([#200](https://github.com/open-telemetry/semantic-conventions-genai/issues/200))
+
+### Benchmark Status
+
+The demo harness now reports honest numbers:
+- Context retention: 100%
+- Retrieval precision: 100%
+- Trace accuracy: 100%
+
+These are demonstration-only metrics on a tiny keyword dataset, not validated vector-DB comparisons.
+
+---
+
 ## MemCtrl v1.2.0 — Observable Memory Infrastructure for AI Agents
 
 ### Overview

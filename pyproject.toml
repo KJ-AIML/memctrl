@@ -1,6 +1,6 @@
 [project]
 name = "memctrl"
-version = "1.2.0"
+version = "1.2.1"
 description = "Observable Memory Infrastructure for AI Agents — hierarchical, explainable, and self-managing"
 readme = "README.md"
 license = {text = "MIT"}
