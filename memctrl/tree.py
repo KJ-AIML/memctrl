@@ -405,7 +405,7 @@ class MemoryTreeBuilder:
                 for m in group_mems
             ]
             cluster = TreeNode(
-                id=f"cluster_{group_name}",
+                id=f"cluster_{layer}_{group_name}",
                 title=group_name.replace("_", " ").title(),
                 layer=layer,
                 summary=f"{len(group_mems)} memories about {group_name}",
