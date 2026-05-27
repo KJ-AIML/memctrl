@@ -1,4 +1,4 @@
-"""MemCtrl — Typer CLI with rich formatting.
+"""MemCtrl - Typer CLI with rich formatting.
 
 Commands:
     install, init, add, query, list, tree, forget, clear,
@@ -242,12 +242,12 @@ def query(
     """
     cache = _get_cache()
 
-    # Check cache first — fast path for repeat queries.
+    # Check cache first - fast path for repeat queries.
     cached = cache.get(query_text)
     if cached is not None:
         result = cached
     else:
-        # Cache miss — do full retrieval and cache the result.
+        # Cache miss - do full retrieval and cache the result.
         store = _get_store()
         engine = _get_engine()
         engine.load()
@@ -273,12 +273,12 @@ def query(
         llm_client = _get_llm_client(
             provider=llm_provider, model=llm_model, api_key=llm_api_key
         )
-        from memctrl.tree import MemoryTreeBuilder
+        from memctrl.tree import MemoryTreeBuilder, get_or_build_tree
 
         builder = MemoryTreeBuilder(llm_client=llm_client)
 
         async def _do_query():
-            tree = await builder.build_tree(mem_dicts)
+            tree = await get_or_build_tree(store, mem_dicts, builder)
             tree_dict = tree.to_dict()
 
             # Retrieve with provenance tracking and optional LLM
@@ -357,13 +357,13 @@ def tree(
     llm_client = _get_llm_client(
         provider=llm_provider, model=llm_model, api_key=llm_api_key
     )
-    from memctrl.tree import MemoryTreeBuilder
+    from memctrl.tree import MemoryTreeBuilder, get_or_build_tree
 
     builder = MemoryTreeBuilder(llm_client=llm_client)
 
     async def _do_tree():
         mem_dicts = [m.to_dict() for m in memories]
-        root = await builder.build_tree(mem_dicts)
+        root = await get_or_build_tree(store, mem_dicts, builder)
         return root
 
     root = asyncio.run(_do_tree())
@@ -617,7 +617,7 @@ def provenance(
 ):
     """Show retrieval provenance for the last query or a specific query.
 
-    Displays the provenance trail — which memories were retrieved, why they
+    Displays the provenance trail - which memories were retrieved, why they
     matched, their source layers, and confidence scores. This enables
     trust, debugging, and audit of memory retrieval decisions.
 
@@ -823,7 +823,7 @@ def done(
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
-    """Explicit session end — triggers reflection immediately
+    """Explicit session end - triggers reflection immediately
 
     This is the shorthand for "I'm done with this session". It forces
     reflection to run, consolidating all session memories into project
@@ -843,7 +843,7 @@ def done(
 
     if result.triggered:
         console.print(
-            f"[green]Session consolidated[/green] — "
+            f"[green]Session consolidated[/green] - "
             f"{len(result.consolidated_ids)} memories moved"
         )
         if result.summary:
@@ -866,7 +866,7 @@ def reflect(
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
-    """Manual reflection — checks heuristics and consolidates if triggered
+    """Manual reflection - checks heuristics and consolidates if triggered
 
     Checks detection heuristics (time-based, git-based) and runs consolidation
     if any fire. Use ``memctrl done`` to force reflection regardless of
@@ -886,7 +886,7 @@ def reflect(
 
     if result.triggered:
         console.print(
-            f"[green]Reflection triggered[/green] ([cyan]{result.event}[/cyan]) — "
+            f"[green]Reflection triggered[/green] ([cyan]{result.event}[/cyan]) - "
             f"{len(result.consolidated_ids)} memories consolidated"
         )
         if result.summary:

@@ -473,3 +473,74 @@ async def test_build_tree_roundtrip():
     restored = TreeNode.from_dict(d)
     assert restored.title == "Memory Tree"
     assert len(restored.children) == 1
+
+
+# ---------------------------------------------------------------------------
+# get_or_build_tree helper
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_or_build_tree_reuses_persisted():
+    """When memory count matches, load persisted tree instead of rebuilding."""
+    import os
+    import tempfile
+
+    from memctrl.store import MemoryStore
+    from memctrl.tree import get_or_build_tree
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    try:
+        store = MemoryStore(db_path)
+        store.insert_memory("project", "use FastAPI", "test")
+        store.insert_memory("project", "use Postgres", "test")
+        mem_dicts = [m.to_dict() for m in store.list_memories()]
+
+        builder = MemoryTreeBuilder()
+        tree1 = await get_or_build_tree(store, mem_dicts, builder)
+        assert tree1 is not None
+        assert len(set(tree1.all_memory_ids())) == 2
+
+        # Second call with same memories should load the persisted tree
+        tree2 = await get_or_build_tree(store, mem_dicts, builder)
+        assert tree2 is not None
+        assert set(tree2.all_memory_ids()) == set(tree1.all_memory_ids())
+
+        store.close()
+    finally:
+        os.unlink(db_path)
+
+
+@pytest.mark.asyncio
+async def test_get_or_build_tree_rebuilds_when_stale():
+    """When memory count changes, build a new tree and persist it."""
+    import os
+    import tempfile
+
+    from memctrl.store import MemoryStore
+    from memctrl.tree import get_or_build_tree
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+
+    try:
+        store = MemoryStore(db_path)
+        store.insert_memory("project", "use FastAPI", "test")
+        mem_dicts = [m.to_dict() for m in store.list_memories()]
+
+        builder = MemoryTreeBuilder()
+        tree1 = await get_or_build_tree(store, mem_dicts, builder)
+        assert len(set(tree1.all_memory_ids())) == 1
+
+        # Add another memory — tree should be rebuilt
+        store.insert_memory("project", "use Redis", "test")
+        mem_dicts = [m.to_dict() for m in store.list_memories()]
+
+        tree2 = await get_or_build_tree(store, mem_dicts, builder)
+        assert len(set(tree2.all_memory_ids())) == 2
+
+        store.close()
+    finally:
+        os.unlink(db_path)

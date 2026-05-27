@@ -341,6 +341,8 @@ class MemoryRetriever:
         if not tree or not memory_lookup:
             return RetrievalResult(facts=[], trace=["empty_tree"], confidence=0.0)
 
+        top_k = max(0, top_k)
+
         if self.llm_client:
             result, matched_memories = await self._llm_retrieve_with_sources(
                 query, tree, memory_lookup, top_k
@@ -410,6 +412,8 @@ class MemoryRetriever:
             )
 
         relevant_node_ids = parsed.get("relevant_nodes", [])
+        # Deduplicate node IDs in case LLM returns duplicates
+        relevant_node_ids = list(dict.fromkeys(relevant_node_ids))
         confidence = parsed.get("confidence", 0.8)
 
         if not relevant_node_ids:
@@ -496,6 +500,7 @@ class MemoryRetriever:
         facts: List[str] = []
         sources: List[str] = []
         memories: List[dict] = []
+        seen_ids: set[str] = set()
 
         for nid in node_ids:
             node = self._find_node(tree, nid)
@@ -504,8 +509,11 @@ class MemoryRetriever:
 
             # If node has direct memory_ids, look them up
             for mid in node.get("memory_ids", []):
+                if mid in seen_ids:
+                    continue
                 mem = memory_lookup.get(mid)
                 if mem and mem.get("content"):
+                    seen_ids.add(mid)
                     facts.append(mem["content"])
                     sources.append(mem.get("source", "unknown"))
                     memories.append(mem)
@@ -592,7 +600,7 @@ class MemoryRetriever:
 
             for mid in node.get("memory_ids", []):
                 mem = memory_lookup.get(mid)
-                if not mem:
+                if not mem or not mem.get("content"):
                     continue
                 content_stems = set(_stemmed_words(mem.get("content", "")))
                 # Content match is weighted highest so individual memory

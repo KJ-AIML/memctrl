@@ -624,3 +624,86 @@ def test_concurrent_writes_dont_crash(store):
     assert len(ids) == 20
     mems = store.list_memories()
     assert len(mems) == 20
+
+
+# ---------------------------------------------------------------------------
+# Tree persistence
+# ---------------------------------------------------------------------------
+
+
+def test_rebuild_tree_atomic_roundtrip(store):
+    """Persist a full tree hierarchy and reload it intact."""
+    root = TreeNode(
+        id="root",
+        title="Root",
+        layer="root",
+        summary="root",
+        children=[
+            TreeNode(
+                id="layer_project",
+                title="Project",
+                layer="project",
+                summary="p",
+                memory_ids=["m1", "m2"],
+                children=[
+                    TreeNode(
+                        id="mem_m1",
+                        title="m1",
+                        layer="project",
+                        summary="s",
+                        memory_ids=["m1"],
+                    ),
+                    TreeNode(
+                        id="mem_m2",
+                        title="m2",
+                        layer="project",
+                        summary="s",
+                        memory_ids=["m2"],
+                    ),
+                ],
+            ),
+        ],
+    )
+    store.rebuild_tree_atomic([root])
+    loaded = store.build_tree_from_nodes()
+    assert loaded is not None
+    assert loaded.id == "root"
+    assert len(loaded.children) == 1
+    assert loaded.children[0].id == "layer_project"
+    assert set(loaded.all_memory_ids()) == {"m1", "m2"}
+
+
+def test_init_db_retry(store):
+    """_init_db retries on 'database is locked' and eventually succeeds."""
+    import sqlite3
+    from unittest.mock import patch
+
+    executescript_calls = 0
+
+    class ConnectionWrapper:
+        """Wraps a real sqlite3 connection and intercepts executescript."""
+
+        def __init__(self, real_conn):
+            self._real = real_conn
+
+        def executescript(self, script):
+            nonlocal executescript_calls
+            executescript_calls += 1
+            if executescript_calls == 1:
+                raise sqlite3.OperationalError("database is locked")
+            return self._real.executescript(script)
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    original_connect = sqlite3.connect
+
+    def mock_connect(path, **kwargs):
+        real_conn = original_connect(path, **kwargs)
+        return ConnectionWrapper(real_conn)
+
+    with patch("memctrl.store.sqlite3.connect", side_effect=mock_connect):
+        new_store = MemoryStore(store.db_path)
+        # _init_db should have retried at least once
+        assert executescript_calls >= 2
+        new_store.close()

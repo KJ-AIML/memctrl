@@ -36,7 +36,7 @@ def agent_says(agent: str, message: str, color: str = "blue") -> None:
 
 def mcp_call(tool: str, args: dict) -> None:
     args_str = ", ".join(f"{k}={v!r}" for k, v in args.items())
-    console.print(f"[dim]  → MCP call:[/dim] [cyan]{tool}[/cyan]({args_str})")
+    console.print(f"[dim]  -> MCP call:[/dim] [cyan]{tool}[/cyan]({args_str})")
 
 
 def main() -> None:
@@ -116,7 +116,7 @@ def main() -> None:
         tags=["bug", "critical"],
     )
 
-    console.print("[dim]  → 3 memories stored to .memctrl/memories.db[/dim]\n")
+    console.print("[dim]  -> 3 memories stored to .memctrl/memories.db[/dim]\n")
 
     agent_says(
         "Claude Code",
@@ -190,7 +190,7 @@ def main() -> None:
     table.add_column("With MemCtrl")
 
     table.add_row(
-        "Switch Claude → Cursor",
+        "Switch Claude -> Cursor",
         "Blank slate. Agent re-discovers everything.",
         "Full context. Agent recalls stored memories instantly.",
     )

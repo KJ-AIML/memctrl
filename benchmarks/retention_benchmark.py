@@ -14,13 +14,11 @@ Run: python benchmarks/retention_benchmark.py
 
 from __future__ import annotations
 
-import random
 import statistics
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 from memctrl.store import MemoryStore
 from memctrl.tree import MemoryTreeBuilder
@@ -92,8 +90,8 @@ def check_layer_enforcement() -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "layers.db"
         store = MemoryStore(str(db_path))
-        pid = store.insert_memory("project", "permanent fact", "benchmark")
-        sid = store.insert_memory("session", "session fact", "benchmark")
+        store.insert_memory("project", "permanent fact", "benchmark")
+        store.insert_memory("session", "session fact", "benchmark")
         mems = store.list_memories()
         layers = {m.layer for m in mems}
         return layers == {"project", "session"}
@@ -264,10 +262,10 @@ def print_capability_matrix(
     print()
 
     # Feature checks
-    trace_ok = check_trace_explainability(memctrl)
-    redaction_ok = check_secret_redaction()
-    layers_ok = check_layer_enforcement()
-    lifetime_ok = check_lifetime_management()
+    check_trace_explainability(memctrl)
+    check_secret_redaction()
+    check_layer_enforcement()
+    check_lifetime_management()
 
     print("Capability Matrix")
     print("-" * 60)

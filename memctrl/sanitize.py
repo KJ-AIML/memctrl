@@ -11,11 +11,24 @@ import re
 
 # Secret patterns to redact/detect
 _SECRET_PATTERNS = [
-    (r"\b(sk-[a-zA-Z0-9]{20,})\b", "API_KEY"),
+    # OpenAI / generic sk- keys (allow hyphens/underscores for Stripe-style keys)
+    (r"\b(sk-[a-zA-Z0-9\-_]{20,})\b", "API_KEY"),
+    # Generic API key assignments
+    (r"\b(api[_-]?key\s*[=:]\s*\S+)", "API_KEY"),
+    # Bearer / auth tokens
+    (r"\b(bearer\s+\S+)", "TOKEN"),
+    (r"\b(auth[_-]?token\s*[=:]\s*\S+)", "TOKEN"),
+    (r"\b(access[_-]?token\s*[=:]\s*\S+)", "TOKEN"),
+    (r"\b(refresh[_-]?token\s*[=:]\s*\S+)", "TOKEN"),
+    # Base64-encoded tokens (40+ chars)
     (r"\b([A-Za-z0-9/+=]{40,})\b", "TOKEN"),
+    # Passwords
     (r"\b(password\s*[=:]\s*\S+)", "PASSWORD"),
+    # Generic secrets
     (r"\b(secret\s*[=:]\s*\S+)", "SECRET"),
+    # AWS keys
     (r"\b(AKIA[0-9A-Z]{16})\b", "AWS_KEY"),
+    # Private keys
     (r"-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----", "PRIVATE_KEY"),
 ]
 

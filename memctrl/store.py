@@ -253,7 +253,7 @@ class MemoryStore:
     # --- Schema ---
 
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        def _write(conn):
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS schema_version (
@@ -333,6 +333,8 @@ class MemoryStore:
                 """
             )
             conn.commit()
+
+        self._retry_write(_write)
 
     # --- Memory CRUD ---
 
@@ -929,9 +931,16 @@ class MemoryStore:
         return self._retry_write(_write)
 
     def wal_checkpoint(self) -> None:
-        """Run WAL checkpoint to prevent unbounded .db-wal growth."""
+        """Run WAL checkpoint to prevent unbounded .db-wal growth.
+
+        Raises sqlite3.OperationalError if checkpoint is blocked by active readers.
+        """
         with self._connect() as conn:
-            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if row and row[0] != 0:
+                raise sqlite3.OperationalError(
+                    f"WAL checkpoint blocked: busy={row[0]}"
+                )
 
     # --- Stats ---
 

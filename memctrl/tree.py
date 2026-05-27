@@ -210,8 +210,8 @@ class MemoryTreeBuilder:
             memories[i : i + batch_size] for i in range(0, len(memories), batch_size)
         ]
         batch_nodes: List[TreeNode] = []
-        for batch in batches:
-            node = await self._cluster_single_batch(layer, batch)
+        for i, batch in enumerate(batches):
+            node = await self._cluster_single_batch(layer, batch, batch_index=i)
             batch_nodes.append(node)
 
         return TreeNode(
@@ -226,7 +226,7 @@ class MemoryTreeBuilder:
             ),
         )
 
-    async def _cluster_single_batch(self, layer: str, memories: List[dict]) -> TreeNode:
+    async def _cluster_single_batch(self, layer: str, memories: List[dict], batch_index: int = 0) -> TreeNode:
         """Cluster a single batch of memories with the LLM."""
         prompt = self._build_cluster_prompt(layer, memories)
 
@@ -281,8 +281,9 @@ class MemoryTreeBuilder:
             )
             children.append(cluster_node)
 
+        node_id = f"layer_{layer}_batch_{batch_index}" if batch_index > 0 else f"layer_{layer}"
         return TreeNode(
-            id=f"layer_{layer}",
+            id=node_id,
             title=layer.capitalize(),
             layer=layer,
             summary=f"{len(memories)} memories in layer '{layer}'",
@@ -312,13 +313,18 @@ class MemoryTreeBuilder:
         """Parse LLM JSON response into cluster list."""
         try:
             data = json.loads(response)
-            return data.get("clusters", [])
+            clusters = data.get("clusters", [])
+            return clusters if isinstance(clusters, list) else []
         except json.JSONDecodeError:
             # Try to extract JSON from markdown code block
             if "```json" in response:
-                json_text = response.split("```json")[1].split("```")[0]
-                data = json.loads(json_text)
-                return data.get("clusters", [])
+                try:
+                    json_text = response.split("```json")[1].split("```")[0]
+                    data = json.loads(json_text)
+                    clusters = data.get("clusters", [])
+                    return clusters if isinstance(clusters, list) else []
+                except (json.JSONDecodeError, IndexError):
+                    return []
             return []
 
     # --- Fallback clustering (no LLM) ---
@@ -429,3 +435,27 @@ class MemoryTreeBuilder:
             return 1.0
         total = sum(mem_by_id.get(mid, {}).get("confidence", 1.0) for mid in mem_ids)
         return round(total / len(mem_ids), 2)
+
+
+async def get_or_build_tree(store, mem_dicts, builder):
+    """Load a persisted tree from the store, or build and persist a new one.
+
+    This avoids rebuilding the tree from scratch on every CLI/MCP invocation
+    when the memory set hasn't changed.
+
+    Args:
+        store: MemoryStore instance with build_tree_from_nodes() and
+               rebuild_tree_atomic() methods.
+        mem_dicts: List of memory dicts to build the tree from.
+        builder: MemoryTreeBuilder instance.
+
+    Returns:
+        TreeNode root (loaded or freshly built).
+    """
+    loaded = store.build_tree_from_nodes()
+    if loaded is not None:
+        if len(set(loaded.all_memory_ids())) == len(mem_dicts):
+            return loaded
+    tree = await builder.build_tree(mem_dicts)
+    store.rebuild_tree_atomic([tree])
+    return tree

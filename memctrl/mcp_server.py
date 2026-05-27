@@ -150,7 +150,7 @@ async def serve_mcp() -> None:
 
     from memctrl.store import MemoryStore
     from memctrl.rules import RuleEngine
-    from memctrl.tree import MemoryTreeBuilder
+    from memctrl.tree import MemoryTreeBuilder, get_or_build_tree
     from memctrl.retriever import MemoryRetriever
 
     server = Server("memctrl")
@@ -193,7 +193,7 @@ async def serve_mcp() -> None:
                 memory_lookup = {m.id: m.to_dict() for m in memories}
 
                 builder = MemoryTreeBuilder()
-                tree = await builder.build_tree(mem_dicts)
+                tree = await get_or_build_tree(store, mem_dicts, builder)
                 tree_dict = tree.to_dict()
 
                 retriever = MemoryRetriever()
@@ -213,7 +213,7 @@ async def serve_mcp() -> None:
                 memories = store.list_memories()
                 mem_dicts = [m.to_dict() for m in memories]
                 builder = MemoryTreeBuilder()
-                tree = await builder.build_tree(mem_dicts)
+                tree = await get_or_build_tree(store, mem_dicts, builder)
                 return [
                     TextContent(
                         type="text",
