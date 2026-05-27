@@ -33,6 +33,7 @@ def memory():
         db_path = f.name
     mem = MemCtrlMemory(db_path)
     yield mem
+    mem.store.close()
     os.unlink(db_path)
 
 
