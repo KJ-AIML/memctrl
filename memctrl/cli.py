@@ -1012,11 +1012,8 @@ def spans(
 
 
 @app.command()
-def serve(
-    port: int = typer.Option(8080, help="Port to run MCP server on"),
-    host: str = typer.Option("127.0.0.1", help="Host to bind to"),
-):
-    """Start MCP server (stdio-based, not HTTP)"""
+def serve():
+    """Start MCP server (stdio transport)"""
     console.print("[green]Starting MCP server[/green]")
     console.print("[dim]Use Ctrl+C to stop[/dim]")
 

@@ -196,33 +196,6 @@ def _now_iso() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _with_retry(max_attempts: int = 3, backoff_ms: float = 50):
-    """Decorator that retries SQLite operations on database locked errors.
-
-    Backoff schedule: 50ms, 200ms, 500ms (exponential with jitter).
-    """
-
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except sqlite3.OperationalError as exc:
-                    if "database is locked" in str(exc) and attempt < max_attempts - 1:
-                        sleep_ms = backoff_ms * (
-                            4**attempt
-                        )  # 50, 200, 800... cap at 500
-                        sleep_ms = min(sleep_ms, 500)
-                        time.sleep(sleep_ms / 1000.0)
-                        continue
-                    raise
-            return None  # Should never reach here
-
-        return wrapper
-
-    return decorator
-
-
 # ---------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------
@@ -248,6 +221,26 @@ class MemoryStore:
             yield conn
         finally:
             conn.close()
+
+    def _retry_write(self, write_fn):
+        """Execute a write function with exponential backoff on database lock.
+
+        WHY: WAL mode + busy_timeout=30s helps, but rapid concurrent writes
+        from CLI + MCP server can still collide. Retrying with backoff
+        covers the common case where one writer finishes within milliseconds.
+        """
+        last_exc = None
+        for delay in (0.05, 0.2, 0.5):
+            try:
+                with self._connect() as conn:
+                    return write_fn(conn)
+            except sqlite3.OperationalError as exc:
+                if "database is locked" in str(exc).lower():
+                    last_exc = exc
+                    time.sleep(delay)
+                    continue
+                raise
+        raise last_exc
 
     # --- Schema ---
 
@@ -347,7 +340,8 @@ class MemoryStore:
         # REDACTION: sanitize secrets/PII before storage
         content = sanitize_text(content)
         mid = str(uuid.uuid4())
-        with self._connect() as conn:
+
+        def _write(conn):
             conn.execute(
                 """INSERT INTO memories (id, layer, content, source, confidence,
                                          created_at, expires_at, tags)
@@ -364,7 +358,9 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-        return mid
+            return mid
+
+        return self._retry_write(_write)
 
     def get_memory(self, id: str) -> Optional[Memory]:
         with self._connect() as conn:
@@ -385,13 +381,15 @@ class MemoryStore:
             return [Memory.from_row(r) for r in rows]
 
     def delete_memory(self, id: str) -> bool:
-        with self._connect() as conn:
+        def _write(conn):
             cur = conn.execute("DELETE FROM memories WHERE id = ?", (id,))
             conn.commit()
             return cur.rowcount > 0
 
+        return self._retry_write(_write)
+
     def update_memory_layer(self, id: str, new_layer: str) -> bool:
-        with self._connect() as conn:
+        def _write(conn):
             cur = conn.execute(
                 "UPDATE memories SET layer = ? WHERE id = ?",
                 (new_layer, id),
@@ -399,15 +397,20 @@ class MemoryStore:
             conn.commit()
             return cur.rowcount > 0
 
+        return self._retry_write(_write)
+
     def update_memory_confidence(self, id: str, new_confidence: float) -> bool:
         """Update the confidence score of a memory. Returns True if found."""
-        with self._connect() as conn:
+
+        def _write(conn):
             cur = conn.execute(
                 "UPDATE memories SET confidence = ? WHERE id = ?",
                 (new_confidence, id),
             )
             conn.commit()
             return cur.rowcount > 0
+
+        return self._retry_write(_write)
 
     def get_memories_below_confidence(
         self, threshold: float, layer: Optional[str] = None
@@ -428,7 +431,8 @@ class MemoryStore:
 
     def update_memory_timestamp(self, id: str) -> bool:
         """Update created_at to now (used when a memory is reinforced)."""
-        with self._connect() as conn:
+
+        def _write(conn):
             cur = conn.execute(
                 "UPDATE memories SET created_at = ? WHERE id = ?",
                 (_now_iso(), id),
@@ -436,17 +440,22 @@ class MemoryStore:
             conn.commit()
             return cur.rowcount > 0
 
+        return self._retry_write(_write)
+
     # --- Expiration ---
 
     def expire_old_memories(self) -> int:
         """Delete memories where expires_at < now(). Returns count."""
-        with self._connect() as conn:
+
+        def _write(conn):
             cur = conn.execute(
                 "DELETE FROM memories WHERE expires_at IS NOT NULL AND expires_at < ?",
                 (_now_iso(),),
             )
             conn.commit()
             return cur.rowcount
+
+        return self._retry_write(_write)
 
     # --- Decay (auto-triggered) ---
 
@@ -475,7 +484,8 @@ class MemoryStore:
 
     def consolidate(self, from_layer: str, to_layer: str) -> List[str]:
         """Move all memories from from_layer to to_layer. Returns moved IDs."""
-        with self._connect() as conn:
+
+        def _write(conn):
             rows = conn.execute(
                 "SELECT id FROM memories WHERE layer = ?", (from_layer,)
             ).fetchall()
@@ -489,6 +499,8 @@ class MemoryStore:
                 conn.commit()
             return ids
 
+        return self._retry_write(_write)
+
     def consolidate_and_log(
         self,
         from_layer: str,
@@ -497,7 +509,8 @@ class MemoryStore:
         action: str,
     ) -> List[str]:
         """Atomically consolidate memories and log trigger."""
-        with self._connect() as conn:
+
+        def _write(conn):
             rows = conn.execute(
                 "SELECT id FROM memories WHERE layer = ?", (from_layer,)
             ).fetchall()
@@ -529,6 +542,8 @@ class MemoryStore:
             conn.commit()
             return ids
 
+        return self._retry_write(_write)
+
     def consolidate_with_audit(
         self,
         from_layer: str,
@@ -539,7 +554,8 @@ class MemoryStore:
         action: str,
     ) -> tuple[List[str], Optional[str]]:
         """Atomically consolidate memories, create reflection, and log trigger."""
-        with self._connect() as conn:
+
+        def _write(conn):
             rows = conn.execute(
                 "SELECT id FROM memories WHERE layer = ?", (from_layer,)
             ).fetchall()
@@ -591,6 +607,8 @@ class MemoryStore:
             conn.commit()
             return ids, rid
 
+        return self._retry_write(_write)
+
     # --- Tree nodes (ATOMIC rebuild) ---
 
     def rebuild_tree_atomic(self, nodes: List[TreeNode]) -> None:
@@ -600,10 +618,13 @@ class MemoryStore:
         and insert_tree_node() were separate transactions. A crash between
         them left an empty tree. Now the entire rebuild is a single transaction.
         """
-        with self._connect() as conn:
+
+        def _write(conn):
             conn.execute("DELETE FROM tree_nodes")
             self._insert_nodes_recursive(conn, nodes, parent_id=None)
             conn.commit()
+
+        self._retry_write(_write)
 
     def _insert_nodes_recursive(
         self, conn, nodes: List[TreeNode], parent_id: Optional[str] = None
@@ -627,12 +648,14 @@ class MemoryStore:
                 self._insert_nodes_recursive(conn, node.children, parent_id=node.id)
 
     def clear_tree_nodes(self) -> None:
-        with self._connect() as conn:
+        def _write(conn):
             conn.execute("DELETE FROM tree_nodes")
             conn.commit()
 
+        self._retry_write(_write)
+
     def insert_tree_node(self, node: TreeNode, parent_id: Optional[str] = None) -> str:
-        with self._connect() as conn:
+        def _write(conn):
             conn.execute(
                 """INSERT INTO tree_nodes (id, parent_id, layer, title, summary,
                                             memory_ids, updated_at)
@@ -649,6 +672,8 @@ class MemoryStore:
             )
             conn.commit()
             return node.id
+
+        return self._retry_write(_write)
 
     def get_tree_nodes(self, layer: Optional[str] = None) -> List[dict]:
         with self._connect() as conn:
@@ -715,7 +740,8 @@ class MemoryStore:
 
     def log_trigger(self, event: str, action: str, memory_ids: List[str]) -> str:
         tid = str(uuid.uuid4())
-        with self._connect() as conn:
+
+        def _write(conn):
             conn.execute(
                 """INSERT INTO triggers_log (id, event, action,
                                               memories_affected, timestamp)
@@ -723,7 +749,9 @@ class MemoryStore:
                 (tid, event, action, json.dumps(memory_ids), _now_iso()),
             )
             conn.commit()
-        return tid
+            return tid
+
+        return self._retry_write(_write)
 
     def get_trigger_log(self, limit: int = 50) -> List[TriggerLog]:
         with self._connect() as conn:
@@ -737,7 +765,8 @@ class MemoryStore:
 
     def save_provenance(self, provenance: dict) -> str:
         pid = str(uuid.uuid4())
-        with self._connect() as conn:
+
+        def _write(conn):
             conn.execute(
                 """INSERT INTO provenance (id, query, timestamp, method,
                                             tree_version, total_memories_searched,
@@ -755,7 +784,9 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-        return pid
+            return pid
+
+        return self._retry_write(_write)
 
     def get_provenance(self, limit: int = 100, offset: int = 0) -> List[dict]:
         with self._connect() as conn:
@@ -780,15 +811,18 @@ class MemoryStore:
             ]
 
     def clear_provenance(self) -> None:
-        with self._connect() as conn:
+        def _write(conn):
             conn.execute("DELETE FROM provenance")
             conn.commit()
+
+        self._retry_write(_write)
 
     # --- OTel spans ---
 
     def save_otel_span(self, span: dict) -> str:
         sid = str(uuid.uuid4())
-        with self._connect() as conn:
+
+        def _write(conn):
             conn.execute(
                 """INSERT INTO otel_spans (id, trace_id, span_id, operation,
                                             timestamp, duration_ms, memory_id,
@@ -818,7 +852,9 @@ class MemoryStore:
                 ),
             )
             conn.commit()
-        return sid
+            return sid
+
+        return self._retry_write(_write)
 
     def get_otel_spans(
         self, limit: int = 1000, offset: int = 0, trace_id: Optional[str] = None
@@ -863,12 +899,14 @@ class MemoryStore:
             ]
 
     def clear_otel_spans(self) -> None:
-        with self._connect() as conn:
+        def _write(conn):
             conn.execute("DELETE FROM otel_spans")
             conn.commit()
 
+        self._retry_write(_write)
+
     def prune_otel_spans(self, max_rows: int = 10000) -> int:
-        with self._connect() as conn:
+        def _write(conn):
             cur = conn.execute(
                 """DELETE FROM otel_spans
                    WHERE id NOT IN (
@@ -879,6 +917,8 @@ class MemoryStore:
             )
             conn.commit()
             return cur.rowcount
+
+        return self._retry_write(_write)
 
     def wal_checkpoint(self) -> None:
         """Run WAL checkpoint to prevent unbounded .db-wal growth."""
