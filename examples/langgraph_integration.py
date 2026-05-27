@@ -11,7 +11,6 @@ Run:
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -78,7 +77,10 @@ def demo_memory_node():
         # Simulate LangGraph state
         state = {
             "messages": [
-                {"role": "assistant", "content": "We decided to use FastAPI with PostgreSQL for the backend."},
+                {
+                    "role": "assistant",
+                    "content": "We decided to use FastAPI with PostgreSQL for the backend.",
+                },
                 {"role": "user", "content": "What database should we use?"},
             ],
             "memory_query": "what did we decide about the backend?",

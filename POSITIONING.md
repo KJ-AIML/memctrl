@@ -101,7 +101,7 @@ MemCtrl addresses **all three layers** — not just memory storage, but memory g
 ### For Engineering Leaders
 > "My agent pilots stop failing because of memory issues."
 
-- 95% → 78% failure rate reduction (research-backed)
+- Reduce memory-related pilot risk by making recall observable and auditable
 - Automatic session consolidation (no manual ops)
 - Observability budget funding (not innovation budget)
 
@@ -233,7 +233,7 @@ We're not competing with vector databases. We're competing with Datadog and Graf
 |-------|--------|
 | 95% agent pilot failure | MIT NANDA, 2025 |
 | $4.6-6.5B market size | IDC, Gartner, CB Insights, Deepak Gupta 2026 |
-| 47% token waste from bad memory | Research (industry benchmark) |
+| Token waste from bad memory | Needs project-specific benchmark before public claim |
 | 60% observability budget funding | FinOps Foundation |
 | >95% MINJA injection success | Security research (arXiv) |
 | OTel `gen_ai.memory.*` in Development | OpenTelemetry GenAI SIG |

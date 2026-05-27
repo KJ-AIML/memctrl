@@ -380,7 +380,9 @@ def test_execute_consolidate(tmp_path):
     store.insert_memory("session", "task 1", "test")
     engine = RuleEngine()
     parsed = {"verb": "consolidate", "from": "session", "to": "project"}
-    ids = engine._execute_action(parsed, {}, store, "on_commit", "consolidate session -> project")
+    ids = engine._execute_action(
+        parsed, {}, store, "on_commit", "consolidate session -> project"
+    )
     assert len(ids) == 1
 
 
@@ -391,7 +393,9 @@ def test_execute_summarize(tmp_path):
     store.insert_memory("session", "task 1", "test")
     engine = RuleEngine()
     parsed = {"verb": "summarize", "from": "session", "to": "user"}
-    ids = engine._execute_action(parsed, {}, store, "on_session_end", "summarize session -> user")
+    ids = engine._execute_action(
+        parsed, {}, store, "on_session_end", "summarize session -> user"
+    )
     assert len(ids) == 1
 
 

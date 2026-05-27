@@ -843,7 +843,15 @@ def test_provenance_tracker_persist_false_skips_db():
 
     tracker.record_retrieval(
         query="q",
-        results=[{"id": "m1", "content": "c", "layer": "project", "source": "explicit", "confidence": 1.0}],
+        results=[
+            {
+                "id": "m1",
+                "content": "c",
+                "layer": "project",
+                "source": "explicit",
+                "confidence": 1.0,
+            }
+        ],
         method="keyword",
         tree_version=1,
     )

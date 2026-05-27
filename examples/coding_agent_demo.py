@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from rich.console import Console
@@ -85,7 +84,9 @@ def main() -> None:
         tags=["secret"],
     )
 
-    console.print("[dim]-> Stored 3 memories. The API key will be redacted by security scan.[/dim]")
+    console.print(
+        "[dim]-> Stored 3 memories. The API key will be redacted by security scan.[/dim]"
+    )
     console.print()
 
     # -----------------------------------------------------------------------
@@ -109,7 +110,9 @@ def main() -> None:
         tags=["refactor", "testing"],
     )
 
-    console.print("[dim]-> Stored 2 session memories (expire in 7 days by default).[/dim]")
+    console.print(
+        "[dim]-> Stored 2 session memories (expire in 7 days by default).[/dim]"
+    )
     console.print()
 
     # -----------------------------------------------------------------------
@@ -124,7 +127,11 @@ def main() -> None:
     tree = asyncio.run(builder.build_tree(memories))
     tree_dict = tree.to_dict() if tree else {}
     memory_lookup = {m["id"]: m for m in memories}
-    result = asyncio.run(retriever.retrieve("what auth method do we use?", tree_dict, memory_lookup=memory_lookup))
+    result = asyncio.run(
+        retriever.retrieve(
+            "what auth method do we use?", tree_dict, memory_lookup=memory_lookup
+        )
+    )
 
     console.print("[bold green]Query:[/bold green] what auth method do we use?")
     console.print()
@@ -164,10 +171,14 @@ def main() -> None:
     # Trigger consolidation (session -> project)
     # -----------------------------------------------------------------------
     section("Automatic Consolidation")
-    agent_thought("End of sprint. Let me consolidate my session notes into project knowledge.")
+    agent_thought(
+        "End of sprint. Let me consolidate my session notes into project knowledge."
+    )
 
     ids = engine.fire_trigger("on_commit", {}, store)
-    console.print(f"[green]Trigger 'on_commit' fired[/green] - {len(ids)} memories consolidated from session -> project")
+    console.print(
+        f"[green]Trigger 'on_commit' fired[/green] - {len(ids)} memories consolidated from session -> project"
+    )
     console.print()
 
     # -----------------------------------------------------------------------
@@ -177,7 +188,9 @@ def main() -> None:
     logs = store.get_trigger_log(limit=5)
     for log in logs:
         ts = log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else "?"
-        console.print(f"  {ts} | {log.event} | {log.action} | {len(log.memories_affected)} memories")
+        console.print(
+            f"  {ts} | {log.event} | {log.action} | {len(log.memories_affected)} memories"
+        )
     console.print()
 
     # -----------------------------------------------------------------------
@@ -185,11 +198,15 @@ def main() -> None:
     # -----------------------------------------------------------------------
     section("Security Scan")
     all_memories = store.list_memories()
-    secret_count = sum(1 for m in all_memories if "REDACTED" in m.content or "API_KEY" in m.content)
+    secret_count = sum(
+        1 for m in all_memories if "REDACTED" in m.content or "API_KEY" in m.content
+    )
     if secret_count == 0:
         console.print("[green]+ No raw secrets found in memory store.[/green]")
     else:
-        console.print(f"[yellow]! Found {secret_count} memories referencing secrets.[/yellow]")
+        console.print(
+            f"[yellow]! Found {secret_count} memories referencing secrets.[/yellow]"
+        )
     console.print()
 
     # -----------------------------------------------------------------------

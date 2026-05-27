@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timedelta
 from pathlib import Path
 
 from rich.console import Console
@@ -46,7 +45,9 @@ def agent_says(message: str, emotion: str = "neutral") -> None:
         "worried": "yellow",
         "shocked": "red",
     }
-    console.print(Panel(message, title="[Agent]", border_style=styles.get(emotion, "blue")))
+    console.print(
+        Panel(message, title="[Agent]", border_style=styles.get(emotion, "blue"))
+    )
 
 
 def main() -> None:
@@ -96,7 +97,9 @@ def main() -> None:
         tags=["database", "users"],
     )
 
-    console.print("[dim]-> Stored architectural decisions to project memory (permanent)[/dim]")
+    console.print(
+        "[dim]-> Stored architectural decisions to project memory (permanent)[/dim]"
+    )
 
     # Bug happens
     agent_says(
@@ -109,7 +112,7 @@ def main() -> None:
     store.insert_memory(
         layer="session",
         content="BUG: Access token expiry checked before refresh token validation. "
-                 "Fixed by reordering middleware: validate refresh FIRST, then check access expiry.",
+        "Fixed by reordering middleware: validate refresh FIRST, then check access expiry.",
         source="incident",
         confidence=1.0,
         tags=["bug", "jwt", "middleware", "critical"],
@@ -117,7 +120,7 @@ def main() -> None:
     store.insert_memory(
         layer="session",
         content="Root cause: middleware stack order. AuthMiddleware line 47 checks expiry "
-                 "before RefreshMiddleware can swap tokens.",
+        "before RefreshMiddleware can swap tokens.",
         source="postmortem",
         confidence=0.9,
         tags=["bug", "root_cause", "middleware"],
@@ -129,7 +132,9 @@ def main() -> None:
     console.print()
     console.print("[yellow]End of Sprint 1: Running consolidation...[/yellow]")
     ids = engine.fire_trigger("on_commit", {}, store)
-    console.print(f"[green]Consolidated {len(ids)} session memories into project knowledge[/green]")
+    console.print(
+        f"[green]Consolidated {len(ids)} session memories into project knowledge[/green]"
+    )
 
     # ===================================================================
     # SPRINT 2: New feature, different context (weeks later)
@@ -155,7 +160,9 @@ def main() -> None:
         )
     )
 
-    console.print("[bold]Memory query:[/bold] what auth patterns and past bugs should I know about?")
+    console.print(
+        "[bold]Memory query:[/bold] what auth patterns and past bugs should I know about?"
+    )
     if result.facts:
         console.print("[bold green]Retrieved facts:[/bold green]")
         for fact in result.facts[:3]:
@@ -225,10 +232,13 @@ def main() -> None:
     # Final stats
     # ===================================================================
     sprint("Memory Stats")
-    stats = store.stats()
-    console.print(f"Total memories: {stats.get('total_memories', 0)}")
-    console.print(f"Project layer: {stats.get('by_layer', {}).get('project', 0)}")
-    console.print(f"Session layer: {stats.get('by_layer', {}).get('session', 0)}")
+    final_memories = store.list_memories()
+    by_layer = {}
+    for mem in final_memories:
+        by_layer[mem.layer] = by_layer.get(mem.layer, 0) + 1
+    console.print(f"Total memories: {len(final_memories)}")
+    console.print(f"Project layer: {by_layer.get('project', 0)}")
+    console.print(f"Session layer: {by_layer.get('session', 0)}")
 
     logs = store.get_trigger_log()
     console.print(f"Consolidation events: {len(logs)}")

@@ -195,11 +195,13 @@ def _now_iso() -> str:
 # Retry decorator for SQLite operations
 # ---------------------------------------------------------------------------
 
+
 def _with_retry(max_attempts: int = 3, backoff_ms: float = 50):
     """Decorator that retries SQLite operations on database locked errors.
 
     Backoff schedule: 50ms, 200ms, 500ms (exponential with jitter).
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             for attempt in range(max_attempts):
@@ -207,13 +209,17 @@ def _with_retry(max_attempts: int = 3, backoff_ms: float = 50):
                     return func(*args, **kwargs)
                 except sqlite3.OperationalError as exc:
                     if "database is locked" in str(exc) and attempt < max_attempts - 1:
-                        sleep_ms = backoff_ms * (4 ** attempt)  # 50, 200, 800... cap at 500
+                        sleep_ms = backoff_ms * (
+                            4**attempt
+                        )  # 50, 200, 800... cap at 500
                         sleep_ms = min(sleep_ms, 500)
                         time.sleep(sleep_ms / 1000.0)
                         continue
                     raise
             return None  # Should never reach here
+
         return wrapper
+
     return decorator
 
 
@@ -455,7 +461,10 @@ class MemoryStore:
             # Check if we can infer last decay from DB (future: persist this)
             self._last_decay_at = now
 
-        if self._last_decay_at and (now - self._last_decay_at).total_seconds() < min_hours * 3600:
+        if (
+            self._last_decay_at
+            and (now - self._last_decay_at).total_seconds() < min_hours * 3600
+        ):
             return False
 
         decayed = decay_engine.decay_memories()
@@ -763,7 +772,9 @@ class MemoryStore:
                     "tree_version": r["tree_version"],
                     "total_memories_searched": r["total_memories_searched"],
                     "avg_confidence": r["avg_confidence"],
-                    "sources": json.loads(r["sources_json"]) if r["sources_json"] else [],
+                    "sources": json.loads(r["sources_json"])
+                    if r["sources_json"]
+                    else [],
                 }
                 for r in rows
             ]
@@ -886,9 +897,7 @@ class MemoryStore:
             provenance_count = conn.execute(
                 "SELECT COUNT(*) FROM provenance"
             ).fetchone()[0]
-            span_count = conn.execute(
-                "SELECT COUNT(*) FROM otel_spans"
-            ).fetchone()[0]
+            span_count = conn.execute("SELECT COUNT(*) FROM otel_spans").fetchone()[0]
             return {
                 "memories": mem_count,
                 "tree_nodes": node_count,

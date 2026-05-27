@@ -17,8 +17,6 @@ This enables:
 
 from __future__ import annotations
 
-import json
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional
@@ -312,7 +310,9 @@ class ProvenanceTracker:
         # Aggregate layer breakdown
         layer_counts: Dict[str, int] = {}
         for s in all_sources:
-            layer_counts[s.get("layer", "unknown")] = layer_counts.get(s.get("layer", "unknown"), 0) + 1
+            layer_counts[s.get("layer", "unknown")] = (
+                layer_counts.get(s.get("layer", "unknown"), 0) + 1
+            )
 
         # Aggregate source type breakdown
         source_type_counts: Dict[str, int] = {}

@@ -24,13 +24,13 @@ from rich.tree import Tree as RichTree
 from memctrl import __version__
 from memctrl.cache import QueryCache
 from memctrl.llm_client import create_llm_client
-from memctrl.provenance import ProvenanceTracker
 from memctrl.span import SpanTracker
 
 
 # ---------------------------------------------------------------------------
 # Cache factory (persistent across CLI invocations)
 # ---------------------------------------------------------------------------
+
 
 def _get_cache():
     """Get or create QueryCache with persistent SQLite storage.
@@ -48,7 +48,12 @@ def _get_cache():
 # LLM client factory
 # ---------------------------------------------------------------------------
 
-def _get_llm_client(provider: Optional[str] = None, model: Optional[str] = None, api_key: Optional[str] = None):
+
+def _get_llm_client(
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
     """Create LLM client from CLI flags or environment."""
     return create_llm_client(provider=provider, model=model, api_key=api_key)
 
@@ -56,6 +61,7 @@ def _get_llm_client(provider: Optional[str] = None, model: Optional[str] = None,
 # ---------------------------------------------------------------------------
 # Provenance tracker factory
 # ---------------------------------------------------------------------------
+
 
 def _get_provenance_tracker():
     """Get a ProvenanceTracker backed by SQLite for cross-process persistence.
@@ -65,6 +71,7 @@ def _get_provenance_tracker():
     as the store ensures provenance survives across invocations.
     """
     from memctrl.provenance import ProvenanceTracker
+
     store = _get_store()
     return ProvenanceTracker(store=store, persist=True)
 
@@ -196,7 +203,9 @@ def add(
     content: str = typer.Argument(..., help="Memory content to store"),
     layer: str = typer.Option("session", help="Layer: project/session/user"),
     source: str = typer.Option("manual", help="Source of this memory"),
-    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_provider: Optional[str] = typer.Option(
+        None, help="LLM provider (openai, anthropic, etc.)"
+    ),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -208,6 +217,7 @@ def add(
     cache.invalidate()
     # Run decay if needed
     from memctrl.decay import ConfidenceDecay
+
     decay = ConfidenceDecay(store)
     store.run_decay_if_needed(decay)
     console.print(
@@ -219,7 +229,9 @@ def add(
 def query(
     query_text: str = typer.Argument(..., help="Query to search memory"),
     layer: Optional[str] = typer.Option(None, help="Filter by layer"),
-    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_provider: Optional[str] = typer.Option(
+        None, help="LLM provider (openai, anthropic, etc.)"
+    ),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -242,6 +254,7 @@ def query(
 
         # Run decay if needed before querying
         from memctrl.decay import ConfidenceDecay
+
         decay = ConfidenceDecay(store)
         store.run_decay_if_needed(decay)
 
@@ -257,8 +270,11 @@ def query(
         memory_lookup = {m.id: m.to_dict() for m in memories}
 
         # Build tree (with LLM if configured)
-        llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+        llm_client = _get_llm_client(
+            provider=llm_provider, model=llm_model, api_key=llm_api_key
+        )
         from memctrl.tree import MemoryTreeBuilder
+
         builder = MemoryTreeBuilder(llm_client=llm_client)
 
         async def _do_query():
@@ -267,6 +283,7 @@ def query(
 
             # Retrieve with provenance tracking and optional LLM
             from memctrl.retriever import MemoryRetriever
+
             retriever = MemoryRetriever(
                 llm_client=llm_client,
                 provenance_tracker=_get_provenance_tracker(),
@@ -323,7 +340,9 @@ def list_memories(
 
 @app.command()
 def tree(
-    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_provider: Optional[str] = typer.Option(
+        None, help="LLM provider (openai, anthropic, etc.)"
+    ),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -335,8 +354,11 @@ def tree(
         console.print("[yellow]No memories to display.[/yellow]")
         return
 
-    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+    llm_client = _get_llm_client(
+        provider=llm_provider, model=llm_model, api_key=llm_api_key
+    )
     from memctrl.tree import MemoryTreeBuilder
+
     builder = MemoryTreeBuilder(llm_client=llm_client)
 
     async def _do_tree():
@@ -418,7 +440,9 @@ def clear(
 @app.command()
 def decay(
     dry_run: bool = typer.Option(False, help="Show what would decay without applying"),
-    threshold: float = typer.Option(0.3, help="Confidence threshold below which memories are flagged"),
+    threshold: float = typer.Option(
+        0.3, help="Confidence threshold below which memories are flagged"
+    ),
 ):
     """Run confidence decay on all memories.
 
@@ -427,22 +451,29 @@ def decay(
     """
     store = _get_store()
     from memctrl.decay import ConfidenceDecay
+
     decay_engine = ConfidenceDecay(store)
 
     if dry_run:
         flagged = store.get_memories_below_confidence(threshold)
-        console.print(f"[dim]{len(flagged)} memories below confidence {threshold}[/dim]")
+        console.print(
+            f"[dim]{len(flagged)} memories below confidence {threshold}[/dim]"
+        )
         for mem in flagged[:20]:
-            console.print(f"  [yellow]{mem.id[:8]}[/yellow] {mem.confidence:.2f} {mem.content[:60]}")
+            console.print(
+                f"  [yellow]{mem.id[:8]}[/yellow] {mem.confidence:.2f} {mem.content[:60]}"
+            )
         return
 
     decayed = decay_engine.decay_memories()
-    store._last_decay_at = __import__('datetime').datetime.now()
+    store._last_decay_at = __import__("datetime").datetime.now()
     console.print(f"[green]Decayed {len(decayed)} memories[/green]")
 
     flagged = store.get_memories_below_confidence(threshold)
     if flagged:
-        console.print(f"[yellow]⚠ {len(flagged)} memories now below threshold {threshold}[/yellow]")
+        console.print(
+            f"[yellow]⚠ {len(flagged)} memories now below threshold {threshold}[/yellow]"
+        )
 
 
 @app.command()
@@ -498,6 +529,85 @@ def audit(
             str(len(log.memories_affected)),
         )
     console.print(table)
+
+
+@app.command()
+def doctor(
+    low_confidence_threshold: float = typer.Option(
+        0.5, help="Confidence threshold for warning on weak memories"
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print raw JSON report"),
+):
+    """Report memory health, provenance coverage, and observability gaps."""
+    from memctrl.doctor import analyze_store_health
+
+    store = _get_store()
+    report = analyze_store_health(
+        store, low_confidence_threshold=low_confidence_threshold
+    )
+
+    if json_output:
+        console.print_json(json.dumps(report, indent=2))
+        return
+
+    status_style = "green" if report["status"] == "ok" else "yellow"
+    console.print(
+        Panel(
+            f"[bold]Status:[/bold] [{status_style}]{report['status'].upper()}[/{status_style}]\n"
+            f"[bold]Warnings:[/bold] {', '.join(report['warnings']) if report['warnings'] else 'none'}",
+            title="Memory Doctor",
+            border_style=status_style,
+        )
+    )
+
+    memory_table = Table(title="Memories")
+    memory_table.add_column("Metric")
+    memory_table.add_column("Count", justify="right")
+    memory_table.add_row("Total", str(report["memory_count"]))
+    memory_table.add_row("Expired", str(report["expired_count"]))
+    memory_table.add_row("Low confidence", str(report["low_confidence_count"]))
+    memory_table.add_row("Risky sources", str(report["risky_source_count"]))
+    memory_table.add_row("Secret/PII findings", str(report["secret_finding_count"]))
+    console.print(memory_table)
+
+    prov = report["provenance"]
+    provenance_table = Table(title="Provenance")
+    provenance_table.add_column("Metric")
+    provenance_table.add_column("Value", justify="right")
+    provenance_table.add_row("Records", str(prov["records"]))
+    provenance_table.add_row("Covered memories", str(prov["covered_memories"]))
+    provenance_table.add_row("Coverage", f"{prov['coverage'] * 100:.1f}%")
+    provenance_table.add_row(
+        "Low-confidence retrievals", str(prov["low_confidence_retrievals"])
+    )
+    console.print(provenance_table)
+
+    otel = report["opentelemetry"]
+    otel_table = Table(title="OpenTelemetry")
+    otel_table.add_column("Metric")
+    otel_table.add_column("Count", justify="right")
+    otel_table.add_row("Spans", str(otel["spans"]))
+    otel_table.add_row("Error spans", str(otel["error_spans"]))
+    console.print(otel_table)
+
+    for label, samples in report["memory_samples"].items():
+        if not samples:
+            continue
+        sample_table = Table(title=f"Sample: {label}")
+        sample_table.add_column("ID", style="dim")
+        sample_table.add_column("Layer")
+        sample_table.add_column("Source")
+        sample_table.add_column("Confidence", justify="right")
+        sample_table.add_column("Content", max_width=60)
+        for sample in samples:
+            sample_table.add_row(
+                sample["id"][:8],
+                sample["layer"],
+                sample["source"],
+                f"{sample['confidence']:.2f}",
+                sample["content"],
+            )
+        console.print(sample_table)
 
 
 @app.command()
@@ -707,7 +817,9 @@ def timeline(
 
 @app.command()
 def done(
-    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_provider: Optional[str] = typer.Option(
+        None, help="LLM provider (openai, anthropic, etc.)"
+    ),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -723,7 +835,9 @@ def done(
     engine = _get_engine()
     engine.load()
 
-    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+    llm_client = _get_llm_client(
+        provider=llm_provider, model=llm_model, api_key=llm_api_key
+    )
     reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=True)
 
@@ -746,7 +860,9 @@ def done(
 
 @app.command()
 def reflect(
-    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
+    llm_provider: Optional[str] = typer.Option(
+        None, help="LLM provider (openai, anthropic, etc.)"
+    ),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -762,7 +878,9 @@ def reflect(
     engine = _get_engine()
     engine.load()
 
-    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
+    llm_client = _get_llm_client(
+        provider=llm_provider, model=llm_model, api_key=llm_api_key
+    )
     reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=False)
 
@@ -899,7 +1017,7 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Host to bind to"),
 ):
     """Start MCP server (stdio-based, not HTTP)"""
-    console.print(f"[green]Starting MCP server[/green]")
+    console.print("[green]Starting MCP server[/green]")
     console.print("[dim]Use Ctrl+C to stop[/dim]")
 
     from memctrl.mcp_server import serve_mcp

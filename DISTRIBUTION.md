@@ -72,11 +72,11 @@ pip install memctrl
 memctrl init
 memctrl add "we use FastAPI + PostgreSQL"
 
-8/ We built benchmarks comparing MemCtrl vs naive vector RAG:
+8/ MemCtrl includes a benchmark harness, but I am keeping the public claims honest:
 
-• Context retention: +47%
-• Explainability: 0% → 100%
-• Memory management: manual → zero ops
+• Current harness is for local retrieval experiments
+• No production-grade vector DB comparison yet
+• Real claims need larger datasets, real baselines, and variance reporting
 
 All local. No cloud. Your data never leaves your machine.
 
@@ -119,11 +119,9 @@ What it does differently:
 • Security-first — secrets and PII are redacted before storage
 • Local-only by default — SQLite, no cloud, no telemetry
 
-Benchmarks vs naive vector RAG:
+Benchmark status:
 
-• Context retention (10-turn): 62% → 91%
-• Retrieval explainability: 0% → 100%
-• Memory management overhead: manual → zero ops
+The repo includes a local retention harness, but it should be treated as experimental until it has real vector baselines, a larger query set, variance reporting, and documented methodology.
 
 Integrations: LangGraph (checkpoint saver + memory node), Claude Code, Cursor, Kimi Code, MCP.
 

@@ -435,7 +435,7 @@ def test_consolidate_with_audit_moves_and_reflects(store):
 
     # Trigger logged
     logs = store.get_trigger_log(limit=10)
-    assert any(l.event == "explicit" for l in logs)
+    assert any(log.event == "explicit" for log in logs)
 
 
 def test_consolidate_with_audit_empty_session(store):
@@ -465,9 +465,7 @@ def test_save_and_get_provenance(store):
             "tree_version": 3,
             "total_memories_searched": 12,
             "avg_confidence": 0.85,
-            "sources": [
-                {"memory_id": "m1", "layer": "project", "confidence": 1.0}
-            ],
+            "sources": [{"memory_id": "m1", "layer": "project", "confidence": 1.0}],
         }
     )
     assert pid

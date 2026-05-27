@@ -172,6 +172,7 @@ memctrl install --project
 |---|---|
 | `memctrl trigger <event>` | Manually fire a trigger rule |
 | `memctrl audit` | Show complete trigger audit log |
+| `memctrl doctor` | Report stale memories, provenance gaps, risky sources, and OTel health |
 | `memctrl done` | Explicit session end → immediate consolidation |
 | `memctrl reflect` | Check heuristics → consolidate if any fire |
 | `memctrl serve` | Start MCP server (stdio transport) |
@@ -310,18 +311,18 @@ exporter.export_otlp_json("spans.json")
 
 ## 📊 Benchmarks
 
-We measure what matters for agent memory:
+MemCtrl includes a small retention benchmark for local experimentation. Treat it as a harness for testing retrieval behavior, trace coverage, and memory-management overhead as the project evolves; it is not a validated vector database comparison yet.
 
 | Metric | Baseline (Vector RAG) | MemCtrl | Improvement |
 |---|---|---|---|
-| Context retention (10-turn) | 62% | **91%** | **+47%** |
-| Retrieval explainability | 0% | **100%** | **+100%** |
-| Memory management overhead | Manual | **Automatic** | **Zero ops** |
-| Long-horizon task success | 45% | **78%** | **+73%** |
-| Repeat query latency | 50-500ms | **<1ms** | **99% faster** |
+| Context retention | Demo harness only | No validated claim yet | Pending |
+| Retrieval explainability | Demo harness only | No validated claim yet | Pending |
+| Memory management overhead | Demo harness only | No validated claim yet | Pending |
+| Long-horizon task success | Not measured | Not measured | Pending |
+| Repeat query latency | Local cache check | Environment dependent | Pending |
 
-> 📈 Run benchmarks locally: `bash benchmarks/run_all.sh`  
-> 📖 See [`benchmarks/README.md`](benchmarks/README.md) for methodology, limitations, and how to interpret results.
+> 📈 Run benchmarks locally: `python benchmarks/retention_benchmark.py`  
+Before publishing performance claims, run a larger benchmark with real vector baselines, enough queries for variance, and documented methodology.
 
 ---
 
@@ -364,7 +365,15 @@ We measure what matters for agent memory:
 
 ## 🎮 Demo
 
-See `examples/coding_agent_demo.py` for a complete simulation:
+Run the repeated-bug demo for the sharpest product story:
+
+```bash
+python examples/killer_demo.py
+```
+
+It simulates a coding agent that remembers an old JWT middleware incident and avoids repeating the same production bug in a later sprint.
+
+See `examples/coding_agent_demo.py` for a broader multi-session simulation:
 
 ```bash
 python examples/coding_agent_demo.py

@@ -207,7 +207,11 @@ class MemoryTreeBuilder:
 
         if not clusters:
             # Fallback: one cluster per memory
-            logger.info("Using keyword fallback for layer '%s' (%d memories)", layer, len(memories))
+            logger.info(
+                "Using keyword fallback for layer '%s' (%d memories)",
+                layer,
+                len(memories),
+            )
             return self._cluster_fallback(layer, memories)
 
         # Build cluster nodes

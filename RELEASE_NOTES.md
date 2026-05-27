@@ -53,11 +53,11 @@ MemCtrl is an operating system for long-lived agent memory — hierarchical, exp
 - `memctrl trigger-cmd` — Fire automation rules
 - `memctrl audit` — Complete trigger log
 
-**Demos & Benchmarks**
+**Demos & Benchmark Harness**
 - `examples/coding_agent_demo.py` — Multi-session agent simulation
 - `examples/killer_demo.py` — Bug prevention across sprints (the "holy sh*t" moment)
 - `examples/langgraph_integration.py` — LangGraph usage patterns
-- `benchmarks/retention_benchmark.py` — Measurable retention vs naive baseline
+- `benchmarks/retention_benchmark.py` — Local harness for retrieval experiments; not a validated vector-DB benchmark
 
 **Visualizer**
 - Interactive memory graph: [Live Demo](https://kj-aiml.github.io/memctrl/memory-viz.html)
@@ -78,14 +78,9 @@ memctrl query "what is our stack?"
 # Trace: root -> project -> tech_stack -> FastAPI + PostgreSQL
 ```
 
-### Benchmarks
+### Benchmark Status
 
-| Metric | Vector RAG | MemCtrl |
-|---|---|---|
-| Context Retention (10-turn) | 62% | **91%** |
-| Retrieval Explainability | 0% | **100%** |
-| Memory Management Overhead | Manual | **Zero ops** |
-| Long-Horizon Task Success | 45% | **78%** |
+The repository includes an experimental benchmark harness, but v1.2 does not make validated performance claims against vector databases. Publish benchmark numbers only after adding real vector baselines, a larger query set, variance reporting, and documented methodology.
 
 ### Links
 
