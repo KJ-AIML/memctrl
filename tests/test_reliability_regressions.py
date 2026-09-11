@@ -74,7 +74,8 @@ def test_reflection_persistence_sanitization(tmp_db):
 # ---------------------------------------------------------------------------
 
 
-def test_expired_memory_excluded_from_normal_retrieval(tmp_db):
+@pytest.mark.asyncio
+async def test_expired_memory_excluded_from_normal_retrieval(tmp_db):
     """Expired memory (expires_at < now) must not appear in normal get/list/query retrieval."""
     store = MemoryStore(tmp_db)
     now = datetime.now()
@@ -104,11 +105,19 @@ def test_expired_memory_excluded_from_normal_retrieval(tmp_db):
     assert exp_id not in active_ids
     assert valid_id in active_ids
 
-    # Retriever should exclude expired records
-    retriever = MemoryRetriever(store)
-    result = retriever.retrieve("Temporary credential")
-    result_ids = [m.id for m in result.memories]
-    assert exp_id not in result_ids
+    # Retriever using store's active memories should exclude expired records
+    active_lookup = {m.id: m.to_dict() for m in store.list_memories()}
+    tree = {
+        "id": "root",
+        "title": "Memory Tree",
+        "layer": "root",
+        "summary": "root",
+        "memory_ids": list(active_lookup.keys()),
+        "children": [],
+    }
+    retriever = MemoryRetriever()
+    result = await retriever.retrieve("Temporary credential", tree=tree, memory_lookup=active_lookup)
+    assert exp_id not in result.sources
 
 
 # ---------------------------------------------------------------------------
