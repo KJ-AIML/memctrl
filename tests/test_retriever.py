@@ -72,9 +72,7 @@ async def test_keyword_retrieve_no_match():
     lookup = {
         "m1": {"id": "m1", "content": "we use FastAPI", "source": "test"},
     }
-    result = await retriever.retrieve(
-        "something completely unrelated xyz", tree, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("something completely unrelated xyz", tree, memory_lookup=lookup)
     # With no keyword overlap and a relative score threshold, genuinely
     # unrelated queries return empty results instead of weak false positives.
     assert len(result.facts) == 0
@@ -454,9 +452,7 @@ async def test_synonym_expansion_matches_auth():
             "confidence": 1.0,
         },
     }
-    result = await retriever.retrieve(
-        "how do we handle authentication?", tree, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("how do we handle authentication?", tree, memory_lookup=lookup)
     assert len(result.facts) == 1
     assert "JWT" in result.facts[0]
 
@@ -552,9 +548,7 @@ async def test_relative_threshold_filters_weak_matches():
             "confidence": 1.0,
         },
     }
-    result = await retriever.retrieve(
-        "what is our tech stack?", tree, top_k=3, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("what is our tech stack?", tree, top_k=3, memory_lookup=lookup)
     # m1 has high content overlap; m2 has only structural overlap.
     # Relative gate should drop m2.
     assert len(result.facts) == 1
@@ -600,3 +594,134 @@ async def test_deduplication_by_content():
     }
     result = await retriever.retrieve("duplicate", tree, top_k=3, memory_lookup=lookup)
     assert len(result.facts) == 1
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle Retrieval (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retriever_lifecycle_filtering_default():
+    """Default retrieval excludes candidates, refuted, and expired memories."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "Root",
+        "layer": "root",
+        "summary": "root",
+        "memory_ids": ["m_accepted", "m_candidate", "m_refuted"],
+        "children": [],
+    }
+    lookup = {
+        "m_accepted": {
+            "id": "m_accepted",
+            "content": "Accepted auth policy: OAuth2 Bearer tokens",
+            "source": "manual",
+            "layer": "project",
+            "confidence": 1.0,
+            "lifecycle_state": "accepted",
+            "verification_state": "unverified",
+        },
+        "m_candidate": {
+            "id": "m_candidate",
+            "content": "Candidate auth policy: Passkeys only",
+            "source": "reflection",
+            "layer": "project",
+            "confidence": 0.7,
+            "lifecycle_state": "candidate",
+            "verification_state": "unverified",
+        },
+        "m_refuted": {
+            "id": "m_refuted",
+            "content": "Refuted auth policy: Basic HTTP Auth in URL",
+            "source": "manual",
+            "layer": "project",
+            "confidence": 0.5,
+            "lifecycle_state": "rejected",
+            "verification_state": "refuted",
+        },
+    }
+    result = await retriever.retrieve("auth policy", tree, memory_lookup=lookup)
+    assert len(result.facts) == 1
+    assert "OAuth2 Bearer" in result.facts[0]
+    assert result.sources == ["manual"]
+
+
+@pytest.mark.asyncio
+async def test_retriever_include_candidates():
+    """Retrieval with include_candidates=True returns candidates."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "Root",
+        "layer": "root",
+        "summary": "root",
+        "memory_ids": ["m_accepted", "m_candidate"],
+        "children": [],
+    }
+    lookup = {
+        "m_accepted": {
+            "id": "m_accepted",
+            "content": "Accepted auth policy: OAuth2 Bearer tokens",
+            "source": "manual",
+            "layer": "project",
+            "confidence": 1.0,
+            "lifecycle_state": "accepted",
+            "verification_state": "unverified",
+        },
+        "m_candidate": {
+            "id": "m_candidate",
+            "content": "Candidate auth policy: Passkeys only",
+            "source": "reflection",
+            "layer": "project",
+            "confidence": 0.7,
+            "lifecycle_state": "candidate",
+            "verification_state": "unverified",
+        },
+    }
+    result = await retriever.retrieve("auth policy", tree, memory_lookup=lookup, include_candidates=True)
+    assert len(result.facts) == 2
+
+
+@pytest.mark.asyncio
+async def test_retriever_history_mode():
+    """Retrieval with history=True includes refuted/superseded with visible annotations."""
+    retriever = MemoryRetriever()
+    tree = {
+        "id": "root",
+        "title": "Root",
+        "layer": "root",
+        "summary": "root",
+        "memory_ids": ["m_refuted", "m_superseded"],
+        "children": [],
+    }
+    lookup = {
+        "m_refuted": {
+            "id": "m_refuted",
+            "content": "Redis caused connection drop",
+            "source": "manual",
+            "layer": "project",
+            "confidence": 0.5,
+            "lifecycle_state": "rejected",
+            "verification_state": "refuted",
+        },
+        "m_superseded": {
+            "id": "m_superseded",
+            "content": "Use Redis for cache",
+            "source": "manual",
+            "layer": "project",
+            "confidence": 0.8,
+            "lifecycle_state": "superseded",
+            "verification_state": "unverified",
+        },
+    }
+    # Normal retrieval finds nothing
+    normal_res = await retriever.retrieve("Redis", tree, memory_lookup=lookup)
+    assert len(normal_res.facts) == 0
+
+    # History retrieval finds both and annotates them visibly
+    hist_res = await retriever.retrieve("Redis", tree, memory_lookup=lookup, history=True)
+    assert len(hist_res.facts) == 2
+    assert any("[REFUTED]" in f for f in hist_res.facts)
+    assert any("[SUPERSEDED]" in f for f in hist_res.facts)

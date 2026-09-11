@@ -40,17 +40,13 @@ class MemorySource:
     source_type: str  # explicit/inferred/mentioned/reflection
     confidence: float
     match_reason: str  # why this memory matched the query
-    trace_path: List[str] = field(
-        default_factory=list
-    )  # e.g. ["root", "project", "tech_stack"]
+    trace_path: List[str] = field(default_factory=list)  # e.g. ["root", "project", "tech_stack"]
 
     def to_dict(self) -> dict:
         """Serialize to dict with truncated content for readability."""
         return {
             "memory_id": self.memory_id,
-            "content": self.content[:200] + "..."
-            if len(self.content) > 200
-            else self.content,
+            "content": self.content[:200] + "..." if len(self.content) > 200 else self.content,
             "layer": self.layer,
             "source_type": self.source_type,
             "confidence": self.confidence,
@@ -310,9 +306,7 @@ class ProvenanceTracker:
         # Aggregate layer breakdown
         layer_counts: Dict[str, int] = {}
         for s in all_sources:
-            layer_counts[s.get("layer", "unknown")] = (
-                layer_counts.get(s.get("layer", "unknown"), 0) + 1
-            )
+            layer_counts[s.get("layer", "unknown")] = layer_counts.get(s.get("layer", "unknown"), 0) + 1
 
         # Aggregate source type breakdown
         source_type_counts: Dict[str, int] = {}
@@ -327,11 +321,7 @@ class ProvenanceTracker:
             method_counts[method] = method_counts.get(method, 0) + 1
 
         # Average confidence across all sources
-        avg_conf = (
-            sum(s.get("confidence", 0.0) for s in all_sources) / len(all_sources)
-            if all_sources
-            else 0.0
-        )
+        avg_conf = sum(s.get("confidence", 0.0) for s in all_sources) / len(all_sources) if all_sources else 0.0
 
         return {
             "query": query,
@@ -387,9 +377,7 @@ class ProvenanceTracker:
         """
         return self._load_history()
 
-    def detect_low_confidence_retrievals(
-        self, threshold: float = 0.5
-    ) -> List[RetrievalProvenance]:
+    def detect_low_confidence_retrievals(self, threshold: float = 0.5) -> List[RetrievalProvenance]:
         """Find retrievals where average confidence was below threshold.
 
         WHY: Low-confidence retrievals are a security and quality signal.
@@ -408,9 +396,7 @@ class ProvenanceTracker:
         records = self._load_history()
         return [r for r in records if r.avg_confidence < threshold]
 
-    def detect_source_type_imbalance(
-        self, ratio_threshold: float = 0.9
-    ) -> Optional[dict]:
+    def detect_source_type_imbalance(self, ratio_threshold: float = 0.9) -> Optional[dict]:
         """Detect if retrieval relies too heavily on one source type.
 
         WHY: A healthy memory system draws from diverse source types.
@@ -438,9 +424,7 @@ class ProvenanceTracker:
 
         source_type_counts: Dict[str, int] = {}
         for s in all_sources:
-            source_type_counts[s.source_type] = (
-                source_type_counts.get(s.source_type, 0) + 1
-            )
+            source_type_counts[s.source_type] = source_type_counts.get(s.source_type, 0) + 1
 
         total = len(all_sources)
         for source_type, count in source_type_counts.items():

@@ -286,6 +286,7 @@ class RetrievalResult:
     confidence: float = 0.0
     sources: List[str] = field(default_factory=list)
     provenance: Optional[RetrievalProvenance] = None  # populated when tracker is active
+    memory_ids: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         result = {
@@ -293,6 +294,7 @@ class RetrievalResult:
             "trace": self.trace,
             "confidence": self.confidence,
             "sources": self.sources,
+            "memory_ids": self.memory_ids,
         }
         if self.provenance is not None:
             result["provenance"] = self.provenance.to_dict()
@@ -326,6 +328,8 @@ class MemoryRetriever:
         tree: dict,
         top_k: int = 5,
         memory_lookup: Optional[Dict[str, dict]] = None,
+        include_candidates: bool = False,
+        history: bool = False,
     ) -> RetrievalResult:
         """Retrieve relevant memories with reasoning trace.
 
@@ -333,6 +337,8 @@ class MemoryRetriever:
         tree: TreeNode serialized as dict (from MemoryTreeBuilder.to_dict)
         memory_lookup: dict of memory_id -> memory dict for content lookup
         top_k: maximum number of facts to return
+        include_candidates: whether to include candidate knowledge in retrieval
+        history: if True, include superseded, refuted, and expired memories with visible annotations
 
         Returns RetrievalResult with facts, trace, confidence, sources.
         If a ProvenanceTracker was provided at init, the result will also
@@ -341,16 +347,68 @@ class MemoryRetriever:
         if not tree or not memory_lookup:
             return RetrievalResult(facts=[], trace=["empty_tree"], confidence=0.0)
 
+        # Lifecycle and eligibility filtering (Phase 4)
+        from datetime import datetime
+
+        now = datetime.now()
+
+        filtered_lookup: Dict[str, dict] = {}
+        for mid, mem in memory_lookup.items():
+            exp = mem.get("expires_at")
+            if exp and not history:
+                if isinstance(exp, str):
+                    from memctrl.store import _parse_dt
+
+                    exp_dt = _parse_dt(exp)
+                else:
+                    exp_dt = exp
+                if exp_dt < now:
+                    continue
+
+            l_state = mem.get("lifecycle_state", "accepted")
+            v_state = mem.get("verification_state", "unverified")
+
+            if not history:
+                # Strictly allowlist-based: must be accepted (or candidate if explicitly allowed)
+                # and must not be refuted.
+                if v_state == "refuted":
+                    continue
+                if include_candidates:
+                    if l_state not in ("accepted", "candidate"):
+                        continue
+                else:
+                    if l_state != "accepted":
+                        continue
+                filtered_lookup[mid] = mem
+            else:
+                # History mode: include, with visible status annotation
+                mem_copy = dict(mem)
+                prefix = ""
+                if v_state == "refuted":
+                    prefix = "[REFUTED] "
+                elif l_state == "superseded":
+                    prefix = "[SUPERSEDED] "
+                elif l_state == "candidate":
+                    prefix = "[CANDIDATE] "
+                elif l_state == "rejected":
+                    prefix = "[REJECTED] "
+                elif l_state == "archived":
+                    prefix = "[ARCHIVED] "
+                if prefix and not str(mem_copy.get("content", "")).startswith("["):
+                    mem_copy["content"] = f"{prefix}{mem_copy.get('content', '')}"
+                filtered_lookup[mid] = mem_copy
+
+        if not filtered_lookup:
+            return RetrievalResult(facts=[], trace=["no_eligible_memories"], confidence=0.0)
+
+        memory_lookup = filtered_lookup
+
         top_k = max(0, top_k)
 
         if self.llm_client:
-            result, matched_memories = await self._llm_retrieve_with_sources(
-                query, tree, memory_lookup, top_k
-            )
+            result, matched_memories = await self._llm_retrieve_with_sources(query, tree, memory_lookup, top_k)
         else:
-            result, matched_memories = self._keyword_retrieve_with_sources(
-                query, tree, memory_lookup, top_k
-            )
+            result, matched_memories = self._keyword_retrieve_with_sources(query, tree, memory_lookup, top_k)
 
         # Record provenance if a tracker is configured.
         if self.provenance_tracker is not None:
@@ -362,9 +420,7 @@ class MemoryRetriever:
                 total_memories_searched=len(memory_lookup),
                 trace_paths={m.get("id", ""): result.trace for m in matched_memories},
                 match_reasons={
-                    m.get(
-                        "id", ""
-                    ): f"matched via {result.trace[-1] if result.trace else 'unknown'}"
+                    m.get("id", ""): f"matched via {result.trace[-1] if result.trace else 'unknown'}"
                     for m in matched_memories
                 },
             )
@@ -382,9 +438,7 @@ class MemoryRetriever:
         top_k: int,
     ) -> RetrievalResult:
         """Public-facing wrapper for LLM retrieval (returns only result)."""
-        result, _ = await self._llm_retrieve_with_sources(
-            query, tree, memory_lookup, top_k
-        )
+        result, _ = await self._llm_retrieve_with_sources(query, tree, memory_lookup, top_k)
         return result
 
     async def _llm_retrieve_with_sources(
@@ -407,9 +461,7 @@ class MemoryRetriever:
         except Exception as exc:
             logger.warning("LLM retrieval failed for query '%s': %s", query, exc)
             # Fall back to keyword search on any error
-            return self._keyword_retrieve_with_sources(
-                query, tree, memory_lookup, top_k
-            )
+            return self._keyword_retrieve_with_sources(query, tree, memory_lookup, top_k)
 
         relevant_node_ids = parsed.get("relevant_nodes", [])
         # Deduplicate node IDs in case LLM returns duplicates
@@ -417,9 +469,7 @@ class MemoryRetriever:
         confidence = parsed.get("confidence", 0.8)
 
         if not relevant_node_ids:
-            return self._keyword_retrieve_with_sources(
-                query, tree, memory_lookup, top_k
-            )
+            return self._keyword_retrieve_with_sources(query, tree, memory_lookup, top_k)
 
         # 3. Collect memories from selected nodes
         facts, sources, matched_memories = self._collect_from_nodes_with_memories(
@@ -444,6 +494,7 @@ class MemoryRetriever:
                 trace=trace,
                 confidence=confidence,
                 sources=sources,
+                memory_ids=[m.get("id", "") for m in matched_memories if m.get("id")],
             ),
             matched_memories,
         )
@@ -485,9 +536,7 @@ class MemoryRetriever:
         memory_lookup: Dict[str, dict],
     ) -> tuple[List[str], List[str]]:
         """Collect facts and sources from specified tree nodes."""
-        facts, sources, _memories = self._collect_from_nodes_with_memories(
-            node_ids, tree, memory_lookup
-        )
+        facts, sources, _memories = self._collect_from_nodes_with_memories(node_ids, tree, memory_lookup)
         return facts, sources
 
     def _collect_from_nodes_with_memories(
@@ -519,12 +568,10 @@ class MemoryRetriever:
                     memories.append(mem)
 
             # Also check children recursively
-            child_facts, child_sources, child_memories = (
-                self._collect_from_nodes_with_memories(
-                    [c["id"] for c in node.get("children", [])],
-                    node,
-                    memory_lookup,
-                )
+            child_facts, child_sources, child_memories = self._collect_from_nodes_with_memories(
+                [c["id"] for c in node.get("children", [])],
+                node,
+                memory_lookup,
             )
             facts.extend(child_facts)
             sources.extend(child_sources)
@@ -551,9 +598,7 @@ class MemoryRetriever:
         top_k: int,
     ) -> RetrievalResult:
         """Public-facing wrapper for keyword retrieval (returns only result)."""
-        result, _ = self._keyword_retrieve_with_sources(
-            query, tree, memory_lookup, top_k
-        )
+        result, _ = self._keyword_retrieve_with_sources(query, tree, memory_lookup, top_k)
         return result
 
     def _keyword_retrieve_with_sources(
@@ -585,9 +630,7 @@ class MemoryRetriever:
         layer_boost = {"project": 2.0, "user": 1.2, "session": 1.0}
         min_score_gate = 1.0
 
-        scored_memories: Dict[
-            str, Tuple[float, str, str, dict]
-        ] = {}  # mem_id -> (score, content, source, mem_dict)
+        scored_memories: Dict[str, Tuple[float, str, str, dict]] = {}  # mem_id -> (score, content, source, mem_dict)
 
         def score_node(node: dict, depth: int = 0):
             node_title_stems = set(_stemmed_words(node.get("title", "")))
@@ -676,6 +719,7 @@ class MemoryRetriever:
                 trace=trace,
                 confidence=round(confidence, 2),
                 sources=sources,
+                memory_ids=[m.get("id", "") for m in matched_memories if m.get("id")],
             ),
             matched_memories,
         )

@@ -77,11 +77,7 @@ class MemCtrlMemory:
         tree_dict = tree.to_dict() if tree else {}
         memory_lookup = {m["id"]: m for m in memories}
 
-        result = asyncio.run(
-            self.retriever.retrieve(
-                query, tree_dict, top_k=top_k, memory_lookup=memory_lookup
-            )
-        )
+        result = asyncio.run(self.retriever.retrieve(query, tree_dict, top_k=top_k, memory_lookup=memory_lookup))
         return result.facts
 
     def recall_with_trace(self, query: str, top_k: int = 5) -> Dict[str, Any]:
@@ -94,20 +90,14 @@ class MemCtrlMemory:
         tree_dict = tree.to_dict() if tree else {}
         memory_lookup = {m["id"]: m for m in memories}
 
-        result = asyncio.run(
-            self.retriever.retrieve(
-                query, tree_dict, top_k=top_k, memory_lookup=memory_lookup
-            )
-        )
+        result = asyncio.run(self.retriever.retrieve(query, tree_dict, top_k=top_k, memory_lookup=memory_lookup))
         return {
             "facts": result.facts,
             "trace": result.trace,
             "confidence": result.confidence,
         }
 
-    def consolidate(
-        self, event: str = "on_commit", context: Optional[Dict] = None
-    ) -> List[str]:
+    def consolidate(self, event: str = "on_commit", context: Optional[Dict] = None) -> List[str]:
         """Fire a trigger rule to consolidate memories."""
         return self.engine.fire_trigger(event, context or {}, self.store)
 
@@ -143,11 +133,7 @@ class MemoryNode:
             messages = state["messages"]
             if messages:
                 latest = messages[-1]
-                content = (
-                    latest.get("content", "")
-                    if isinstance(latest, dict)
-                    else str(latest)
-                )
+                content = latest.get("content", "") if isinstance(latest, dict) else str(latest)
                 if len(content) > 20:
                     self.memory.remember(
                         content=content[:500],
@@ -192,10 +178,7 @@ class MemCtrlSaver(BaseCheckpointSaver):
 
     def __init__(self, db_path: Optional[str] = None):
         if not LANGGRAPH_AVAILABLE:
-            raise ImportError(
-                "LangGraph is required for MemCtrlSaver. "
-                'Install with: pip install "memctrl[langgraph]"'
-            )
+            raise ImportError('LangGraph is required for MemCtrlSaver. Install with: pip install "memctrl[langgraph]"')
         super().__init__()
         self.store = MemoryStore(db_path)
 

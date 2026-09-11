@@ -60,9 +60,7 @@ async def _llm_via_httpx(
     if not api_key:
         raise RuntimeError("No API key provided. Set --llm-api-key or OPENAI_API_KEY.")
 
-    base_url = base_url or os.environ.get(
-        "OPENAI_BASE_URL", "https://api.openai.com/v1"
-    )
+    base_url = base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -114,9 +112,7 @@ def create_llm_client(
             model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         elif os.environ.get("ANTHROPIC_API_KEY"):
             provider = provider or "anthropic"
-            model = model or os.environ.get(
-                "ANTHROPIC_MODEL", "claude-3-haiku-20240307"
-            )
+            model = model or os.environ.get("ANTHROPIC_MODEL", "claude-3-haiku-20240307")
         else:
             return None
 
@@ -149,12 +145,9 @@ def create_llm_client(
         except ImportError:
             # LiteLLM not installed, fall back to direct httpx
             if provider == "openai":
-                return await _llm_via_httpx(
-                    prompt, json_mode, model=model, api_key=api_key, base_url=base_url
-                )
+                return await _llm_via_httpx(prompt, json_mode, model=model, api_key=api_key, base_url=base_url)
             raise RuntimeError(
-                f"LiteLLM not installed. Install with: pip install litellm\n"
-                f"Required for provider: {provider}"
+                f"LiteLLM not installed. Install with: pip install litellm\nRequired for provider: {provider}"
             )
 
     return client

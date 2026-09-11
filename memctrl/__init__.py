@@ -4,9 +4,20 @@ Inspired by PageIndex's tree-based retrieval and Graphify's install pattern.
 Uses hierarchical reasoning (not vectors) for explainable memory retrieval.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
-from memctrl.store import Memory, MemoryStore, TriggerLog, TreeNode
+from memctrl.store import (
+    Memory,
+    MemoryStore,
+    TriggerLog,
+    TreeNode,
+    MemoryRelation,
+    MemoryEvidence,
+    CLAIM_TYPES,
+    LIFECYCLE_STATES,
+    VERIFICATION_STATES,
+    RELATION_TYPES,
+)
 from memctrl.retriever import RetrievalResult
 from memctrl.decay import ConfidenceDecay, DECAY_RULES
 from memctrl.reflection import ReflectionEngine, ReflectionResult
@@ -20,6 +31,12 @@ __all__ = [
     "MemoryStore",
     "TreeNode",
     "TriggerLog",
+    "MemoryRelation",
+    "MemoryEvidence",
+    "CLAIM_TYPES",
+    "LIFECYCLE_STATES",
+    "VERIFICATION_STATES",
+    "RELATION_TYPES",
     "RetrievalResult",
     "ConfidenceDecay",
     "DECAY_RULES",

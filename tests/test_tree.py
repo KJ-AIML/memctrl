@@ -371,38 +371,24 @@ def test_build_cluster_prompt():
 
 
 def test_tree_node_is_leaf():
-    leaf = TreeNode(
-        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
-    )
-    parent = TreeNode(
-        id="p1", title="parent", layer="project", summary="s", children=[leaf]
-    )
+    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
+    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
     assert leaf.is_leaf() is True
     assert parent.is_leaf() is False
 
 
 def test_tree_node_all_memory_ids():
-    leaf1 = TreeNode(
-        id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"]
-    )
-    leaf2 = TreeNode(
-        id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"]
-    )
-    parent = TreeNode(
-        id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2]
-    )
+    leaf1 = TreeNode(id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"])
+    leaf2 = TreeNode(id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"])
+    parent = TreeNode(id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2])
     ids = parent.all_memory_ids()
     assert "m1" in ids
     assert "m2" in ids
 
 
 def test_tree_node_find_node():
-    leaf = TreeNode(
-        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
-    )
-    parent = TreeNode(
-        id="p1", title="parent", layer="project", summary="s", children=[leaf]
-    )
+    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
+    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
     assert parent.find_node("l1") is not None
     assert parent.find_node("l1").id == "l1"
     assert parent.find_node("xxx") is None
@@ -427,9 +413,7 @@ def test_tree_serialization():
 
 
 def test_tree_serialization_with_children():
-    leaf = TreeNode(
-        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
-    )
+    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
     root = TreeNode(id="r1", title="root", layer="root", summary="s", children=[leaf])
     d = root.to_dict()
     restored = TreeNode.from_dict(d)

@@ -8,7 +8,9 @@ from typing import Any
 from memctrl.sanitize import has_secrets
 
 
-TRUSTED_SOURCES = {
+# Recognized source categories for attribution tracking.
+# NOTE: Attribution is not verification; source strings do not guarantee factual truth.
+RECOGNIZED_SOURCES = {
     "manual",
     "mcp",
     "cli",
@@ -22,29 +24,23 @@ TRUSTED_SOURCES = {
     "langgraph",
     "langgraph_conversation",
 }
+# Backward compatibility alias
+TRUSTED_SOURCES = RECOGNIZED_SOURCES
 
 
-def analyze_store_health(
-    store, low_confidence_threshold: float = 0.5
-) -> dict[str, Any]:
+def analyze_store_health(store, low_confidence_threshold: float = 0.5) -> dict[str, Any]:
     """Return a health report for a MemoryStore.
 
     The report is intentionally JSON-friendly so the CLI can render it and
     future integrations can export it without scraping terminal output.
     """
-    memories = store.list_memories()
+    memories = store.list_memories(include_expired=True)
     stats = store.stats()
     now = datetime.now()
 
-    expired = [
-        mem for mem in memories if mem.expires_at is not None and mem.expires_at < now
-    ]
-    low_confidence = [
-        mem for mem in memories if mem.confidence < low_confidence_threshold
-    ]
-    risky_sources = [
-        mem for mem in memories if mem.source.lower() not in TRUSTED_SOURCES
-    ]
+    expired = [mem for mem in memories if mem.expires_at is not None and mem.expires_at < now]
+    low_confidence = [mem for mem in memories if mem.confidence < low_confidence_threshold]
+    risky_sources = [mem for mem in memories if mem.source.lower() not in RECOGNIZED_SOURCES]
     secret_findings = [mem for mem in memories if has_secrets(mem.content)]
 
     provenance_rows = store.get_provenance(limit=1000)
@@ -60,7 +56,8 @@ def analyze_store_health(
 
     memory_ids = {mem.id for mem in memories}
     covered_memory_ids = memory_ids & covered_ids
-    coverage = len(covered_memory_ids) / len(memory_ids) if memory_ids else 1.0
+    # Note: this measures retrieval exposure (appearance in query traces), not source-lineage provenance.
+    retrieval_exposure = len(covered_memory_ids) / len(memory_ids) if memory_ids else 1.0
 
     spans = store.get_otel_spans(limit=1000)
     error_spans = [span for span in spans if span.get("status") == "error"]
@@ -76,7 +73,7 @@ def analyze_store_health(
         warnings.append("secret_findings")
     if memories and not provenance_rows:
         warnings.append("missing_provenance")
-    elif coverage < 0.5:
+    elif retrieval_exposure < 0.5:
         warnings.append("low_provenance_coverage")
     if error_spans:
         warnings.append("otel_errors")
@@ -99,7 +96,15 @@ def analyze_store_health(
         "provenance": {
             "records": len(provenance_rows),
             "covered_memories": len(covered_memory_ids),
-            "coverage": coverage,
+            "coverage": retrieval_exposure,
+            "retrieval_exposure": retrieval_exposure,
+            "retrieval_exposure_coverage": retrieval_exposure,
+            "low_confidence_retrievals": low_confidence_retrievals,
+        },
+        "retrieval_exposure": {
+            "records": len(provenance_rows),
+            "exposed_memories": len(covered_memory_ids),
+            "exposure_rate": retrieval_exposure,
             "low_confidence_retrievals": low_confidence_retrievals,
         },
         "opentelemetry": {

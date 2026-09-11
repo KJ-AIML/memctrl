@@ -74,9 +74,7 @@ class ConfidenceDecay:
         """
         return self.rules.get(layer, {"rate": 0.0, "floor": 1.0})
 
-    def _compute_new_confidence(
-        self, current: float, rate: float, floor: float, days: int
-    ) -> float:
+    def _compute_new_confidence(self, current: float, rate: float, floor: float, days: int) -> float:
         """Apply exponential decay formula, clamped to floor.
 
         We use multiplicative exponential decay because:
@@ -125,9 +123,7 @@ class ConfidenceDecay:
             if rate <= 0.0 or floor >= 1.0:
                 continue
 
-            new_confidence = self._compute_new_confidence(
-                mem.confidence, rate, floor, days_elapsed
-            )
+            new_confidence = self._compute_new_confidence(mem.confidence, rate, floor, days_elapsed)
 
             if new_confidence != mem.confidence:
                 self.store.update_memory_confidence(mem.id, new_confidence)
@@ -142,32 +138,27 @@ class ConfidenceDecay:
 
         return affected
 
-    def get_flagged_memories(
-        self, floor_override: Optional[float] = None
-    ) -> List["Memory"]:
-        """Get memories that have decayed below their layer's floor.
+    def get_flagged_memories(self, floor_override: Optional[float] = None) -> List["Memory"]:
+        """Get memories that have reached or decayed to their layer's floor.
 
         These are candidates for review or deletion by a human operator.
-        We do NOT auto-delete because a low-confidence memory may still
-        contain valuable context that just needs re-verification.
+        Consistent with clamp semantics (new_confidence = max(decayed, floor)),
+        inferred memories reaching the floor become review-eligible.
 
         Args:
             floor_override: If provided, use this threshold instead of the
                             layer-specific floor. Useful for emergency review.
 
         Returns:
-            List of Memory objects below their floor threshold.
+            List of Memory objects at or below their floor threshold.
         """
         flagged: List["Memory"] = []
-        memories = self.store.list_memories()
+        memories = self.store.list_memories(include_expired=True)
 
         for mem in memories:
-            threshold = (
-                floor_override
-                if floor_override is not None
-                else self._get_rule(mem.layer)["floor"]
-            )
-            if mem.confidence < threshold:
+            threshold = floor_override if floor_override is not None else self._get_rule(mem.layer)["floor"]
+            # Only inferred memories (confidence < 1.0) can be review-flagged by decay
+            if mem.confidence < 1.0 and mem.confidence <= threshold:
                 flagged.append(mem)
 
         return flagged
@@ -175,10 +166,9 @@ class ConfidenceDecay:
     def reinforce_memory(self, memory_id: str, amount: float = 0.1) -> bool:
         """Reinforce a memory by increasing its confidence.
 
-        Called when a memory is successfully retrieved (access = reinforcement).
-        This is the key feedback loop that prevents useful inferred facts from
-        decaying away: every time a memory contributes to a good answer, it gets
-        a small confidence boost.
+        NOTE: Explicit evidential/support operation. General retrieval access
+        should call store.record_memory_access(memory_id) instead of reinforcing confidence.
+        Does NOT modify created_at (created_at is immutable).
 
         Cannot exceed 1.0. If the memory is already at 1.0, it stays there.
 
@@ -189,13 +179,14 @@ class ConfidenceDecay:
         Returns:
             True if memory was found and updated, False otherwise.
         """
-        mem = self.store.get_memory(memory_id)
+        mem = self.store.get_memory(memory_id, include_expired=True)
         if mem is None:
             return False
 
         new_confidence = min(mem.confidence + amount, 1.0)
         updated = self.store.update_memory_confidence(memory_id, new_confidence)
         if updated:
-            # Also update timestamp to mark this as recently reinforced.
+            # Record access and updated_at, but created_at remains immutable
+            self.store.record_memory_access(memory_id)
             self.store.update_memory_timestamp(memory_id)
         return updated

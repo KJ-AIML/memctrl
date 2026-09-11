@@ -105,10 +105,7 @@ class RuleEngine:
             return self.rules
 
         if tomllib is None:
-            raise RuntimeError(
-                "TOML parsing requires Python 3.11+ or 'tomli' package. "
-                "Install: pip install tomli"
-            )
+            raise RuntimeError("TOML parsing requires Python 3.11+ or 'tomli' package. Install: pip install tomli")
 
         try:
             with open(self.rc_path, "rb") as f:
@@ -148,9 +145,7 @@ class RuleEngine:
         if "extract" in data:
             extract = data["extract"]
             if "confidence" in extract:
-                rules.confidence = {
-                    k: float(v) for k, v in extract["confidence"].items()
-                }
+                rules.confidence = {k: float(v) for k, v in extract["confidence"].items()}
 
         # [memctrl]
         if "memctrl" in data:
@@ -258,14 +253,10 @@ class RuleEngine:
         verb = parsed.get("verb", "")
         if verb == "consolidate":
             # Atomic: move memories + log trigger in one transaction
-            return store.consolidate_and_log(
-                parsed["from"], parsed["to"], event, action
-            )
+            return store.consolidate_and_log(parsed["from"], parsed["to"], event, action)
         elif verb == "summarize":
             # For now: consolidate + mark as summarized (also atomic)
-            return store.consolidate_and_log(
-                parsed["from"], parsed["to"], event, action
-            )
+            return store.consolidate_and_log(parsed["from"], parsed["to"], event, action)
         elif verb == "extract":
             # Extract is handled by extractor module
             return []

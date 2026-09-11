@@ -88,7 +88,7 @@ def test_reflection_result_to_dict_none_timestamp():
 
 
 def test_explicit_reflection_consolidates_session_memories(tmp_store, engine):
-    """force=True should always consolidate session memories regardless of time."""
+    """force=True should generate candidate reflection and preserve session evidence."""
     tmp_store.insert_memory("session", "we decided to use FastAPI", "test")
     tmp_store.insert_memory("session", "fixed auth bug in middleware", "test")
 
@@ -98,9 +98,18 @@ def test_explicit_reflection_consolidates_session_memories(tmp_store, engine):
     assert result.triggered is True
     assert result.event == "explicit"
     assert len(result.consolidated_ids) == 2
-    # Memories should be moved to project layer (+ 1 reflection memory)
-    assert len(tmp_store.list_memories("session")) == 0
-    assert len(tmp_store.list_memories("project")) == 3  # 2 consolidated + 1 reflection
+    # Session memories must be preserved (not bulk-promoted to project)
+    assert len(tmp_store.list_memories("session")) == 2
+    # Candidate reflection memory created in project layer
+    candidates = tmp_store.list_memories("project", include_candidates=True)
+    assert len(candidates) == 1
+    cand = candidates[0]
+    assert cand.lifecycle_state == "candidate"
+    assert cand.claim_type == "derived_lesson"
+    # Lineage relations exist
+    relations = tmp_store.get_memory_relations(cand.id)
+    assert len(relations) == 2
+    assert all(r.relation_type == "derived_from" for r in relations)
 
 
 def test_explicit_reflection_empty_session(tmp_store, engine):
@@ -115,17 +124,18 @@ def test_explicit_reflection_empty_session(tmp_store, engine):
 
 
 def test_explicit_reflection_creates_reflection_memory(tmp_store, engine):
-    """Reflection should create a memory in project layer with source='reflection'."""
+    """Reflection should create a candidate memory in project layer with source='reflection'."""
     tmp_store.insert_memory("session", "built the auth module", "test")
 
     refl = ReflectionEngine(tmp_store, engine=engine)
     result = refl.check_and_reflect(force=True)
 
     assert len(result.new_memories) == 1
-    project_mems = tmp_store.list_memories("project")
+    project_mems = tmp_store.list_memories("project", include_candidates=True)
     reflection_mems = [m for m in project_mems if m.source == "reflection"]
     assert len(reflection_mems) == 1
     assert "built the auth module" in reflection_mems[0].content
+    assert reflection_mems[0].lifecycle_state == "candidate"
 
 
 def test_explicit_reflection_logs_trigger(tmp_store, engine):
@@ -449,17 +459,17 @@ def test_generate_summary_deduplicates(tmp_store):
 
 
 def test_reflection_consolidates_to_project(tmp_store, engine):
-    """on_session_end trigger should consolidate session -> project."""
+    """on_session_end trigger should generate candidate reflection and preserve session evidence."""
     tmp_store.insert_memory("session", "task A", "test")
     tmp_store.insert_memory("session", "task B", "test")
 
     refl = ReflectionEngine(tmp_store, engine=engine)
     _ = refl.check_and_reflect(force=True)
 
-    project_mems = tmp_store.list_memories("project")
-    assert len(project_mems) > 0
-    # Session should be empty after consolidation
-    assert len(tmp_store.list_memories("session")) == 0
+    candidates = tmp_store.list_memories("project", include_candidates=True)
+    assert len(candidates) > 0
+    # Session evidence should be preserved
+    assert len(tmp_store.list_memories("session")) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +553,8 @@ def test_consolidate_with_no_matching_trigger_rule(tmp_store):
 
     assert result.triggered is True
     assert len(result.consolidated_ids) == 1
-    assert len(tmp_store.list_memories("session")) == 0
+    assert len(tmp_store.list_memories("session")) == 1  # preserved evidence
+    assert len(tmp_store.list_memories("project", include_candidates=True)) == 1
 
 
 def test_reflection_result_str_summary():
@@ -597,16 +608,13 @@ def test_cli_done():
         result = runner.invoke(app, ["done"])
 
         assert result.exit_code == 0
-        assert (
-            "consolidated" in result.output.lower()
-            or "Session consolidated" in result.output
-        )
+        assert "consolidated" in result.output.lower() or "Session consolidated" in result.output
         # 2 memories should have been moved
         assert "2" in result.output
 
-        # Session should be empty
-        list_result = runner.invoke(app, ["list", "--layer", "session"])
-        assert "No memories" in list_result.output
+        # Candidates awaiting review can be inspected via candidates command
+        cand_result = runner.invoke(app, ["candidates"])
+        assert "Candidate" in cand_result.output
 
         del os.environ["MEMCTRL_DB_PATH"]
 
@@ -619,10 +627,7 @@ def test_cli_done_empty_session():
         result = runner.invoke(app, ["done"])
 
         assert result.exit_code == 0
-        assert (
-            "0 memories moved" in result.output
-            or "No session memories" in result.output
-        )
+        assert "0 memories moved" in result.output or "No session memories" in result.output
 
         del os.environ["MEMCTRL_DB_PATH"]
 

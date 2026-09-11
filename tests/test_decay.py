@@ -79,9 +79,7 @@ def test_explicit_memory_never_decays(decay, store):
 
 def test_explicit_memory_in_project_never_decays(decay, store):
     """Project-layer explicit memories must be completely immune."""
-    mid = store.insert_memory(
-        "project", "ADR-001: we use FastAPI", "test", confidence=1.0
-    )
+    mid = store.insert_memory("project", "ADR-001: we use FastAPI", "test", confidence=1.0)
     affected = decay.decay_memories(days_elapsed=100)
     mem = store.get_memory(mid)
     assert mem.confidence == 1.0
@@ -90,9 +88,7 @@ def test_explicit_memory_in_project_never_decays(decay, store):
 
 def test_inferred_session_memory_decays(decay, store):
     """Session-layer inferred (0.7) memories must decay at the session rate."""
-    mid = store.insert_memory(
-        "session", "inferred session fact", "test", confidence=0.7
-    )
+    mid = store.insert_memory("session", "inferred session fact", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.7 * (1.0 - 0.05)  # 0.665
@@ -105,9 +101,7 @@ def test_inferred_session_memory_decays(decay, store):
 
 def test_inferred_user_memory_decays(decay, store):
     """User-layer inferred (0.7) memories must decay at the slower user rate."""
-    mid = store.insert_memory(
-        "user", "inferred user preference", "test", confidence=0.7
-    )
+    mid = store.insert_memory("user", "inferred user preference", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.7 * (1.0 - 0.01)  # 0.693
@@ -117,9 +111,7 @@ def test_inferred_user_memory_decays(decay, store):
 
 def test_mentioned_memory_decays(decay, store):
     """Mentioned (0.5) memories must also decay."""
-    mid = store.insert_memory(
-        "session", "maybe we should try X", "test", confidence=0.5
-    )
+    mid = store.insert_memory("session", "maybe we should try X", "test", confidence=0.5)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.5 * (1.0 - 0.05)  # 0.475
@@ -129,9 +121,7 @@ def test_mentioned_memory_decays(decay, store):
 
 def test_project_inferred_memory_never_decays(decay, store):
     """Project layer has rate=0.0, so even inferred memories should not decay."""
-    mid = store.insert_memory(
-        "project", "inferred project fact", "test", confidence=0.7
-    )
+    mid = store.insert_memory("project", "inferred project fact", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=10)
     mem = store.get_memory(mid)
     assert mem.confidence == 0.7
@@ -226,12 +216,12 @@ def test_get_flagged_memories_finds_below_floor(decay, store):
     assert flagged[0].id == mid
 
 
-def test_get_flagged_memories_at_floor_not_flagged(decay, store):
-    """Memories exactly at the floor should NOT be flagged (only below)."""
+def test_get_flagged_memories_at_floor_is_flagged(decay, store):
+    """Memories reaching the floor should be flagged for review (consistent with clamp)."""
     # Insert a memory with confidence exactly at the session floor
     store.insert_memory("session", "exactly at floor", "test", confidence=0.3)
     flagged = decay.get_flagged_memories()
-    assert len(flagged) == 0
+    assert len(flagged) == 1
 
 
 def test_get_flagged_memories_with_floor_override(decay, store):
@@ -299,7 +289,7 @@ def test_reinforce_explicit_memory_stays_at_1_0(decay, store):
 
 
 def test_reinforce_memory_updates_timestamp(decay, store):
-    """Reinforcement should update the memory's created_at timestamp."""
+    """Reinforcement should update updated_at while created_at remains immutable."""
     mid = store.insert_memory("session", "old fact", "test", confidence=0.6)
     old_mem = store.get_memory(mid)
     old_ts = old_mem.created_at
@@ -311,7 +301,9 @@ def test_reinforce_memory_updates_timestamp(decay, store):
 
     decay.reinforce_memory(mid)
     new_mem = store.get_memory(mid)
-    assert new_mem.created_at > old_ts
+    assert new_mem.created_at == old_ts
+    assert new_mem.updated_at is not None
+    assert new_mem.updated_at > old_ts
 
 
 def test_reinforce_missing_memory_returns_false(decay):
@@ -426,7 +418,7 @@ def test_store_methods_integration(store):
     below_none = store.get_memories_below_confidence(0.5)
     assert len(below_none) == 0
 
-    # update_memory_timestamp
+    # update_memory_timestamp updates updated_at while created_at is immutable
     old_ts = mem.created_at
     import time
 
@@ -434,7 +426,9 @@ def test_store_methods_integration(store):
     result = store.update_memory_timestamp(mid)
     assert result is True
     mem = store.get_memory(mid)
-    assert mem.created_at > old_ts
+    assert mem.created_at == old_ts
+    assert mem.updated_at is not None
+    assert mem.updated_at > old_ts
 
 
 def test_store_update_confidence_missing(store):

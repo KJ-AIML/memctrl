@@ -21,6 +21,16 @@ from typing import List, Optional
 from memctrl.sanitize import sanitize_text
 
 # ---------------------------------------------------------------------------
+# Constants & Enums for Knowledge Lifecycle & Lineage
+# ---------------------------------------------------------------------------
+
+CLAIM_TYPES = {"observation", "assertion", "hypothesis", "decision", "derived_lesson"}
+LIFECYCLE_STATES = {"candidate", "accepted", "superseded", "rejected", "archived"}
+VERIFICATION_STATES = {"unverified", "supported", "disputed", "refuted"}
+RELATION_TYPES = {"derived_from", "supports", "contradicts", "supersedes", "refutes"}
+
+
+# ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
 
@@ -37,6 +47,16 @@ class Memory:
     created_at: datetime
     expires_at: Optional[datetime]
     tags: List[str] = field(default_factory=list)
+    updated_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
+    access_count: int = 0
+    # Knowledge lifecycle & semantics
+    claim_type: str = "assertion"
+    lifecycle_state: str = "accepted"
+    verification_state: str = "unverified"
+    observed_at: Optional[datetime] = None
+    valid_from: Optional[datetime] = None
+    valid_until: Optional[datetime] = None
 
     def to_dict(self) -> dict:
         return {
@@ -48,10 +68,20 @@ class Memory:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "tags": self.tags,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_accessed_at": (self.last_accessed_at.isoformat() if self.last_accessed_at else None),
+            "access_count": self.access_count,
+            "claim_type": self.claim_type,
+            "lifecycle_state": self.lifecycle_state,
+            "verification_state": self.verification_state,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "valid_from": self.valid_from.isoformat() if self.valid_from else None,
+            "valid_until": self.valid_until.isoformat() if self.valid_until else None,
         }
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Memory":
+        keys = row.keys() if hasattr(row, "keys") else []
         return cls(
             id=row["id"],
             layer=row["layer"],
@@ -61,6 +91,95 @@ class Memory:
             created_at=_parse_dt(row["created_at"]),
             expires_at=_parse_dt(row["expires_at"]) if row["expires_at"] else None,
             tags=json.loads(row["tags"]) if row["tags"] else [],
+            updated_at=(_parse_dt(row["updated_at"]) if "updated_at" in keys and row["updated_at"] else None),
+            last_accessed_at=(
+                _parse_dt(row["last_accessed_at"]) if "last_accessed_at" in keys and row["last_accessed_at"] else None
+            ),
+            access_count=(row["access_count"] if "access_count" in keys and row["access_count"] is not None else 0),
+            claim_type=(row["claim_type"] if "claim_type" in keys and row["claim_type"] else "assertion"),
+            lifecycle_state=(
+                row["lifecycle_state"] if "lifecycle_state" in keys and row["lifecycle_state"] else "accepted"
+            ),
+            verification_state=(
+                row["verification_state"]
+                if "verification_state" in keys and row["verification_state"]
+                else "unverified"
+            ),
+            observed_at=(_parse_dt(row["observed_at"]) if "observed_at" in keys and row["observed_at"] else None),
+            valid_from=(_parse_dt(row["valid_from"]) if "valid_from" in keys and row["valid_from"] else None),
+            valid_until=(_parse_dt(row["valid_until"]) if "valid_until" in keys and row["valid_until"] else None),
+        )
+
+
+@dataclass
+class MemoryRelation:
+    """Directed relationship between memories representing derivation, support, or refutation."""
+
+    id: str
+    from_memory_id: str
+    to_memory_id: str
+    relation_type: str  # derived_from, supports, contradicts, supersedes, refutes
+    created_at: datetime
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "from_memory_id": self.from_memory_id,
+            "to_memory_id": self.to_memory_id,
+            "relation_type": self.relation_type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "MemoryRelation":
+        return cls(
+            id=row["id"],
+            from_memory_id=row["from_memory_id"],
+            to_memory_id=row["to_memory_id"],
+            relation_type=row["relation_type"],
+            created_at=_parse_dt(row["created_at"]),
+            metadata=json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+        )
+
+
+@dataclass
+class MemoryEvidence:
+    """External evidence pointer linking a memory to an authoritative source record."""
+
+    id: str
+    memory_id: str
+    source_system: str  # e.g. "heli"
+    source_id: str  # e.g. "task-3017"
+    source_revision: Optional[str]  # e.g. "git-sha"
+    relation: str  # derived_from, supports, contradicts, etc.
+    created_at: datetime
+    metadata: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "memory_id": self.memory_id,
+            "source_system": self.source_system,
+            "source_id": self.source_id,
+            "source_revision": self.source_revision,
+            "relation": self.relation,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "MemoryEvidence":
+        return cls(
+            id=row["id"],
+            memory_id=row["memory_id"],
+            source_system=row["source_system"],
+            source_id=row["source_id"],
+            source_revision=row["source_revision"],
+            relation=row["relation"],
+            created_at=_parse_dt(row["created_at"]),
+            metadata=json.loads(row["metadata_json"]) if row["metadata_json"] else {},
         )
 
 
@@ -152,9 +271,7 @@ class TriggerLog:
             id=row["id"],
             event=row["event"],
             action=row["action"],
-            memories_affected=json.loads(row["memories_affected"])
-            if row["memories_affected"]
-            else [],
+            memories_affected=json.loads(row["memories_affected"]) if row["memories_affected"] else [],
             timestamp=_parse_dt(row["timestamp"]),
         )
 
@@ -260,8 +377,6 @@ class MemoryStore:
                     version INTEGER PRIMARY KEY
                 );
 
-                INSERT OR IGNORE INTO schema_version (version) VALUES (2);
-
                 CREATE TABLE IF NOT EXISTS memories (
                     id          TEXT PRIMARY KEY,
                     layer       TEXT NOT NULL,
@@ -270,7 +385,42 @@ class MemoryStore:
                     confidence  REAL DEFAULT 1.0,
                     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at  TIMESTAMP,
-                    tags        TEXT
+                    tags        TEXT,
+                    updated_at  TIMESTAMP,
+                    last_accessed_at TIMESTAMP,
+                    access_count INTEGER DEFAULT 0,
+                    claim_type  TEXT DEFAULT 'assertion',
+                    lifecycle_state TEXT DEFAULT 'accepted',
+                    verification_state TEXT DEFAULT 'unverified',
+                    observed_at TIMESTAMP,
+                    valid_from  TIMESTAMP,
+                    valid_until TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS maintenance_state (
+                    key         TEXT PRIMARY KEY,
+                    last_run_at TIMESTAMP,
+                    metadata_json TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS memory_relations (
+                    id          TEXT PRIMARY KEY,
+                    from_memory_id TEXT NOT NULL,
+                    to_memory_id TEXT NOT NULL,
+                    relation_type TEXT NOT NULL,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS memory_evidence (
+                    id          TEXT PRIMARY KEY,
+                    memory_id   TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    source_id   TEXT NOT NULL,
+                    source_revision TEXT,
+                    relation    TEXT NOT NULL,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS tree_nodes (
@@ -321,9 +471,21 @@ class MemoryStore:
                     attributes_json TEXT,
                     service_name TEXT NOT NULL
                 );
+                """
+            )
+            # Run schema migration before creating indexes on migrated columns
+            self._migrate_db(conn)
 
+            conn.executescript(
+                """
                 CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer);
                 CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
+                CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_state);
+                CREATE INDEX IF NOT EXISTS idx_memories_verification ON memories(verification_state);
+                CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_memory_id);
+                CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_memory_id);
+                CREATE INDEX IF NOT EXISTS idx_evidence_mem ON memory_evidence(memory_id);
+                CREATE INDEX IF NOT EXISTS idx_evidence_src ON memory_evidence(source_system, source_id);
                 CREATE INDEX IF NOT EXISTS idx_tree_parent ON tree_nodes(parent_id);
                 CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
                 CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
@@ -336,7 +498,194 @@ class MemoryStore:
 
         self._retry_write(_write)
 
+    def _migrate_db(self, conn: sqlite3.Connection) -> None:
+        """Migrate database schema up to version 4."""
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        current_version = row[0] if row and row[0] is not None else 2
+
+        if current_version < 3:
+            col_info = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "updated_at" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN updated_at TIMESTAMP")
+            if "last_accessed_at" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TIMESTAMP")
+            if "access_count" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 0")
+
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS maintenance_state (
+                    key TEXT PRIMARY KEY,
+                    last_run_at TIMESTAMP,
+                    metadata_json TEXT
+                )"""
+            )
+            conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (3)")
+            current_version = 3
+
+        if current_version < 4:
+            col_info = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "claim_type" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN claim_type TEXT DEFAULT 'assertion'")
+            if "lifecycle_state" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN lifecycle_state TEXT DEFAULT 'accepted'")
+            if "verification_state" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN verification_state TEXT DEFAULT 'unverified'")
+            if "observed_at" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN observed_at TIMESTAMP")
+            if "valid_from" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN valid_from TIMESTAMP")
+            if "valid_until" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN valid_until TIMESTAMP")
+
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS memory_relations (
+                    id              TEXT PRIMARY KEY,
+                    from_memory_id  TEXT NOT NULL,
+                    to_memory_id    TEXT NOT NULL,
+                    relation_type   TEXT NOT NULL,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json   TEXT
+                )"""
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_memory_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_memory_id)")
+
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS memory_evidence (
+                    id              TEXT PRIMARY KEY,
+                    memory_id       TEXT NOT NULL,
+                    source_system   TEXT NOT NULL,
+                    source_id       TEXT NOT NULL,
+                    source_revision TEXT,
+                    relation        TEXT NOT NULL,
+                    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    metadata_json   TEXT
+                )"""
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_mem ON memory_evidence(memory_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_evidence_src ON memory_evidence(source_system, source_id)")
+
+            conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (4)")
+        elif current_version == 4:
+            conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (4)")
+
     # --- Memory CRUD ---
+
+    def _insert_memory_tx(
+        self,
+        conn: sqlite3.Connection,
+        layer: str,
+        content: str,
+        source: str = "manual",
+        confidence: float = 1.0,
+        tags: Optional[List[str]] = None,
+        expires_at: Optional[datetime] = None,
+        memory_id: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+        last_accessed_at: Optional[datetime] = None,
+        access_count: int = 0,
+        claim_type: str = "assertion",
+        lifecycle_state: str = "accepted",
+        verification_state: str = "unverified",
+        observed_at: Optional[datetime] = None,
+        valid_from: Optional[datetime] = None,
+        valid_until: Optional[datetime] = None,
+    ) -> str:
+        """Single internal persistence boundary for all memory inserts.
+
+        Validates, sanitizes secrets/PII, normalizes, and persists to SQLite.
+        """
+        if not content:
+            raise ValueError("Memory content cannot be empty")
+        if not layer:
+            raise ValueError("Memory layer cannot be empty")
+        if claim_type not in CLAIM_TYPES:
+            raise ValueError(f"Invalid claim_type '{claim_type}'. Must be one of {sorted(CLAIM_TYPES)}")
+        if lifecycle_state not in LIFECYCLE_STATES:
+            raise ValueError(f"Invalid lifecycle_state '{lifecycle_state}'. Must be one of {sorted(LIFECYCLE_STATES)}")
+        if verification_state not in VERIFICATION_STATES:
+            raise ValueError(
+                f"Invalid verification_state '{verification_state}'. Must be one of {sorted(VERIFICATION_STATES)}"
+            )
+
+        sanitized_content = sanitize_text(content)
+        mid = memory_id or str(uuid.uuid4())
+        now_iso = _now_iso()
+        c_at = created_at.isoformat() if created_at else now_iso
+        u_at = updated_at.isoformat() if updated_at else c_at
+        e_at = expires_at.isoformat() if expires_at else None
+        l_at = last_accessed_at.isoformat() if last_accessed_at else None
+        obs_at = observed_at.isoformat() if observed_at else None
+        v_from = valid_from.isoformat() if valid_from else None
+        v_until = valid_until.isoformat() if valid_until else None
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+        if "claim_type" in cols:
+            conn.execute(
+                """INSERT INTO memories (id, layer, content, source, confidence,
+                                         created_at, expires_at, tags,
+                                         updated_at, last_accessed_at, access_count,
+                                         claim_type, lifecycle_state, verification_state,
+                                         observed_at, valid_from, valid_until)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    layer,
+                    sanitized_content,
+                    source,
+                    confidence,
+                    c_at,
+                    e_at,
+                    json.dumps(tags or []),
+                    u_at,
+                    l_at,
+                    access_count,
+                    claim_type,
+                    lifecycle_state,
+                    verification_state,
+                    obs_at,
+                    v_from,
+                    v_until,
+                ),
+            )
+        elif "updated_at" in cols:
+            conn.execute(
+                """INSERT INTO memories (id, layer, content, source, confidence,
+                                         created_at, expires_at, tags,
+                                         updated_at, last_accessed_at, access_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    layer,
+                    sanitized_content,
+                    source,
+                    confidence,
+                    c_at,
+                    e_at,
+                    json.dumps(tags or []),
+                    u_at,
+                    l_at,
+                    access_count,
+                ),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO memories (id, layer, content, source, confidence,
+                                         created_at, expires_at, tags)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    layer,
+                    sanitized_content,
+                    source,
+                    confidence,
+                    c_at,
+                    e_at,
+                    json.dumps(tags or []),
+                ),
+            )
+        return mid
 
     def insert_memory(
         self,
@@ -346,48 +695,91 @@ class MemoryStore:
         confidence: float = 1.0,
         tags: Optional[List[str]] = None,
         expires_at: Optional[datetime] = None,
+        claim_type: str = "assertion",
+        lifecycle_state: str = "accepted",
+        verification_state: str = "unverified",
+        observed_at: Optional[datetime] = None,
+        valid_from: Optional[datetime] = None,
+        valid_until: Optional[datetime] = None,
     ) -> str:
-        # REDACTION: sanitize secrets/PII before storage
-        content = sanitize_text(content)
-        mid = str(uuid.uuid4())
-
         def _write(conn):
-            conn.execute(
-                """INSERT INTO memories (id, layer, content, source, confidence,
-                                         created_at, expires_at, tags)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    mid,
-                    layer,
-                    content,
-                    source,
-                    confidence,
-                    _now_iso(),
-                    expires_at.isoformat() if expires_at else None,
-                    json.dumps(tags or []),
-                ),
+            mid = self._insert_memory_tx(
+                conn=conn,
+                layer=layer,
+                content=content,
+                source=source,
+                confidence=confidence,
+                tags=tags,
+                expires_at=expires_at,
+                claim_type=claim_type,
+                lifecycle_state=lifecycle_state,
+                verification_state=verification_state,
+                observed_at=observed_at,
+                valid_from=valid_from,
+                valid_until=valid_until,
             )
             conn.commit()
             return mid
 
         return self._retry_write(_write)
 
-    def get_memory(self, id: str) -> Optional[Memory]:
+    def get_memory(self, id: str, include_expired: bool = False) -> Optional[Memory]:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
-            return Memory.from_row(row) if row else None
+            if not row:
+                return None
+            mem = Memory.from_row(row)
+            if not include_expired and mem.expires_at and mem.expires_at < datetime.now():
+                return None
+            return mem
 
-    def list_memories(self, layer: Optional[str] = None) -> List[Memory]:
+    def list_memories(
+        self,
+        layer: Optional[str] = None,
+        include_expired: bool = False,
+        include_candidates: bool = False,
+        include_history: bool = False,
+        lifecycle_state: Optional[str] = None,
+        verification_state: Optional[str] = None,
+        claim_type: Optional[str] = None,
+    ) -> List[Memory]:
+        now_iso = _now_iso()
         with self._connect() as conn:
+            query = "SELECT * FROM memories"
+            clauses = []
+            params = []
             if layer:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE layer = ? ORDER BY created_at DESC",
-                    (layer,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM memories ORDER BY created_at DESC"
-                ).fetchall()
+                clauses.append("layer = ?")
+                params.append(layer)
+            if not include_expired:
+                clauses.append("(expires_at IS NULL OR expires_at >= ?)")
+                params.append(now_iso)
+
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "lifecycle_state" in cols:
+                if lifecycle_state is not None:
+                    clauses.append("lifecycle_state = ?")
+                    params.append(lifecycle_state)
+                elif not include_history:
+                    if include_candidates:
+                        clauses.append("lifecycle_state IN ('accepted', 'candidate')")
+                    else:
+                        clauses.append("lifecycle_state = 'accepted'")
+
+                if verification_state is not None:
+                    clauses.append("verification_state = ?")
+                    params.append(verification_state)
+                elif not include_history:
+                    clauses.append("verification_state != 'refuted'")
+
+                if claim_type is not None:
+                    clauses.append("claim_type = ?")
+                    params.append(claim_type)
+
+            if clauses:
+                query += " WHERE " + " AND ".join(clauses)
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(query, params).fetchall()
             return [Memory.from_row(r) for r in rows]
 
     def delete_memory(self, id: str) -> bool:
@@ -423,34 +815,290 @@ class MemoryStore:
         return self._retry_write(_write)
 
     def get_memories_below_confidence(
-        self, threshold: float, layer: Optional[str] = None
+        self,
+        threshold: float,
+        layer: Optional[str] = None,
+        include_expired: bool = False,
     ) -> List[Memory]:
         """Get all memories with confidence < threshold, optionally filtered by layer."""
+        now_iso = _now_iso()
         with self._connect() as conn:
+            clauses = ["confidence < ?"]
+            params: list = [threshold]
             if layer:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE confidence < ? AND layer = ?",
-                    (threshold, layer),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE confidence < ?",
-                    (threshold,),
-                ).fetchall()
+                clauses.append("layer = ?")
+                params.append(layer)
+            if not include_expired:
+                clauses.append("(expires_at IS NULL OR expires_at >= ?)")
+                params.append(now_iso)
+
+            query = f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
+            rows = conn.execute(query, params).fetchall()
             return [Memory.from_row(r) for r in rows]
 
     def update_memory_timestamp(self, id: str) -> bool:
-        """Update created_at to now (used when a memory is reinforced)."""
+        """Update updated_at to now (created_at is immutable!)."""
+
+        def _write(conn):
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "updated_at" in cols:
+                cur = conn.execute(
+                    "UPDATE memories SET updated_at = ? WHERE id = ?",
+                    (_now_iso(), id),
+                )
+            else:
+                cur = conn.execute("SELECT id FROM memories WHERE id = ?", (id,))
+            conn.commit()
+            return cur.rowcount > 0
+
+        return self._retry_write(_write)
+
+    def record_memory_access(self, memory_id: str) -> bool:
+        """Record memory access: increments access_count and updates last_accessed_at.
+
+        Does NOT modify created_at, confidence, or verification.
+        """
+
+        def _write(conn):
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "last_accessed_at" in cols and "access_count" in cols:
+                cur = conn.execute(
+                    """UPDATE memories
+                       SET access_count = COALESCE(access_count, 0) + 1,
+                           last_accessed_at = ?
+                       WHERE id = ?""",
+                    (_now_iso(), memory_id),
+                )
+            else:
+                cur = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,))
+            conn.commit()
+            return cur.rowcount > 0
+
+        return self._retry_write(_write)
+
+    # --- Knowledge Lifecycle & Verification State Operations ---
+
+    def update_memory_lifecycle(self, id: str, state: str) -> bool:
+        """Update lifecycle state of a memory (candidate, accepted, superseded, rejected, archived)."""
+        if state not in LIFECYCLE_STATES:
+            raise ValueError(f"Invalid lifecycle_state '{state}'. Must be one of {sorted(LIFECYCLE_STATES)}")
 
         def _write(conn):
             cur = conn.execute(
-                "UPDATE memories SET created_at = ? WHERE id = ?",
-                (_now_iso(), id),
+                "UPDATE memories SET lifecycle_state = ?, updated_at = ? WHERE id = ?",
+                (state, _now_iso(), id),
             )
             conn.commit()
             return cur.rowcount > 0
 
         return self._retry_write(_write)
+
+    def update_memory_verification(self, id: str, state: str) -> bool:
+        """Update verification state of a memory (unverified, supported, disputed, refuted)."""
+        if state not in VERIFICATION_STATES:
+            raise ValueError(f"Invalid verification_state '{state}'. Must be one of {sorted(VERIFICATION_STATES)}")
+
+        def _write(conn):
+            cur = conn.execute(
+                "UPDATE memories SET verification_state = ?, updated_at = ? WHERE id = ?",
+                (state, _now_iso(), id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+        return self._retry_write(_write)
+
+    def supersede_memory(self, old_memory_id: str, new_memory_id: str, metadata: Optional[dict] = None) -> bool:
+        """Mark old_memory as superseded by new_memory and record lineage relation."""
+        if old_memory_id == new_memory_id:
+            raise ValueError("A memory cannot supersede itself")
+
+        def _write(conn):
+            cur = conn.execute(
+                "UPDATE memories SET lifecycle_state = 'superseded', updated_at = ? WHERE id = ?",
+                (_now_iso(), old_memory_id),
+            )
+            if cur.rowcount == 0:
+                conn.commit()
+                return False
+            rel_id = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO memory_relations (id, from_memory_id, to_memory_id, relation_type, created_at, metadata_json)
+                   VALUES (?, ?, ?, 'supersedes', ?, ?)""",
+                (
+                    rel_id,
+                    new_memory_id,
+                    old_memory_id,
+                    _now_iso(),
+                    json.dumps(metadata or {}),
+                ),
+            )
+            conn.commit()
+            return True
+
+        return self._retry_write(_write)
+
+    def refute_memory(self, memory_id: str, reason: str, refuting_memory_id: Optional[str] = None) -> bool:
+        """Mark memory as refuted (verification_state='refuted', lifecycle_state='rejected')."""
+        if refuting_memory_id and memory_id == refuting_memory_id:
+            raise ValueError("A memory cannot refute itself")
+
+        def _write(conn):
+            cur = conn.execute(
+                """UPDATE memories
+                   SET verification_state = 'refuted',
+                       lifecycle_state = 'rejected',
+                       updated_at = ?
+                   WHERE id = ?""",
+                (_now_iso(), memory_id),
+            )
+            if cur.rowcount == 0:
+                conn.commit()
+                return False
+            if refuting_memory_id:
+                rel_id = str(uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO memory_relations (id, from_memory_id, to_memory_id, relation_type, created_at, metadata_json)
+                       VALUES (?, ?, ?, 'refutes', ?, ?)""",
+                    (
+                        rel_id,
+                        refuting_memory_id,
+                        memory_id,
+                        _now_iso(),
+                        json.dumps({"reason": reason}),
+                    ),
+                )
+            conn.commit()
+            return True
+
+        return self._retry_write(_write)
+
+    # --- Memory Relations ---
+
+    def add_memory_relation(
+        self,
+        from_memory_id: str,
+        to_memory_id: str,
+        relation_type: str,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """Record a directed relation between two memories."""
+        if from_memory_id == to_memory_id:
+            raise ValueError("Cannot create self-referencing relation")
+        if relation_type not in RELATION_TYPES:
+            raise ValueError(f"Invalid relation_type '{relation_type}'. Must be one of {sorted(RELATION_TYPES)}")
+        rel_id = str(uuid.uuid4())
+
+        def _write(conn):
+            conn.execute(
+                """INSERT INTO memory_relations (id, from_memory_id, to_memory_id, relation_type, created_at, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    rel_id,
+                    from_memory_id,
+                    to_memory_id,
+                    relation_type,
+                    _now_iso(),
+                    json.dumps(metadata or {}),
+                ),
+            )
+            conn.commit()
+            return rel_id
+
+        return self._retry_write(_write)
+
+    def get_memory_relations(self, memory_id: str, direction: str = "both") -> List[MemoryRelation]:
+        """Get relations connected to a memory (outgoing, incoming, or both)."""
+        with self._connect() as conn:
+            if direction == "outgoing":
+                rows = conn.execute(
+                    "SELECT * FROM memory_relations WHERE from_memory_id = ? ORDER BY created_at ASC",
+                    (memory_id,),
+                ).fetchall()
+            elif direction == "incoming":
+                rows = conn.execute(
+                    "SELECT * FROM memory_relations WHERE to_memory_id = ? ORDER BY created_at ASC",
+                    (memory_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM memory_relations WHERE from_memory_id = ? OR to_memory_id = ? ORDER BY created_at ASC",
+                    (memory_id, memory_id),
+                ).fetchall()
+            return [MemoryRelation.from_row(r) for r in rows]
+
+    # --- Memory External Evidence References ---
+
+    def add_memory_evidence(
+        self,
+        memory_id: str,
+        source_system: str,
+        source_id: str,
+        relation: str = "derived_from",
+        source_revision: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """Record an external evidence reference linking memory to an external source record."""
+        ev_id = str(uuid.uuid4())
+
+        def _write(conn):
+            conn.execute(
+                """INSERT INTO memory_evidence (id, memory_id, source_system, source_id, source_revision, relation, created_at, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    ev_id,
+                    memory_id,
+                    source_system,
+                    source_id,
+                    source_revision,
+                    relation,
+                    _now_iso(),
+                    json.dumps(metadata or {}),
+                ),
+            )
+            conn.commit()
+            return ev_id
+
+        return self._retry_write(_write)
+
+    def get_memory_evidence(self, memory_id: str) -> List[MemoryEvidence]:
+        """Get external evidence references for a memory."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memory_evidence WHERE memory_id = ? ORDER BY created_at ASC",
+                (memory_id,),
+            ).fetchall()
+            return [MemoryEvidence.from_row(r) for r in rows]
+
+    # --- Maintenance State (Persistent Decay & Tasks) ---
+
+    def record_maintenance(
+        self,
+        key: str,
+        run_at: Optional[datetime] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Record maintenance execution in SQLite maintenance_state table."""
+        ts = run_at.isoformat() if run_at else _now_iso()
+        meta_json = json.dumps(metadata) if metadata else None
+
+        def _write(conn):
+            conn.execute(
+                """INSERT OR REPLACE INTO maintenance_state (key, last_run_at, metadata_json)
+                   VALUES (?, ?, ?)""",
+                (key, ts, meta_json),
+            )
+            conn.commit()
+
+        self._retry_write(_write)
+
+    def get_last_maintenance(self, key: str) -> Optional[datetime]:
+        """Get the timestamp of the last maintenance run for a key."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT last_run_at FROM maintenance_state WHERE key = ?", (key,)).fetchone()
+            if row and row["last_run_at"]:
+                return _parse_dt(row["last_run_at"])
+            return None
 
     # --- Expiration ---
 
@@ -472,22 +1120,21 @@ class MemoryStore:
     def run_decay_if_needed(self, decay_engine, min_hours: float = 24.0) -> bool:
         """Run confidence decay if enough time has passed since last run.
 
-        This is called automatically by query/add operations to ensure
-        decay is not dead code in normal usage.
+        Uses persistent maintenance_state in SQLite so maintenance is not forgotten
+        when a new process starts.
         """
         now = datetime.now()
-        if self._last_decay_at is None:
-            # Check if we can infer last decay from DB (future: persist this)
-            self._last_decay_at = now
+        last_decay = self.get_last_maintenance("confidence_decay")
+        if last_decay is None:
+            # Baseline: record now so decay is evaluated on future runs after min_hours
+            self.record_maintenance("confidence_decay", now, {"init": True})
+            return False
 
-        if (
-            self._last_decay_at
-            and (now - self._last_decay_at).total_seconds() < min_hours * 3600
-        ):
+        if (now - last_decay).total_seconds() < min_hours * 3600:
             return False
 
         decayed = decay_engine.decay_memories()
-        self._last_decay_at = now
+        self.record_maintenance("confidence_decay", now, {"decayed_count": len(decayed)})
         return len(decayed) > 0
 
     # --- Consolidation ---
@@ -496,9 +1143,7 @@ class MemoryStore:
         """Move all memories from from_layer to to_layer. Returns moved IDs."""
 
         def _write(conn):
-            rows = conn.execute(
-                "SELECT id FROM memories WHERE layer = ?", (from_layer,)
-            ).fetchall()
+            rows = conn.execute("SELECT id FROM memories WHERE layer = ?", (from_layer,)).fetchall()
             ids = [r["id"] for r in rows]
             if ids:
                 placeholders = ",".join("?" * len(ids))
@@ -521,9 +1166,7 @@ class MemoryStore:
         """Atomically consolidate memories and log trigger."""
 
         def _write(conn):
-            rows = conn.execute(
-                "SELECT id FROM memories WHERE layer = ?", (from_layer,)
-            ).fetchall()
+            rows = conn.execute("SELECT id FROM memories WHERE layer = ?", (from_layer,)).fetchall()
             ids = [r["id"] for r in rows]
 
             if not ids:
@@ -562,45 +1205,60 @@ class MemoryStore:
         reflection_source: str,
         event: str,
         action: str,
+        move_memories: bool = True,
+        claim_type: str = "derived_lesson",
+        lifecycle_state: str = "candidate",
+        verification_state: str = "unverified",
     ) -> tuple[List[str], Optional[str]]:
-        """Atomically consolidate memories, create reflection, and log trigger."""
+        """Atomically consolidate memories, create reflection candidate, and log trigger."""
 
         def _write(conn):
-            rows = conn.execute(
-                "SELECT id FROM memories WHERE layer = ?", (from_layer,)
-            ).fetchall()
+            rows = conn.execute("SELECT id FROM memories WHERE layer = ?", (from_layer,)).fetchall()
             ids = [r["id"] for r in rows]
 
             if not ids:
                 conn.commit()
                 return [], None
 
-            # 1. Move memories
-            placeholders = ",".join("?" * len(ids))
-            conn.execute(
-                f"UPDATE memories SET layer = ? WHERE id IN ({placeholders})",
-                (to_layer, *ids),
+            # 1. Move memories if requested (legacy behavior); otherwise preserve in source layer
+            if move_memories:
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"UPDATE memories SET layer = ? WHERE id IN ({placeholders})",
+                    (to_layer, *ids),
+                )
+
+            # 2. Create reflection memory via centralized persistence boundary (sanitizes content)
+            rid = self._insert_memory_tx(
+                conn=conn,
+                layer=to_layer,
+                content=reflection_content,
+                source=reflection_source,
+                confidence=0.7,
+                tags=["reflection", event, "auto-consolidated"],
+                claim_type=claim_type,
+                lifecycle_state=lifecycle_state,
+                verification_state=verification_state,
             )
 
-            # 2. Create reflection memory
-            rid = str(uuid.uuid4())
-            conn.execute(
-                """INSERT INTO memories (id, layer, content, source, confidence,
-                                         created_at, expires_at, tags)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    rid,
-                    to_layer,
-                    reflection_content,
-                    reflection_source,
-                    0.9,
-                    _now_iso(),
-                    None,
-                    json.dumps(["reflection", event, "auto-consolidated"]),
-                ),
-            )
+            # 3. Add derived_from relations linking candidate to each source memory
+            cols = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if "memory_relations" in cols:
+                for mid in ids:
+                    rel_id = str(uuid.uuid4())
+                    conn.execute(
+                        """INSERT INTO memory_relations (id, from_memory_id, to_memory_id, relation_type, created_at, metadata_json)
+                           VALUES (?, ?, ?, 'derived_from', ?, ?)""",
+                        (
+                            rel_id,
+                            rid,
+                            mid,
+                            _now_iso(),
+                            json.dumps({"event": event, "action": action}),
+                        ),
+                    )
 
-            # 3. Log trigger
+            # 4. Log trigger
             lid = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO triggers_log (id, event, action, memories_affected, timestamp)
@@ -636,9 +1294,7 @@ class MemoryStore:
 
         self._retry_write(_write)
 
-    def _insert_nodes_recursive(
-        self, conn, nodes: List[TreeNode], parent_id: Optional[str] = None
-    ) -> None:
+    def _insert_nodes_recursive(self, conn, nodes: List[TreeNode], parent_id: Optional[str] = None) -> None:
         for node in nodes:
             conn.execute(
                 """INSERT INTO tree_nodes (id, parent_id, layer, title, summary,
@@ -688,9 +1344,7 @@ class MemoryStore:
     def get_tree_nodes(self, layer: Optional[str] = None) -> List[dict]:
         with self._connect() as conn:
             if layer:
-                rows = conn.execute(
-                    "SELECT * FROM tree_nodes WHERE layer = ?", (layer,)
-                ).fetchall()
+                rows = conn.execute("SELECT * FROM tree_nodes WHERE layer = ?", (layer,)).fetchall()
             else:
                 rows = conn.execute("SELECT * FROM tree_nodes").fetchall()
             return [
@@ -700,9 +1354,7 @@ class MemoryStore:
                     "layer": r["layer"],
                     "title": r["title"],
                     "summary": r["summary"],
-                    "memory_ids": json.loads(r["memory_ids"])
-                    if r["memory_ids"]
-                    else [],
+                    "memory_ids": json.loads(r["memory_ids"]) if r["memory_ids"] else [],
                 }
                 for r in rows
             ]
@@ -813,9 +1465,7 @@ class MemoryStore:
                     "tree_version": r["tree_version"],
                     "total_memories_searched": r["total_memories_searched"],
                     "avg_confidence": r["avg_confidence"],
-                    "sources": json.loads(r["sources_json"])
-                    if r["sources_json"]
-                    else [],
+                    "sources": json.loads(r["sources_json"]) if r["sources_json"] else [],
                 }
                 for r in rows
             ]
@@ -866,9 +1516,7 @@ class MemoryStore:
 
         return self._retry_write(_write)
 
-    def get_otel_spans(
-        self, limit: int = 1000, offset: int = 0, trace_id: Optional[str] = None
-    ) -> List[dict]:
+    def get_otel_spans(self, limit: int = 1000, offset: int = 0, trace_id: Optional[str] = None) -> List[dict]:
         with self._connect() as conn:
             if trace_id:
                 rows = conn.execute(
@@ -900,9 +1548,7 @@ class MemoryStore:
                     "results_count": r["results_count"],
                     "status": r["status"],
                     "error_message": r["error_message"],
-                    "attributes": json.loads(r["attributes_json"])
-                    if r["attributes_json"]
-                    else {},
+                    "attributes": json.loads(r["attributes_json"]) if r["attributes_json"] else {},
                     "service_name": r["service_name"],
                 }
                 for r in rows
@@ -938,9 +1584,7 @@ class MemoryStore:
         with self._connect() as conn:
             row = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
             if row and row[0] != 0:
-                raise sqlite3.OperationalError(
-                    f"WAL checkpoint blocked: busy={row[0]}"
-                )
+                raise sqlite3.OperationalError(f"WAL checkpoint blocked: busy={row[0]}")
 
     # --- Stats ---
 
@@ -948,12 +1592,8 @@ class MemoryStore:
         with self._connect() as conn:
             mem_count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             node_count = conn.execute("SELECT COUNT(*) FROM tree_nodes").fetchone()[0]
-            trigger_count = conn.execute(
-                "SELECT COUNT(*) FROM triggers_log"
-            ).fetchone()[0]
-            provenance_count = conn.execute(
-                "SELECT COUNT(*) FROM provenance"
-            ).fetchone()[0]
+            trigger_count = conn.execute("SELECT COUNT(*) FROM triggers_log").fetchone()[0]
+            provenance_count = conn.execute("SELECT COUNT(*) FROM provenance").fetchone()[0]
             span_count = conn.execute("SELECT COUNT(*) FROM otel_spans").fetchone()[0]
             return {
                 "memories": mem_count,

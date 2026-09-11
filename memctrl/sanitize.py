@@ -13,8 +13,10 @@ import re
 _SECRET_PATTERNS = [
     # OpenAI / generic sk- keys (allow hyphens/underscores for Stripe-style keys)
     (r"\b(sk-[a-zA-Z0-9\-_]{20,})\b", "API_KEY"),
-    # Generic API key assignments
-    (r"\b(api[_-]?key\s*[=:]\s*\S+)", "API_KEY"),
+    # Generic API key assignments (e.g. api_key=..., api-key: ..., api key = ...)
+    (r"\b(api[_\-\s]?key\s*[=:]\s*\S+)", "API_KEY"),
+    # GitHub personal access tokens
+    (r"\b(gh[pousr]_[a-zA-Z0-9]{36,})\b", "GITHUB_TOKEN"),
     # Bearer / auth tokens
     (r"\b(bearer\s+\S+)", "TOKEN"),
     (r"\b(auth[_-]?token\s*[=:]\s*\S+)", "TOKEN"),
