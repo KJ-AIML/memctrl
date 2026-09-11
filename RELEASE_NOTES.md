@@ -1,3 +1,49 @@
+## MemCtrl v1.3.0 — Reliability Foundation & Evidence-Linked Memory Lifecycle
+
+### Overview
+
+Major reliability and knowledge lifecycle release. Upgrades MemCtrl from observable memory infrastructure into a reviewable, evidence-linked agent memory system with an explicit knowledge lifecycle, immutable provenance, and measurable history reuse.
+
+### What's New
+
+**P0 Reliability & Storage Foundation**
+- **Centralized Persistence Boundary** — All memory insertions (manual, extractor, reflection, MCP, adapters) route through `_insert_memory_tx()` with mandatory secret sanitization (`sanitize_text()`) before hitting SQLite.
+- **Expiry as Eligibility** — Memory expiration now controls retrieval eligibility (`expires_at < now` filtered by default across get, list, query, tree, and reflection inputs) rather than depending solely on physical deletion.
+- **Scope-Isolated Query Cache** — `QueryCacheKey` parameterizes cache identity across `query`, `layer`, `retrieval_version`, and `model_identity`, preventing cross-layer result leakage in both in-memory and SQLite cache.
+- **Immutable Creation Timestamps** — `created_at` is strictly immutable. Introduced `updated_at`, `last_accessed_at`, and `access_count` in schema v3; decoupled retrieval access telemetry from evidential reinforcement.
+- **Durable Decay Scheduling** — Maintenance execution state is persisted in SQLite `maintenance_state` across process restarts. Aligned floor review detection with clamp semantics (`confidence <= floor` is review-eligible).
+- **Diagnostic Decoupling** — Health checks (`memctrl doctor`) distinguish source attribution from verification and report `retrieval_exposure` instead of calling query trace appearances "provenance coverage".
+
+**Knowledge Lifecycle & Lineage (Schema v4)**
+- **Orthogonal Semantic Axes** — Distinguishes what was asserted vs what was verified:
+  - `claim_type`: `observation`, `assertion`, `hypothesis`, `decision`, `derived_lesson`
+  - `lifecycle_state`: `candidate`, `accepted`, `superseded`, `rejected`, `archived`
+  - `verification_state`: `unverified`, `supported`, `disputed`, `refuted`
+  - Temporal bounds: `observed_at`, `valid_from`, `valid_until`
+- **Memory Relations** — Table `memory_relations` records directed lineage (`derived_from`, `supports`, `contradicts`, `supersedes`, `refutes`). Distinguishes temporal replacement (`supersede_memory()`) from empirical refutation (`refute_memory()`).
+- **External Evidence References** — Table `memory_evidence` connects memories to authoritative external records (e.g. task IDs, commit SHAs) without mutating or copying authority.
+- **Automated Database Migration** — Safe, idempotent migration path from `v2` through `v3` to `v4` with legacy semantics preserved.
+
+**Reflection as Candidate Generation**
+- **Preserved Session Evidence** — Session-end reflection preserves session source records in the session layer instead of bulk-promoting them into project truth.
+- **Reviewable Candidates** — Reflection output is stored as reviewable candidate knowledge (`lifecycle_state='candidate'`, `verification_state='unverified'`) linked to source memories via `derived_from` relations.
+
+**Review Workflow (CLI & MCP)**
+- **CLI Commands** — Added `candidates`, `show <id>`, `accept <id>`, `reject <id>`, `history <id>`, `dispute <id>`, and `refute <id> --reason <reason>`. Guards against accepting refuted claims or creating self-referencing cycles.
+- **MCP Tools** — Added `memctrl_candidates` and `memctrl_review` tools for agent-native memory curation.
+
+**Lifecycle-Aware Retrieval**
+- **Allowlist-Based Filtering** — Default retrieval strictly requires `lifecycle_state == 'accepted'`, `verification_state != 'refuted'`, and non-expired status.
+- **Annotated History Mode** — `history=True` retrieval surfaces historical facts with explicit visual annotations (`[REFUTED]`, `[SUPERSEDED]`, `[CANDIDATE]`, `[ARCHIVED]`).
+
+**Read-Only Heli History Adapter & Evaluation**
+- **Read-Only Source Adapter** — `HeliSourceAdapter` inspects completed Heli-Harness workspace tasks without modifying any files under `.heli-harness`.
+- **Lesson Distiller** — `HeliDistiller` extracts reusable candidate lessons, links external evidence, and captures counterexamples across tasks with similar symptoms.
+- **CLI Review Command** — `memctrl review heli --workspace <path> --completed <n> [--dry-run|--persist]`.
+- **Pilot Evaluation Benchmark** — An initial read-only Heli-history evaluation across 20 completed tasks returned useful leads for all 12 benchmark queries, compared with 11/12 for the grep baseline, while correctly identifying the benchmark's refuted hypothesis. This represents pilot validation evidence on a curated historical corpus, not a general uncurated recall benchmark.
+
+---
+
 ## MemCtrl v1.2.1 — Credibility Hardening Release
 
 ### Overview
