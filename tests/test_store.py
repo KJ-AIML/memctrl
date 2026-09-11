@@ -707,3 +707,119 @@ def test_init_db_retry(store):
         # _init_db should have retried at least once
         assert executescript_calls >= 2
         new_store.close()
+
+
+def test_v2_to_v3_migration(tmp_path):
+    """Opening an existing v2 database must migrate to v3 with no data loss."""
+    import sqlite3
+    db_file = tmp_path / "v2_legacy.db"
+
+    # 1. Build an exact v2 database
+    with sqlite3.connect(str(db_file)) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE schema_version (version INTEGER PRIMARY KEY);
+            INSERT INTO schema_version (version) VALUES (2);
+
+            CREATE TABLE memories (
+                id          TEXT PRIMARY KEY,
+                layer       TEXT NOT NULL,
+                content     TEXT NOT NULL,
+                source      TEXT,
+                confidence  REAL DEFAULT 1.0,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at  TIMESTAMP,
+                tags        TEXT
+            );
+
+            CREATE TABLE tree_nodes (
+                id          TEXT PRIMARY KEY,
+                parent_id   TEXT REFERENCES tree_nodes(id),
+                layer       TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                summary     TEXT,
+                memory_ids  TEXT,
+                updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE triggers_log (
+                id          TEXT PRIMARY KEY,
+                event       TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                memories_affected TEXT,
+                timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE provenance (
+                id          TEXT PRIMARY KEY,
+                query       TEXT NOT NULL,
+                timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                method      TEXT NOT NULL,
+                tree_version INTEGER DEFAULT 0,
+                total_memories_searched INTEGER DEFAULT 0,
+                avg_confidence REAL DEFAULT 0.0,
+                sources_json TEXT NOT NULL
+            );
+
+            CREATE TABLE otel_spans (
+                id          TEXT PRIMARY KEY,
+                trace_id    TEXT NOT NULL,
+                span_id     TEXT NOT NULL,
+                operation   TEXT NOT NULL,
+                timestamp   REAL NOT NULL,
+                duration_ms REAL NOT NULL,
+                memory_id   TEXT,
+                layer       TEXT,
+                memory_type TEXT,
+                confidence  REAL,
+                query       TEXT,
+                top_k       INTEGER,
+                results_count INTEGER,
+                status      TEXT NOT NULL,
+                error_message TEXT,
+                attributes_json TEXT,
+                service_name TEXT NOT NULL
+            );
+
+            INSERT INTO memories (id, layer, content, source, confidence, created_at, expires_at, tags)
+            VALUES ('v2-mem-1', 'project', 'Legacy v2 fact', 'manual', 1.0, '2025-01-01T12:00:00', NULL, '["legacy"]');
+            """
+        )
+        conn.commit()
+
+    # 2. Open with MemoryStore -> triggers automatic migration
+    store = MemoryStore(str(db_file))
+
+    # Verify migration
+    with store._connect() as conn:
+        ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+        assert ver == 3
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+        assert "updated_at" in cols
+        assert "last_accessed_at" in cols
+        assert "access_count" in cols
+        # Maintenance state table must exist
+        m_tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        assert "maintenance_state" in m_tables
+
+    # 3. Read existing legacy memory
+    mem = store.get_memory("v2-mem-1")
+    assert mem is not None
+    assert mem.content == "Legacy v2 fact"
+    assert mem.confidence == 1.0
+    assert mem.access_count == 0
+
+    # 4. Write new memory to migrated DB
+    new_id = store.insert_memory("session", "New v3 fact", confidence=0.8)
+    assert new_id is not None
+
+    # 5. Restart store & verify persistence
+    del store
+    store2 = MemoryStore(str(db_file))
+    reloaded_v2 = store2.get_memory("v2-mem-1")
+    reloaded_v3 = store2.get_memory(new_id)
+    assert reloaded_v2 is not None
+    assert reloaded_v2.content == "Legacy v2 fact"
+    assert reloaded_v3 is not None
+    assert reloaded_v3.content == "New v3 fact"
+

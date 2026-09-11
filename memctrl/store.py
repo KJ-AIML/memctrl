@@ -37,6 +37,9 @@ class Memory:
     created_at: datetime
     expires_at: Optional[datetime]
     tags: List[str] = field(default_factory=list)
+    updated_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
+    access_count: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -48,10 +51,16 @@ class Memory:
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "tags": self.tags,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_accessed_at": (
+                self.last_accessed_at.isoformat() if self.last_accessed_at else None
+            ),
+            "access_count": self.access_count,
         }
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Memory":
+        keys = row.keys() if hasattr(row, "keys") else []
         return cls(
             id=row["id"],
             layer=row["layer"],
@@ -61,6 +70,21 @@ class Memory:
             created_at=_parse_dt(row["created_at"]),
             expires_at=_parse_dt(row["expires_at"]) if row["expires_at"] else None,
             tags=json.loads(row["tags"]) if row["tags"] else [],
+            updated_at=(
+                _parse_dt(row["updated_at"])
+                if "updated_at" in keys and row["updated_at"]
+                else None
+            ),
+            last_accessed_at=(
+                _parse_dt(row["last_accessed_at"])
+                if "last_accessed_at" in keys and row["last_accessed_at"]
+                else None
+            ),
+            access_count=(
+                row["access_count"]
+                if "access_count" in keys and row["access_count"] is not None
+                else 0
+            ),
         )
 
 
@@ -260,8 +284,6 @@ class MemoryStore:
                     version INTEGER PRIMARY KEY
                 );
 
-                INSERT OR IGNORE INTO schema_version (version) VALUES (2);
-
                 CREATE TABLE IF NOT EXISTS memories (
                     id          TEXT PRIMARY KEY,
                     layer       TEXT NOT NULL,
@@ -270,7 +292,16 @@ class MemoryStore:
                     confidence  REAL DEFAULT 1.0,
                     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     expires_at  TIMESTAMP,
-                    tags        TEXT
+                    tags        TEXT,
+                    updated_at  TIMESTAMP,
+                    last_accessed_at TIMESTAMP,
+                    access_count INTEGER DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS maintenance_state (
+                    key         TEXT PRIMARY KEY,
+                    last_run_at TIMESTAMP,
+                    metadata_json TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS tree_nodes (
@@ -332,11 +363,109 @@ class MemoryStore:
                 CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
                 """
             )
+            self._migrate_db(conn)
             conn.commit()
 
         self._retry_write(_write)
 
+    def _migrate_db(self, conn: sqlite3.Connection) -> None:
+        """Migrate database schema up to version 3."""
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        current_version = row[0] if row and row[0] is not None else 2
+
+        if current_version < 3:
+            col_info = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "updated_at" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN updated_at TIMESTAMP")
+            if "last_accessed_at" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TIMESTAMP")
+            if "access_count" not in col_info:
+                conn.execute("ALTER TABLE memories ADD COLUMN access_count INTEGER DEFAULT 0")
+
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS maintenance_state (
+                    key TEXT PRIMARY KEY,
+                    last_run_at TIMESTAMP,
+                    metadata_json TEXT
+                )"""
+            )
+            conn.execute("INSERT OR REPLACE INTO schema_version (version) VALUES (3)")
+        elif current_version == 3:
+            # Ensure maintenance_state exists if starting fresh
+            conn.execute("INSERT OR IGNORE INTO schema_version (version) VALUES (3)")
+
     # --- Memory CRUD ---
+
+    def _insert_memory_tx(
+        self,
+        conn: sqlite3.Connection,
+        layer: str,
+        content: str,
+        source: str = "manual",
+        confidence: float = 1.0,
+        tags: Optional[List[str]] = None,
+        expires_at: Optional[datetime] = None,
+        memory_id: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+        last_accessed_at: Optional[datetime] = None,
+        access_count: int = 0,
+    ) -> str:
+        """Single internal persistence boundary for all memory inserts.
+
+        Validates, sanitizes secrets/PII, normalizes, and persists to SQLite.
+        """
+        if not content:
+            raise ValueError("Memory content cannot be empty")
+        if not layer:
+            raise ValueError("Memory layer cannot be empty")
+
+        sanitized_content = sanitize_text(content)
+        mid = memory_id or str(uuid.uuid4())
+        now_iso = _now_iso()
+        c_at = created_at.isoformat() if created_at else now_iso
+        u_at = updated_at.isoformat() if updated_at else c_at
+        e_at = expires_at.isoformat() if expires_at else None
+        l_at = last_accessed_at.isoformat() if last_accessed_at else None
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+        if "updated_at" in cols:
+            conn.execute(
+                """INSERT INTO memories (id, layer, content, source, confidence,
+                                         created_at, expires_at, tags,
+                                         updated_at, last_accessed_at, access_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    layer,
+                    sanitized_content,
+                    source,
+                    confidence,
+                    c_at,
+                    e_at,
+                    json.dumps(tags or []),
+                    u_at,
+                    l_at,
+                    access_count,
+                ),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO memories (id, layer, content, source, confidence,
+                                         created_at, expires_at, tags)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    mid,
+                    layer,
+                    sanitized_content,
+                    source,
+                    confidence,
+                    c_at,
+                    e_at,
+                    json.dumps(tags or []),
+                ),
+            )
+        return mid
 
     def insert_memory(
         self,
@@ -347,47 +476,49 @@ class MemoryStore:
         tags: Optional[List[str]] = None,
         expires_at: Optional[datetime] = None,
     ) -> str:
-        # REDACTION: sanitize secrets/PII before storage
-        content = sanitize_text(content)
-        mid = str(uuid.uuid4())
-
         def _write(conn):
-            conn.execute(
-                """INSERT INTO memories (id, layer, content, source, confidence,
-                                         created_at, expires_at, tags)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    mid,
-                    layer,
-                    content,
-                    source,
-                    confidence,
-                    _now_iso(),
-                    expires_at.isoformat() if expires_at else None,
-                    json.dumps(tags or []),
-                ),
+            mid = self._insert_memory_tx(
+                conn=conn,
+                layer=layer,
+                content=content,
+                source=source,
+                confidence=confidence,
+                tags=tags,
+                expires_at=expires_at,
             )
             conn.commit()
             return mid
 
         return self._retry_write(_write)
 
-    def get_memory(self, id: str) -> Optional[Memory]:
+    def get_memory(self, id: str, include_expired: bool = False) -> Optional[Memory]:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM memories WHERE id = ?", (id,)).fetchone()
-            return Memory.from_row(row) if row else None
+            if not row:
+                return None
+            mem = Memory.from_row(row)
+            if not include_expired and mem.expires_at and mem.expires_at < datetime.now():
+                return None
+            return mem
 
-    def list_memories(self, layer: Optional[str] = None) -> List[Memory]:
+    def list_memories(
+        self, layer: Optional[str] = None, include_expired: bool = False
+    ) -> List[Memory]:
+        now_iso = _now_iso()
         with self._connect() as conn:
+            query = "SELECT * FROM memories"
+            clauses = []
+            params = []
             if layer:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE layer = ? ORDER BY created_at DESC",
-                    (layer,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM memories ORDER BY created_at DESC"
-                ).fetchall()
+                clauses.append("layer = ?")
+                params.append(layer)
+            if not include_expired:
+                clauses.append("(expires_at IS NULL OR expires_at >= ?)")
+                params.append(now_iso)
+            if clauses:
+                query += " WHERE " + " AND ".join(clauses)
+            query += " ORDER BY created_at DESC"
+            rows = conn.execute(query, params).fetchall()
             return [Memory.from_row(r) for r in rows]
 
     def delete_memory(self, id: str) -> bool:
@@ -423,34 +554,95 @@ class MemoryStore:
         return self._retry_write(_write)
 
     def get_memories_below_confidence(
-        self, threshold: float, layer: Optional[str] = None
+        self, threshold: float, layer: Optional[str] = None, include_expired: bool = False
     ) -> List[Memory]:
         """Get all memories with confidence < threshold, optionally filtered by layer."""
+        now_iso = _now_iso()
         with self._connect() as conn:
+            clauses = ["confidence < ?"]
+            params: list = [threshold]
             if layer:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE confidence < ? AND layer = ?",
-                    (threshold, layer),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM memories WHERE confidence < ?",
-                    (threshold,),
-                ).fetchall()
+                clauses.append("layer = ?")
+                params.append(layer)
+            if not include_expired:
+                clauses.append("(expires_at IS NULL OR expires_at >= ?)")
+                params.append(now_iso)
+
+            query = f"SELECT * FROM memories WHERE {' AND '.join(clauses)}"
+            rows = conn.execute(query, params).fetchall()
             return [Memory.from_row(r) for r in rows]
 
     def update_memory_timestamp(self, id: str) -> bool:
-        """Update created_at to now (used when a memory is reinforced)."""
+        """Update updated_at to now (created_at is immutable!)."""
 
         def _write(conn):
-            cur = conn.execute(
-                "UPDATE memories SET created_at = ? WHERE id = ?",
-                (_now_iso(), id),
-            )
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "updated_at" in cols:
+                cur = conn.execute(
+                    "UPDATE memories SET updated_at = ? WHERE id = ?",
+                    (_now_iso(), id),
+                )
+            else:
+                cur = conn.execute("SELECT id FROM memories WHERE id = ?", (id,))
             conn.commit()
             return cur.rowcount > 0
 
         return self._retry_write(_write)
+
+    def record_memory_access(self, memory_id: str) -> bool:
+        """Record memory access: increments access_count and updates last_accessed_at.
+
+        Does NOT modify created_at, confidence, or verification.
+        """
+
+        def _write(conn):
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "last_accessed_at" in cols and "access_count" in cols:
+                cur = conn.execute(
+                    """UPDATE memories
+                       SET access_count = COALESCE(access_count, 0) + 1,
+                           last_accessed_at = ?
+                       WHERE id = ?""",
+                    (_now_iso(), memory_id),
+                )
+            else:
+                cur = conn.execute("SELECT id FROM memories WHERE id = ?", (memory_id,))
+            conn.commit()
+            return cur.rowcount > 0
+
+        return self._retry_write(_write)
+
+    # --- Maintenance State (Persistent Decay & Tasks) ---
+
+    def record_maintenance(
+        self,
+        key: str,
+        run_at: Optional[datetime] = None,
+        metadata: Optional[dict] = None,
+    ) -> None:
+        """Record maintenance execution in SQLite maintenance_state table."""
+        ts = run_at.isoformat() if run_at else _now_iso()
+        meta_json = json.dumps(metadata) if metadata else None
+
+        def _write(conn):
+            conn.execute(
+                """INSERT OR REPLACE INTO maintenance_state (key, last_run_at, metadata_json)
+                   VALUES (?, ?, ?)""",
+                (key, ts, meta_json),
+            )
+            conn.commit()
+
+        self._retry_write(_write)
+
+    def get_last_maintenance(self, key: str) -> Optional[datetime]:
+        """Get the timestamp of the last maintenance run for a key."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT last_run_at FROM maintenance_state WHERE key = ?", (key,)
+            ).fetchone()
+            if row and row["last_run_at"]:
+                return _parse_dt(row["last_run_at"])
+            return None
 
     # --- Expiration ---
 
@@ -472,22 +664,23 @@ class MemoryStore:
     def run_decay_if_needed(self, decay_engine, min_hours: float = 24.0) -> bool:
         """Run confidence decay if enough time has passed since last run.
 
-        This is called automatically by query/add operations to ensure
-        decay is not dead code in normal usage.
+        Uses persistent maintenance_state in SQLite so maintenance is not forgotten
+        when a new process starts.
         """
         now = datetime.now()
-        if self._last_decay_at is None:
-            # Check if we can infer last decay from DB (future: persist this)
-            self._last_decay_at = now
+        last_decay = self.get_last_maintenance("confidence_decay")
+        if last_decay is None:
+            # Baseline: record now so decay is evaluated on future runs after min_hours
+            self.record_maintenance("confidence_decay", now, {"init": True})
+            return False
 
-        if (
-            self._last_decay_at
-            and (now - self._last_decay_at).total_seconds() < min_hours * 3600
-        ):
+        if (now - last_decay).total_seconds() < min_hours * 3600:
             return False
 
         decayed = decay_engine.decay_memories()
-        self._last_decay_at = now
+        self.record_maintenance(
+            "confidence_decay", now, {"decayed_count": len(decayed)}
+        )
         return len(decayed) > 0
 
     # --- Consolidation ---
@@ -582,22 +775,14 @@ class MemoryStore:
                 (to_layer, *ids),
             )
 
-            # 2. Create reflection memory
-            rid = str(uuid.uuid4())
-            conn.execute(
-                """INSERT INTO memories (id, layer, content, source, confidence,
-                                         created_at, expires_at, tags)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    rid,
-                    to_layer,
-                    reflection_content,
-                    reflection_source,
-                    0.9,
-                    _now_iso(),
-                    None,
-                    json.dumps(["reflection", event, "auto-consolidated"]),
-                ),
+            # 2. Create reflection memory via centralized persistence boundary (sanitizes content)
+            rid = self._insert_memory_tx(
+                conn=conn,
+                layer=to_layer,
+                content=reflection_content,
+                source=reflection_source,
+                confidence=0.9,
+                tags=["reflection", event, "auto-consolidated"],
             )
 
             # 3. Log trigger

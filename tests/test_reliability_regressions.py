@@ -225,6 +225,7 @@ def test_decay_floor_reaches_review_state(tmp_db):
 def test_persistent_decay_scheduling(tmp_db):
     """Overdue maintenance schedule must not reset to 'now' when a new store process starts."""
     store1 = MemoryStore(tmp_db)
+    store1.insert_memory("session", "inferred session fact", confidence=0.8)
     # Simulate a decay run recorded 48 hours ago in maintenance_state
     two_days_ago = datetime.now() - timedelta(hours=48)
     store1.record_maintenance("confidence_decay", two_days_ago)

@@ -24,6 +24,45 @@ from typing import Dict, Optional
 from memctrl.retriever import RetrievalResult
 
 
+@dataclass(frozen=True)
+class QueryCacheKey:
+    """Identity for a cached retrieval query.
+
+    Prevents results from leaking across layers, models, or retrieval versions.
+    """
+
+    query: str
+    layer: Optional[str] = None
+    retrieval_version: str = "v1"
+    model_identity: Optional[str] = None
+
+    def to_cache_key(self) -> str:
+        data = {
+            "query": self.query,
+            "layer": self.layer,
+            "retrieval_version": self.retrieval_version,
+            "model_identity": self.model_identity,
+        }
+        return json.dumps(data, sort_keys=True)
+
+    @classmethod
+    def from_query_or_key(
+        cls,
+        query: str | "QueryCacheKey",
+        layer: Optional[str] = None,
+        retrieval_version: str = "v1",
+        model_identity: Optional[str] = None,
+    ) -> "QueryCacheKey":
+        if isinstance(query, cls):
+            return query
+        return cls(
+            query=str(query),
+            layer=layer,
+            retrieval_version=retrieval_version,
+            model_identity=model_identity,
+        )
+
+
 @dataclass
 class CachedResult:
     """A cached retrieval result with metadata.
@@ -38,6 +77,7 @@ class CachedResult:
     tree_version: int
     cached_at: float
     query: str
+    cache_key: Optional[str] = None
 
     def is_stale(self, current_tree_version: int, ttl_seconds: float) -> bool:
         """Check if this cached result is invalid due to tree change or TTL expiry."""
@@ -175,10 +215,13 @@ class QueryCache:
             sources=data.get("sources", []),
         )
 
-    def _persist_entry(self, query: str, result: RetrievalResult) -> None:
+    def _persist_entry(
+        self, key_str: str, result: RetrievalResult, ttl_seconds: Optional[float] = None
+    ) -> None:
         """Save cache entry to SQLite."""
         if not self._db_path:
             return
+        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_seconds
         try:
             conn = sqlite3.connect(self._db_path, timeout=10.0)
             conn.execute(
@@ -188,11 +231,11 @@ class QueryCache:
                 VALUES (?, ?, ?, ?, ?)
                 """,
                 (
-                    query,
+                    key_str,
                     self._result_to_json(result),
                     self._tree_version,
                     time.monotonic(),
-                    self._default_ttl_seconds,
+                    ttl,
                 ),
             )
             conn.commit()
@@ -200,7 +243,7 @@ class QueryCache:
         except Exception:
             pass
 
-    def _load_persistent_entry(self, query: str) -> Optional[CachedResult]:
+    def _load_persistent_entry(self, key_str: str) -> Optional[CachedResult]:
         """Load cache entry from SQLite if valid."""
         if not self._db_path:
             return None
@@ -209,7 +252,7 @@ class QueryCache:
             row = conn.execute(
                 "SELECT result_json, tree_version, cached_at, ttl_seconds "
                 "FROM query_cache WHERE query = ?",
-                (query,),
+                (key_str,),
             ).fetchone()
             conn.close()
 
@@ -221,26 +264,27 @@ class QueryCache:
                 result=self._result_from_json(result_json),
                 tree_version=tree_version,
                 cached_at=cached_at,
-                query=query,
+                query=key_str,
+                cache_key=key_str,
             )
 
             # Check staleness
             if entry.is_stale(self._tree_version, ttl_seconds):
                 # Remove stale entry
-                self._remove_persistent_entry(query)
+                self._remove_persistent_entry(key_str)
                 return None
 
             return entry
         except Exception:
             return None
 
-    def _remove_persistent_entry(self, query: str) -> None:
+    def _remove_persistent_entry(self, key_str: str) -> None:
         """Remove cache entry from SQLite."""
         if not self._db_path:
             return
         try:
             conn = sqlite3.connect(self._db_path, timeout=10.0)
-            conn.execute("DELETE FROM query_cache WHERE query = ?", (query,))
+            conn.execute("DELETE FROM query_cache WHERE query = ?", (key_str,))
             conn.commit()
             conn.close()
         except Exception:
@@ -251,52 +295,74 @@ class QueryCache:
         """Current tree version — increments on every invalidation."""
         return self._tree_version
 
-    def get(self, query: str) -> Optional[RetrievalResult]:
+    def get(
+        self,
+        query: str | QueryCacheKey,
+        layer: Optional[str] = None,
+        retrieval_version: str = "v1",
+        model_identity: Optional[str] = None,
+    ) -> Optional[RetrievalResult]:
         """Get cached result if valid (tree version matches and TTL not expired).
 
-        WHY: This is the fast path — a cached result returns in <1ms
-        vs. hundreds of ms for tree build + retrieval. We check both
-        tree version AND TTL because either one means the result might
-        not be correct anymore.
-
-        Returns None if no valid cached result exists.
+        Scope-aware: respects layer, retrieval version, and model identity.
         """
+        key_obj = QueryCacheKey.from_query_or_key(
+            query,
+            layer=layer,
+            retrieval_version=retrieval_version,
+            model_identity=model_identity,
+        )
+        key_str = key_obj.to_cache_key()
+
         # Check in-memory first
-        entry = self._cache.get(query)
+        entry = self._cache.get(key_str)
         if entry is not None:
             if entry.is_stale(self._tree_version, self._default_ttl_seconds):
-                del self._cache[query]
+                del self._cache[key_str]
                 self._misses += 1
                 return None
             self._hits += 1
             return entry.result
 
         # Check persistent cache (for CLI cross-process durability)
-        entry = self._load_persistent_entry(query)
+        entry = self._load_persistent_entry(key_str)
         if entry is not None:
             # Promote to in-memory for fast future access
-            self._cache[query] = entry
+            self._cache[key_str] = entry
             self._hits += 1
             return entry.result
 
         self._misses += 1
         return None
 
-    def set(self, query: str, result: RetrievalResult) -> None:
-        """Cache a retrieval result with current tree version.
+    def set(
+        self,
+        query: str | QueryCacheKey,
+        result: RetrievalResult,
+        layer: Optional[str] = None,
+        retrieval_version: str = "v1",
+        model_identity: Optional[str] = None,
+        ttl_seconds: Optional[float] = None,
+    ) -> None:
+        """Cache a retrieval result with current tree version and scope identity."""
+        key_obj = QueryCacheKey.from_query_or_key(
+            query,
+            layer=layer,
+            retrieval_version=retrieval_version,
+            model_identity=model_identity,
+        )
+        key_str = key_obj.to_cache_key()
+        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_seconds
 
-        WHY: We store the result alongside the current tree_version so
-        that future get() calls can detect when the tree has changed
-        and the result is no longer valid.
-        """
         cached = CachedResult(
             result=result,
             tree_version=self._tree_version,
             cached_at=time.monotonic(),
-            query=query,
+            query=key_obj.query,
+            cache_key=key_str,
         )
-        self._cache[query] = cached
-        self._persist_entry(query, result)
+        self._cache[key_str] = cached
+        self._persist_entry(key_str, result, ttl_seconds=ttl)
 
     def invalidate(self) -> int:
         """Increment tree version — call this when ANY memory changes.
