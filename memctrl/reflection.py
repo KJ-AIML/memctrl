@@ -87,6 +87,7 @@ class ReflectionEngine:
         engine: Optional[RuleEngine] = None,
         inactivity_hours: float = 2.0,
         llm_client: Optional[Callable] = None,
+        preserve_session_evidence: bool = True,
     ):
         """Initialize ReflectionEngine.
 
@@ -96,11 +97,15 @@ class ReflectionEngine:
             inactivity_hours: Hours of inactivity before auto-reflection triggers
             llm_client: Optional callable for generating summaries.
                 Called as llm_client(prompt: str) -> str
+            preserve_session_evidence: If True, session memories are preserved
+                in session layer and linked to candidate reflection via derived_from
+                relations (Phase 3). If False, legacy bulk move is performed.
         """
         self.store = store
         self.engine = engine or RuleEngine()
         self.inactivity_hours = inactivity_hours
         self.llm_client = llm_client
+        self.preserve_session_evidence = preserve_session_evidence
 
     def check_and_reflect(self, force: bool = False) -> ReflectionResult:
         """Check if reflection should trigger and execute if so.
@@ -203,9 +208,7 @@ class ReflectionEngine:
         # Build reflection content (empty summary still creates a record)
         reflection_content = f"Session reflection ({event}): {summary}"
 
-        # Atomically consolidate, create reflection memory, and log trigger.
-        # This replaces the old non-atomic sequence:
-        #   consolidate() -> insert_memory() -> log_trigger()
+        # Atomically create reflection candidate, link lineage, and log trigger.
         consolidated_ids, rid = self.store.consolidate_with_audit(
             from_layer="session",
             to_layer="project",
@@ -213,6 +216,10 @@ class ReflectionEngine:
             reflection_source="reflection",
             event=event,
             action="reflection_consolidate",
+            move_memories=not self.preserve_session_evidence,
+            claim_type="derived_lesson",
+            lifecycle_state="candidate",
+            verification_state="unverified",
         )
 
         new_memories: List[dict] = []

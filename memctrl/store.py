@@ -770,7 +770,14 @@ class MemoryStore:
             return mem
 
     def list_memories(
-        self, layer: Optional[str] = None, include_expired: bool = False
+        self,
+        layer: Optional[str] = None,
+        include_expired: bool = False,
+        include_candidates: bool = False,
+        include_history: bool = False,
+        lifecycle_state: Optional[str] = None,
+        verification_state: Optional[str] = None,
+        claim_type: Optional[str] = None,
     ) -> List[Memory]:
         now_iso = _now_iso()
         with self._connect() as conn:
@@ -783,6 +790,28 @@ class MemoryStore:
             if not include_expired:
                 clauses.append("(expires_at IS NULL OR expires_at >= ?)")
                 params.append(now_iso)
+
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
+            if "lifecycle_state" in cols:
+                if lifecycle_state is not None:
+                    clauses.append("lifecycle_state = ?")
+                    params.append(lifecycle_state)
+                elif not include_history:
+                    if include_candidates:
+                        clauses.append("lifecycle_state IN ('accepted', 'candidate')")
+                    else:
+                        clauses.append("lifecycle_state = 'accepted'")
+
+                if verification_state is not None:
+                    clauses.append("verification_state = ?")
+                    params.append(verification_state)
+                elif not include_history:
+                    clauses.append("verification_state != 'refuted'")
+
+                if claim_type is not None:
+                    clauses.append("claim_type = ?")
+                    params.append(claim_type)
+
             if clauses:
                 query += " WHERE " + " AND ".join(clauses)
             query += " ORDER BY created_at DESC"
@@ -1204,8 +1233,12 @@ class MemoryStore:
         reflection_source: str,
         event: str,
         action: str,
+        move_memories: bool = True,
+        claim_type: str = "derived_lesson",
+        lifecycle_state: str = "candidate",
+        verification_state: str = "unverified",
     ) -> tuple[List[str], Optional[str]]:
-        """Atomically consolidate memories, create reflection, and log trigger."""
+        """Atomically consolidate memories, create reflection candidate, and log trigger."""
 
         def _write(conn):
             rows = conn.execute(
@@ -1217,12 +1250,13 @@ class MemoryStore:
                 conn.commit()
                 return [], None
 
-            # 1. Move memories
-            placeholders = ",".join("?" * len(ids))
-            conn.execute(
-                f"UPDATE memories SET layer = ? WHERE id IN ({placeholders})",
-                (to_layer, *ids),
-            )
+            # 1. Move memories if requested (legacy behavior); otherwise preserve in source layer
+            if move_memories:
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"UPDATE memories SET layer = ? WHERE id IN ({placeholders})",
+                    (to_layer, *ids),
+                )
 
             # 2. Create reflection memory via centralized persistence boundary (sanitizes content)
             rid = self._insert_memory_tx(
@@ -1230,11 +1264,25 @@ class MemoryStore:
                 layer=to_layer,
                 content=reflection_content,
                 source=reflection_source,
-                confidence=0.9,
+                confidence=0.7,
                 tags=["reflection", event, "auto-consolidated"],
+                claim_type=claim_type,
+                lifecycle_state=lifecycle_state,
+                verification_state=verification_state,
             )
 
-            # 3. Log trigger
+            # 3. Add derived_from relations linking candidate to each source memory
+            cols = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if "memory_relations" in cols:
+                for mid in ids:
+                    rel_id = str(uuid.uuid4())
+                    conn.execute(
+                        """INSERT INTO memory_relations (id, from_memory_id, to_memory_id, relation_type, created_at, metadata_json)
+                           VALUES (?, ?, ?, 'derived_from', ?, ?)""",
+                        (rel_id, rid, mid, _now_iso(), json.dumps({"event": event, "action": action})),
+                    )
+
+            # 4. Log trigger
             lid = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO triggers_log (id, event, action, memories_affected, timestamp)

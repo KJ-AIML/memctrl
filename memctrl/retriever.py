@@ -326,6 +326,8 @@ class MemoryRetriever:
         tree: dict,
         top_k: int = 5,
         memory_lookup: Optional[Dict[str, dict]] = None,
+        include_candidates: bool = False,
+        history: bool = False,
     ) -> RetrievalResult:
         """Retrieve relevant memories with reasoning trace.
 
@@ -333,6 +335,8 @@ class MemoryRetriever:
         tree: TreeNode serialized as dict (from MemoryTreeBuilder.to_dict)
         memory_lookup: dict of memory_id -> memory dict for content lookup
         top_k: maximum number of facts to return
+        include_candidates: whether to include candidate knowledge in retrieval
+        history: if True, include superseded, refuted, and expired memories with visible annotations
 
         Returns RetrievalResult with facts, trace, confidence, sources.
         If a ProvenanceTracker was provided at init, the result will also
@@ -340,6 +344,55 @@ class MemoryRetriever:
         """
         if not tree or not memory_lookup:
             return RetrievalResult(facts=[], trace=["empty_tree"], confidence=0.0)
+
+        # Lifecycle and eligibility filtering (Phase 4)
+        from datetime import datetime
+        now = datetime.now()
+
+        filtered_lookup: Dict[str, dict] = {}
+        for mid, mem in memory_lookup.items():
+            exp = mem.get("expires_at")
+            if exp and not history:
+                if isinstance(exp, str):
+                    from memctrl.store import _parse_dt
+                    exp_dt = _parse_dt(exp)
+                else:
+                    exp_dt = exp
+                if exp_dt < now:
+                    continue
+
+            l_state = mem.get("lifecycle_state", "accepted")
+            v_state = mem.get("verification_state", "unverified")
+
+            if not history:
+                # Default: accepted, not refuted, not rejected, not superseded
+                if v_state == "refuted":
+                    continue
+                if l_state in ("rejected", "superseded", "archived"):
+                    continue
+                if l_state == "candidate" and not include_candidates:
+                    continue
+                filtered_lookup[mid] = mem
+            else:
+                # History mode: include, with visible status annotation
+                mem_copy = dict(mem)
+                prefix = ""
+                if v_state == "refuted":
+                    prefix = "[REFUTED] "
+                elif l_state == "superseded":
+                    prefix = "[SUPERSEDED] "
+                elif l_state == "candidate":
+                    prefix = "[CANDIDATE] "
+                elif l_state == "rejected":
+                    prefix = "[REJECTED] "
+                if prefix and not str(mem_copy.get("content", "")).startswith("["):
+                    mem_copy["content"] = f"{prefix}{mem_copy.get('content', '')}"
+                filtered_lookup[mid] = mem_copy
+
+        if not filtered_lookup:
+            return RetrievalResult(facts=[], trace=["no_eligible_memories"], confidence=0.0)
+
+        memory_lookup = filtered_lookup
 
         top_k = max(0, top_k)
 

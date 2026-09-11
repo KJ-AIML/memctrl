@@ -309,3 +309,74 @@ def test_timeline_with_events():
         assert result.exit_code == 0
         assert "task 1" in result.output or "on_commit" in result.output
         del os.environ["MEMCTRL_DB_PATH"]
+
+
+# ---------------------------------------------------------------------------
+# Review CLI commands (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+def test_candidates_and_review_workflow():
+    from memctrl.store import MemoryStore
+
+    with _temp_cwd() as tmpdir:
+        db_path = str(Path(tmpdir) / "test.db")
+        os.environ["MEMCTRL_DB_PATH"] = db_path
+        store = MemoryStore(db_path)
+
+        # 1. Insert a candidate memory
+        cid = store.insert_memory(
+            layer="project",
+            content="Candidate lesson for auth handling",
+            source="reflection",
+            claim_type="derived_lesson",
+            lifecycle_state="candidate",
+        )
+
+        # 2. List candidates
+        res_cand = runner.invoke(app, ["candidates"])
+        assert res_cand.exit_code == 0
+        assert "Candidate" in res_cand.output
+        assert "auth" in res_cand.output
+
+        # 3. Show memory details
+        res_show = runner.invoke(app, ["show", cid])
+        assert res_show.exit_code == 0
+        assert cid in res_show.output
+        assert "candidate" in res_show.output
+        assert "derived_lesson" in res_show.output
+
+        # 4. Accept candidate
+        res_accept = runner.invoke(app, ["accept", cid])
+        assert res_accept.exit_code == 0
+        assert "Accepted memory" in res_accept.output
+        assert store.get_memory(cid).lifecycle_state == "accepted"
+
+        # 5. Dispute
+        res_dispute = runner.invoke(app, ["dispute", cid])
+        assert res_dispute.exit_code == 0
+        assert store.get_memory(cid).verification_state == "disputed"
+
+        # 6. Refute
+        res_refute = runner.invoke(app, ["refute", cid, "--reason", "Proven incorrect by telemetry"])
+        assert res_refute.exit_code == 0
+        mem = store.get_memory(cid)
+        assert mem.verification_state == "refuted"
+        assert mem.lifecycle_state == "rejected"
+
+        # 7. History
+        res_history = runner.invoke(app, ["history", cid])
+        assert res_history.exit_code == 0
+        assert cid[:8] in res_history.output
+
+        # 8. Reject on another candidate
+        cid2 = store.insert_memory(
+            layer="project",
+            content="Another candidate",
+            lifecycle_state="candidate",
+        )
+        res_reject = runner.invoke(app, ["reject", cid2])
+        assert res_reject.exit_code == 0
+        assert store.get_memory(cid2).lifecycle_state == "rejected"
+
+        del os.environ["MEMCTRL_DB_PATH"]

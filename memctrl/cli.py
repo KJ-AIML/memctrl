@@ -339,6 +339,169 @@ def list_memories(
 
 
 @app.command()
+def candidates(
+    layer: Optional[str] = typer.Option(None, help="Filter by layer"),
+    limit: int = typer.Option(50, help="Max results"),
+):
+    """List candidate memories awaiting review."""
+    store = _get_store()
+    mems = store.list_memories(layer=layer, lifecycle_state="candidate")[:limit]
+
+    if not mems:
+        console.print("[yellow]No candidate memories found.[/yellow]")
+        return
+
+    table = Table(title="Candidate Memories Awaiting Review", show_lines=True)
+    table.add_column("ID", style="dim", max_width=12)
+    table.add_column("Layer", style="cyan")
+    table.add_column("Type", style="magenta")
+    table.add_column("Content", max_width=60)
+    table.add_column("Source", style="green")
+    table.add_column("Confidence", justify="right")
+
+    for mem in mems:
+        table.add_row(
+            mem.id[:8],
+            mem.layer,
+            mem.claim_type,
+            mem.content[:80],
+            mem.source,
+            f"{mem.confidence:.2f}",
+        )
+    console.print(table)
+
+
+@app.command()
+def show(
+    memory_id: str = typer.Argument(..., help="Memory ID to inspect"),
+):
+    """Show detailed memory record, lifecycle, relations, and evidence."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+
+    console.print(Panel(f"[bold]Memory Details:[/bold] {mem.id}", title="memctrl show"))
+    console.print(f"[cyan]Content:[/cyan] {mem.content}")
+    console.print(
+        f"[bold]Layer:[/bold] {mem.layer}  |  "
+        f"[bold]Source:[/bold] {mem.source}  |  "
+        f"[bold]Confidence:[/bold] {mem.confidence:.2f}"
+    )
+    console.print(
+        f"[bold]Claim Type:[/bold] {mem.claim_type}  |  "
+        f"[bold]Lifecycle:[/bold] {mem.lifecycle_state}  |  "
+        f"[bold]Verification:[/bold] {mem.verification_state}"
+    )
+    console.print(
+        f"[dim]Created:[/dim] {mem.created_at}  |  "
+        f"[dim]Updated:[/dim] {mem.updated_at}  |  "
+        f"[dim]Expires:[/dim] {mem.expires_at}"
+    )
+
+    relations = store.get_memory_relations(memory_id)
+    if relations:
+        console.print("\n[bold]Relations:[/bold]")
+        for r in relations:
+            direction = "->" if r.from_memory_id == memory_id else "<-"
+            other = r.to_memory_id if r.from_memory_id == memory_id else r.from_memory_id
+            console.print(f"  {direction} [{r.relation_type}] {other[:8]} ({r.metadata})")
+
+    evidence = store.get_memory_evidence(memory_id)
+    if evidence:
+        console.print("\n[bold]External Evidence:[/bold]")
+        for ev in evidence:
+            console.print(f"  [{ev.relation}] {ev.source_system}:{ev.source_id} (rev: {ev.source_revision})")
+
+
+@app.command()
+def accept(
+    memory_id: str = typer.Argument(..., help="Candidate memory ID to accept"),
+):
+    """Accept a candidate memory into active knowledge."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+    store.update_memory_lifecycle(memory_id, "accepted")
+    _get_cache().invalidate()
+    console.print(f"[green]Accepted memory[/green] {memory_id} into active knowledge.")
+
+
+@app.command()
+def reject(
+    memory_id: str = typer.Argument(..., help="Memory ID to reject"),
+    reason: Optional[str] = typer.Option(None, help="Rejection reason"),
+):
+    """Reject a candidate or active memory."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+    store.update_memory_lifecycle(memory_id, "rejected")
+    _get_cache().invalidate()
+    console.print(f"[yellow]Rejected memory[/yellow] {memory_id}.")
+
+
+@app.command()
+def history(
+    memory_id: str = typer.Argument(..., help="Memory ID to view history/lineage"),
+):
+    """Show relationship lineage and audit history for a memory."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+    relations = store.get_memory_relations(memory_id)
+    evidence = store.get_memory_evidence(memory_id)
+    console.print(f"[bold]History for Memory {memory_id[:8]}:[/bold] {mem.content[:60]}")
+    if relations:
+        for r in relations:
+            console.print(f"  - relation: {r.relation_type} with {r.to_memory_id[:8]} at {r.created_at}")
+    else:
+        console.print("  No relations found.")
+    if evidence:
+        for ev in evidence:
+            console.print(f"  - evidence: {ev.source_system}:{ev.source_id} ({ev.relation})")
+
+
+@app.command()
+def dispute(
+    memory_id: str = typer.Argument(..., help="Memory ID to dispute"),
+):
+    """Mark a memory's verification state as disputed."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+    store.update_memory_verification(memory_id, "disputed")
+    _get_cache().invalidate()
+    console.print(f"[yellow]Disputed memory[/yellow] {memory_id}.")
+
+
+@app.command()
+def refute(
+    memory_id: str = typer.Argument(..., help="Memory ID to refute"),
+    reason: str = typer.Option(..., "--reason", "-r", help="Reason for refuting the claim"),
+    refuting_id: Optional[str] = typer.Option(None, help="Optional ID of memory that refutes this"),
+):
+    """Mark a memory as refuted (falsified)."""
+    store = _get_store()
+    mem = store.get_memory(memory_id, include_expired=True)
+    if not mem:
+        console.print(f"[red]Memory not found:[/red] {memory_id}")
+        raise typer.Exit(1)
+    store.refute_memory(memory_id, reason=reason, refuting_memory_id=refuting_id)
+    _get_cache().invalidate()
+    console.print(f"[red]Refuted memory[/red] {memory_id}: {reason}")
+
+
+@app.command()
 def tree(
     llm_provider: Optional[str] = typer.Option(
         None, help="LLM provider (openai, anthropic, etc.)"

@@ -119,6 +119,37 @@ MCP_TOOLS = [
             },
         },
     ),
+    Tool(
+        name="memctrl_candidates",
+        description="List candidate memories awaiting review",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "layer": {"type": "string", "description": "Optional layer filter"},
+                "limit": {"type": "integer", "default": 50},
+            },
+        },
+    ),
+    Tool(
+        name="memctrl_review",
+        description="Review candidate or active memory (accept, reject, dispute, refute)",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Memory ID"},
+                "action": {
+                    "type": "string",
+                    "enum": ["accept", "reject", "dispute", "refute"],
+                    "description": "Review action",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Optional reason for rejection or refutation",
+                },
+            },
+            "required": ["id", "action"],
+        },
+    ),
 ]
 
 
@@ -231,6 +262,37 @@ async def serve_mcp() -> None:
                                 "logs": [log.to_dict() for log in logs],
                             }
                         ),
+                    )
+                ]
+
+            elif name == "memctrl_candidates":
+                candidates = store.list_memories(
+                    layer=arguments.get("layer"),
+                    lifecycle_state="candidate",
+                )[: arguments.get("limit", 50)]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"candidates": [m.to_dict() for m in candidates]}),
+                    )
+                ]
+
+            elif name == "memctrl_review":
+                mid = arguments["id"]
+                action = arguments["action"]
+                reason = arguments.get("reason", "")
+                if action == "accept":
+                    store.update_memory_lifecycle(mid, "accepted")
+                elif action == "reject":
+                    store.update_memory_lifecycle(mid, "rejected")
+                elif action == "dispute":
+                    store.update_memory_verification(mid, "disputed")
+                elif action == "refute":
+                    store.refute_memory(mid, reason=reason)
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"id": mid, "action": action, "status": "updated"}),
                     )
                 ]
 
