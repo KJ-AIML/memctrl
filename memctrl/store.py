@@ -949,6 +949,8 @@ class MemoryStore:
         self, old_memory_id: str, new_memory_id: str, metadata: Optional[dict] = None
     ) -> bool:
         """Mark old_memory as superseded by new_memory and record lineage relation."""
+        if old_memory_id == new_memory_id:
+            raise ValueError("A memory cannot supersede itself")
 
         def _write(conn):
             cur = conn.execute(
@@ -973,6 +975,8 @@ class MemoryStore:
         self, memory_id: str, reason: str, refuting_memory_id: Optional[str] = None
     ) -> bool:
         """Mark memory as refuted (verification_state='refuted', lifecycle_state='rejected')."""
+        if refuting_memory_id and memory_id == refuting_memory_id:
+            raise ValueError("A memory cannot refute itself")
 
         def _write(conn):
             cur = conn.execute(
@@ -1008,6 +1012,8 @@ class MemoryStore:
         metadata: Optional[dict] = None,
     ) -> str:
         """Record a directed relation between two memories."""
+        if from_memory_id == to_memory_id:
+            raise ValueError("Cannot create self-referencing relation")
         if relation_type not in RELATION_TYPES:
             raise ValueError(
                 f"Invalid relation_type '{relation_type}'. Must be one of {sorted(RELATION_TYPES)}"

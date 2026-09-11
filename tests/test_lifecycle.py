@@ -176,3 +176,59 @@ def test_external_evidence_references(store):
     assert evidence[0].source_revision == "9431c89"
     assert evidence[0].relation == "derived_from"
     assert evidence[0].metadata.get("measured_latency_ms") == 320
+
+
+def test_self_referencing_guards(store):
+    """A memory cannot supersede, refute, or link to itself."""
+    m1 = store.insert_memory("project", "Self referential fact")
+
+    with pytest.raises(ValueError, match="cannot supersede itself"):
+        store.supersede_memory(m1, m1)
+
+    with pytest.raises(ValueError, match="cannot refute itself"):
+        store.refute_memory(m1, reason="I was wrong about myself", refuting_memory_id=m1)
+
+    with pytest.raises(ValueError, match="self-referencing"):
+        store.add_memory_relation(m1, m1, "derived_from")
+
+
+@pytest.mark.asyncio
+async def test_all_lifecycle_states_truth_table(store):
+    """Verify default retrieval vs history retrieval across all lifecycle states."""
+    from memctrl.retriever import MemoryRetriever
+
+    # Create one memory for each lifecycle state
+    m_accepted = store.insert_memory("project", "Accepted fact", lifecycle_state="accepted")
+    m_candidate = store.insert_memory("project", "Candidate fact", lifecycle_state="candidate")
+    m_superseded = store.insert_memory("project", "Superseded fact", lifecycle_state="superseded")
+    m_rejected = store.insert_memory("project", "Rejected fact", lifecycle_state="rejected")
+    m_archived = store.insert_memory("project", "Archived fact", lifecycle_state="archived")
+
+    # And one refuted memory
+    m_refuted = store.insert_memory(
+        "project", "Refuted claim", lifecycle_state="accepted", verification_state="refuted"
+    )
+
+    # 1. Default retrieval: only accepted + non-refuted is eligible
+    default_mems = store.list_memories()
+    default_ids = [m.id for m in default_mems]
+    assert default_ids == [m_accepted]
+
+    # Retriever default
+    lookup = {m.id: m.to_dict() for m in store.list_memories(include_history=True)}
+    tree = {"id": "root", "title": "R", "layer": "root", "summary": "", "memory_ids": list(lookup.keys()), "children": []}
+    retriever = MemoryRetriever()
+
+    res_default = await retriever.retrieve("fact", tree, memory_lookup=lookup)
+    assert len(res_default.facts) == 1
+    assert "Accepted fact" in res_default.facts[0]
+
+    # 2. History retrieval: surfaces all states with explicit annotations
+    res_history = await retriever.retrieve("fact", tree, memory_lookup=lookup, history=True)
+    assert len(res_history.facts) == 5
+    annotated = " ".join(res_history.facts)
+    assert "[CANDIDATE]" in annotated
+    assert "[SUPERSEDED]" in annotated
+    assert "[REJECTED]" in annotated
+    assert "[ARCHIVED]" in annotated
+    assert "Accepted fact" in annotated

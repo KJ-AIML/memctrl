@@ -367,13 +367,16 @@ class MemoryRetriever:
             v_state = mem.get("verification_state", "unverified")
 
             if not history:
-                # Default: accepted, not refuted, not rejected, not superseded
+                # Strictly allowlist-based: must be accepted (or candidate if explicitly allowed)
+                # and must not be refuted.
                 if v_state == "refuted":
                     continue
-                if l_state in ("rejected", "superseded", "archived"):
-                    continue
-                if l_state == "candidate" and not include_candidates:
-                    continue
+                if include_candidates:
+                    if l_state not in ("accepted", "candidate"):
+                        continue
+                else:
+                    if l_state != "accepted":
+                        continue
                 filtered_lookup[mid] = mem
             else:
                 # History mode: include, with visible status annotation
@@ -387,6 +390,8 @@ class MemoryRetriever:
                     prefix = "[CANDIDATE] "
                 elif l_state == "rejected":
                     prefix = "[REJECTED] "
+                elif l_state == "archived":
+                    prefix = "[ARCHIVED] "
                 if prefix and not str(mem_copy.get("content", "")).startswith("["):
                     mem_copy["content"] = f"{prefix}{mem_copy.get('content', '')}"
                 filtered_lookup[mid] = mem_copy

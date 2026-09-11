@@ -256,7 +256,8 @@ def query(
         from memctrl.decay import ConfidenceDecay
 
         decay = ConfidenceDecay(store)
-        store.run_decay_if_needed(decay)
+        if store.run_decay_if_needed(decay):
+            cache.invalidate()
 
         # WAL checkpoint to prevent unbounded growth
         store.wal_checkpoint()
@@ -425,6 +426,11 @@ def accept(
     if not mem:
         console.print(f"[red]Memory not found:[/red] {memory_id}")
         raise typer.Exit(1)
+    if mem.verification_state == "refuted":
+        console.print(
+            f"[red]Cannot accept refuted memory:[/red] {memory_id}. The claim has been refuted."
+        )
+        raise typer.Exit(1)
     store.update_memory_lifecycle(memory_id, "accepted")
     _get_cache().invalidate()
     console.print(f"[green]Accepted memory[/green] {memory_id} into active knowledge.")
@@ -461,7 +467,9 @@ def history(
     console.print(f"[bold]History for Memory {memory_id[:8]}:[/bold] {mem.content[:60]}")
     if relations:
         for r in relations:
-            console.print(f"  - relation: {r.relation_type} with {r.to_memory_id[:8]} at {r.created_at}")
+            other = r.to_memory_id if r.from_memory_id == memory_id else r.from_memory_id
+            direction = "->" if r.from_memory_id == memory_id else "<-"
+            console.print(f"  - {direction} [{r.relation_type}] {other[:8]} at {r.created_at}")
     else:
         console.print("  No relations found.")
     if evidence:
@@ -629,6 +637,8 @@ def decay(
         return
 
     decayed = decay_engine.decay_memories()
+    if decayed:
+        _get_cache().invalidate()
     store._last_decay_at = __import__("datetime").datetime.now()
     console.print(f"[green]Decayed {len(decayed)} memories[/green]")
 

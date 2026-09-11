@@ -369,7 +369,12 @@ def test_candidates_and_review_workflow():
         assert res_history.exit_code == 0
         assert cid[:8] in res_history.output
 
-        # 8. Reject on another candidate
+        # 8. Attempting to accept refuted memory must fail
+        res_accept_refuted = runner.invoke(app, ["accept", cid])
+        assert res_accept_refuted.exit_code != 0
+        assert "Cannot accept refuted memory" in res_accept_refuted.output
+
+        # 9. Reject on another candidate
         cid2 = store.insert_memory(
             layer="project",
             content="Another candidate",
