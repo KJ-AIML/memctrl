@@ -793,14 +793,19 @@ def test_v2_to_v3_migration(tmp_path):
     # Verify migration
     with store._connect() as conn:
         ver = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-        assert ver == 3
+        assert ver == 4
         cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)").fetchall()]
         assert "updated_at" in cols
         assert "last_accessed_at" in cols
         assert "access_count" in cols
-        # Maintenance state table must exist
+        assert "claim_type" in cols
+        assert "lifecycle_state" in cols
+        assert "verification_state" in cols
+        # Maintenance state and relation tables must exist
         m_tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         assert "maintenance_state" in m_tables
+        assert "memory_relations" in m_tables
+        assert "memory_evidence" in m_tables
 
     # 3. Read existing legacy memory
     mem = store.get_memory("v2-mem-1")
