@@ -1273,6 +1273,63 @@ def otel_stats():
     console.print(f"\n[dim]Trace ID: {exporter._trace_id}[/dim]")
 
 
+review_app = typer.Typer(help="Review external sources and task history")
+app.add_typer(review_app, name="review")
+
+
+@review_app.command("heli")
+def review_heli(
+    workspace: str = typer.Option(".", "--workspace", "-w", help="Path to Heli workspace root"),
+    completed: int = typer.Option(20, "--completed", "-c", help="Max completed tasks to inspect"),
+    dry_run: bool = typer.Option(True, "--dry-run/--persist", help="Run read-only without storing candidates"),
+    repo: Optional[str] = typer.Option(None, "--repo", help="Filter by target repository"),
+):
+    """Review Heli task history to distill candidate lessons with evidence and counterexamples."""
+    from memctrl.sources.heli import HeliSourceAdapter, HeliDistiller
+
+    adapter = HeliSourceAdapter(workspace)
+    if not adapter.is_valid_workspace():
+        console.print(f"[red]Error:[/red] '{workspace}' is not a valid Heli workspace root (.heli-harness missing).")
+        raise typer.Exit(1)
+
+    tasks = adapter.load_tasks(limit=completed, repo_filter=repo)
+    console.print(f"[bold]Loaded {len(tasks)} tasks from Heli workspace:[/bold] {workspace}")
+
+    distiller = HeliDistiller(adapter)
+    proposals = distiller.distill_lessons(tasks=tasks, limit=completed)
+
+    if not proposals:
+        console.print("[yellow]No candidate lessons distilled from the given tasks.[/yellow]")
+        return
+
+    table = Table(title=f"Distilled Lessons ({len(proposals)} proposals)", show_lines=True)
+    table.add_column("Proposal ID", style="dim", max_width=16)
+    table.add_column("Claim", max_width=50)
+    table.add_column("Source Tasks", style="cyan")
+    table.add_column("Counterexamples", style="yellow")
+    table.add_column("Status", style="green")
+
+    for p in proposals:
+        table.add_row(
+            p.proposal_id,
+            p.claim[:60],
+            ", ".join(p.source_tasks),
+            f"{len(p.counterexamples)} noted" if p.counterexamples else "none",
+            p.proposed_disposition,
+        )
+    console.print(table)
+
+    if not dry_run:
+        store = _get_store()
+        created_ids = distiller.persist_proposals_to_store(proposals, store)
+        cache = _get_cache()
+        cache.invalidate()
+        console.print(f"\n[green]Persisted {len(created_ids)} proposals as candidate knowledge into MemCtrl store.[/green]")
+        console.print("[dim]Use 'memctrl candidates' to review and 'memctrl accept <id>' to promote.[/dim]")
+    else:
+        console.print("\n[dim]Dry run complete. Use --persist to save proposals as candidate knowledge.[/dim]")
+
+
 def _default_memoryrc() -> str:
     return """# MemCtrl configuration
 
