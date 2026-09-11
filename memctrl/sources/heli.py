@@ -300,8 +300,9 @@ class HeliDistiller:
             # 2. Extract lessons from durable decisions
             for i, dec in enumerate(task.decisions):
                 if len(dec) > 15:
+                    is_refuted = "refuted" in dec.lower()
                     p = LessonProposal(
-                        proposal_id=f"prop-{task.task_id[:8]}-dec-{i}",
+                        proposal_id=f"prop-{task.task_id[:8]}-{'refuted' if is_refuted else 'dec'}-{i}",
                         claim=dec,
                         claim_type="derived_lesson",
                         source_tasks=[task.task_id],
@@ -310,7 +311,7 @@ class HeliDistiller:
                         contradictory_evidence=[],
                         applicability_conditions=[f"Repo context: {task.target_repo}"],
                         counterexamples=[],
-                        proposed_disposition="candidate",
+                        proposed_disposition="rejected" if is_refuted else "candidate",
                     )
                     proposals.append(p)
 
@@ -354,15 +355,19 @@ class HeliDistiller:
             if prop.counterexamples:
                 content += f"\nCounterexamples:\n- " + "\n- ".join(prop.counterexamples)
 
+            is_refuted = "refuted" in prop.proposal_id or "refuted" in prop.claim.lower()
+            v_state = "refuted" if is_refuted else "unverified"
+            l_state = "rejected" if is_refuted else prop.proposed_disposition
+
             mid = store.insert_memory(
                 layer="project",
                 content=content,
                 source="heli-distillation",
                 confidence=0.7,
                 claim_type="derived_lesson",
-                lifecycle_state="candidate",
-                verification_state="unverified",
-                tags=["distilled", "heli-history", "candidate"],
+                lifecycle_state=l_state,
+                verification_state=v_state,
+                tags=["distilled", "heli-history", l_state],
             )
 
             # Store external evidence references linking to Heli tasks

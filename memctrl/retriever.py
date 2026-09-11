@@ -286,6 +286,7 @@ class RetrievalResult:
     confidence: float = 0.0
     sources: List[str] = field(default_factory=list)
     provenance: Optional[RetrievalProvenance] = None  # populated when tracker is active
+    memory_ids: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         result = {
@@ -293,6 +294,7 @@ class RetrievalResult:
             "trace": self.trace,
             "confidence": self.confidence,
             "sources": self.sources,
+            "memory_ids": self.memory_ids,
         }
         if self.provenance is not None:
             result["provenance"] = self.provenance.to_dict()
@@ -497,6 +499,7 @@ class MemoryRetriever:
                 trace=trace,
                 confidence=confidence,
                 sources=sources,
+                memory_ids=[m.get("id", "") for m in matched_memories if m.get("id")],
             ),
             matched_memories,
         )
@@ -729,6 +732,7 @@ class MemoryRetriever:
                 trace=trace,
                 confidence=round(confidence, 2),
                 sources=sources,
+                memory_ids=[m.get("id", "") for m in matched_memories if m.get("id")],
             ),
             matched_memories,
         )
