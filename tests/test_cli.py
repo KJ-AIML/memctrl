@@ -189,9 +189,7 @@ def test_trigger_no_match():
 def test_trigger_invalid_json_context():
     with _temp_cwd() as tmpdir:
         os.environ["MEMCTRL_DB_PATH"] = str(Path(tmpdir) / "test.db")
-        result = runner.invoke(
-            app, ["trigger-cmd", "on_commit", "--context", "not json"]
-        )
+        result = runner.invoke(app, ["trigger-cmd", "on_commit", "--context", "not json"])
         assert result.exit_code == 0
         assert "Invalid JSON" in result.output
         del os.environ["MEMCTRL_DB_PATH"]

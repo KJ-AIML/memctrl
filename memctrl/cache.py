@@ -170,9 +170,7 @@ class QueryCache:
             return 0
         try:
             conn = sqlite3.connect(self._db_path, timeout=10.0)
-            row = conn.execute(
-                "SELECT value FROM cache_meta WHERE key = 'tree_version'"
-            ).fetchone()
+            row = conn.execute("SELECT value FROM cache_meta WHERE key = 'tree_version'").fetchone()
             conn.close()
             return row[0] if row else 0
         except Exception:
@@ -215,9 +213,7 @@ class QueryCache:
             sources=data.get("sources", []),
         )
 
-    def _persist_entry(
-        self, key_str: str, result: RetrievalResult, ttl_seconds: Optional[float] = None
-    ) -> None:
+    def _persist_entry(self, key_str: str, result: RetrievalResult, ttl_seconds: Optional[float] = None) -> None:
         """Save cache entry to SQLite."""
         if not self._db_path:
             return
@@ -250,8 +246,7 @@ class QueryCache:
         try:
             conn = sqlite3.connect(self._db_path, timeout=10.0)
             row = conn.execute(
-                "SELECT result_json, tree_version, cached_at, ttl_seconds "
-                "FROM query_cache WHERE query = ?",
+                "SELECT result_json, tree_version, cached_at, ttl_seconds FROM query_cache WHERE query = ?",
                 (key_str,),
             ).fetchone()
             conn.close()

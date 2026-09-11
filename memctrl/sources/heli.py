@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -158,10 +157,7 @@ class HeliSourceAdapter:
                 data = json.loads(task_json_path.read_text(encoding="utf-8"))
                 title = data.get("title", title)
                 status = data.get("status", status)
-                target_repo = (
-                    data.get("target", {}).get("repositoryId")
-                    or data.get("repo", "")
-                )
+                target_repo = data.get("target", {}).get("repositoryId") or data.get("repo", "")
                 risk_tier = data.get("riskTier", risk_tier)
                 if data.get("completedAt"):
                     try:
@@ -203,16 +199,18 @@ class HeliSourceAdapter:
                     header = lines[0] if lines else "Step"
                     step_status = "pending"
                     evidence_line = ""
-                    for l in lines[1:]:
-                        if l.strip().startswith("Status:"):
-                            step_status = l.split(":", 1)[1].strip()
-                        elif l.strip().startswith("Evidence:"):
-                            evidence_line = l.split(":", 1)[1].strip()
-                    plan_steps.append({
-                        "name": header,
-                        "status": step_status,
-                        "evidence": evidence_line,
-                    })
+                    for l_item in lines[1:]:
+                        if l_item.strip().startswith("Status:"):
+                            step_status = l_item.split(":", 1)[1].strip()
+                        elif l_item.strip().startswith("Evidence:"):
+                            evidence_line = l_item.split(":", 1)[1].strip()
+                    plan_steps.append(
+                        {
+                            "name": header,
+                            "status": step_status,
+                            "evidence": evidence_line,
+                        }
+                    )
                     if evidence_line:
                         evidence_items.append(evidence_line)
             except Exception as e:
@@ -353,7 +351,7 @@ class HeliDistiller:
             # Build memory content with claim and counterexamples noted
             content = prop.claim
             if prop.counterexamples:
-                content += f"\nCounterexamples:\n- " + "\n- ".join(prop.counterexamples)
+                content += "\nCounterexamples:\n- " + "\n- ".join(prop.counterexamples)
 
             is_refuted = "refuted" in prop.proposal_id or "refuted" in prop.claim.lower()
             v_state = "refuted" if is_refuted else "unverified"

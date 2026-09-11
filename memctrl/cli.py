@@ -150,9 +150,7 @@ def main(
 @app.command()
 def install(
     tool: Optional[str] = typer.Option(None, help="Specific tool to install for"),
-    project: bool = typer.Option(
-        False, help="Install at project level (.claude/ etc.)"
-    ),
+    project: bool = typer.Option(False, help="Install at project level (.claude/ etc.)"),
 ):
     """Register SKILL.md with AI coding tools (Claude Code, Cursor, etc.)"""
     from memctrl.installer import install_skill
@@ -171,9 +169,7 @@ def init(
     """Create .memoryrc and project-local database in current directory"""
     dest = Path(".memoryrc")
     if dest.exists() and not force:
-        console.print(
-            f"[yellow]{dest} already exists. Use --force to overwrite.[/yellow]"
-        )
+        console.print(f"[yellow]{dest} already exists. Use --force to overwrite.[/yellow]")
         raise typer.Exit(1)
 
     example = Path(__file__).parent / ".memoryrc.example"
@@ -203,9 +199,7 @@ def add(
     content: str = typer.Argument(..., help="Memory content to store"),
     layer: str = typer.Option("session", help="Layer: project/session/user"),
     source: str = typer.Option("manual", help="Source of this memory"),
-    llm_provider: Optional[str] = typer.Option(
-        None, help="LLM provider (openai, anthropic, etc.)"
-    ),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -220,18 +214,14 @@ def add(
 
     decay = ConfidenceDecay(store)
     store.run_decay_if_needed(decay)
-    console.print(
-        f"[green]Added memory[/green] [dim]{mid}[/dim] to [bold]{layer}[/bold]"
-    )
+    console.print(f"[green]Added memory[/green] [dim]{mid}[/dim] to [bold]{layer}[/bold]")
 
 
 @app.command()
 def query(
     query_text: str = typer.Argument(..., help="Query to search memory"),
     layer: Optional[str] = typer.Option(None, help="Filter by layer"),
-    llm_provider: Optional[str] = typer.Option(
-        None, help="LLM provider (openai, anthropic, etc.)"
-    ),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -271,9 +261,7 @@ def query(
         memory_lookup = {m.id: m.to_dict() for m in memories}
 
         # Build tree (with LLM if configured)
-        llm_client = _get_llm_client(
-            provider=llm_provider, model=llm_model, api_key=llm_api_key
-        )
+        llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
         from memctrl.tree import MemoryTreeBuilder, get_or_build_tree
 
         builder = MemoryTreeBuilder(llm_client=llm_client)
@@ -289,9 +277,7 @@ def query(
                 llm_client=llm_client,
                 provenance_tracker=_get_provenance_tracker(),
             )
-            result = await retriever.retrieve(
-                query_text, tree_dict, memory_lookup=memory_lookup
-            )
+            result = await retriever.retrieve(query_text, tree_dict, memory_lookup=memory_lookup)
             return result
 
         result = asyncio.run(_do_query())
@@ -427,9 +413,7 @@ def accept(
         console.print(f"[red]Memory not found:[/red] {memory_id}")
         raise typer.Exit(1)
     if mem.verification_state == "refuted":
-        console.print(
-            f"[red]Cannot accept refuted memory:[/red] {memory_id}. The claim has been refuted."
-        )
+        console.print(f"[red]Cannot accept refuted memory:[/red] {memory_id}. The claim has been refuted.")
         raise typer.Exit(1)
     store.update_memory_lifecycle(memory_id, "accepted")
     _get_cache().invalidate()
@@ -511,9 +495,7 @@ def refute(
 
 @app.command()
 def tree(
-    llm_provider: Optional[str] = typer.Option(
-        None, help="LLM provider (openai, anthropic, etc.)"
-    ),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -525,9 +507,7 @@ def tree(
         console.print("[yellow]No memories to display.[/yellow]")
         return
 
-    llm_client = _get_llm_client(
-        provider=llm_provider, model=llm_model, api_key=llm_api_key
-    )
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
     from memctrl.tree import MemoryTreeBuilder, get_or_build_tree
 
     builder = MemoryTreeBuilder(llm_client=llm_client)
@@ -611,9 +591,7 @@ def clear(
 @app.command()
 def decay(
     dry_run: bool = typer.Option(False, help="Show what would decay without applying"),
-    threshold: float = typer.Option(
-        0.3, help="Confidence threshold below which memories are flagged"
-    ),
+    threshold: float = typer.Option(0.3, help="Confidence threshold below which memories are flagged"),
 ):
     """Run confidence decay on all memories.
 
@@ -627,13 +605,9 @@ def decay(
 
     if dry_run:
         flagged = store.get_memories_below_confidence(threshold)
-        console.print(
-            f"[dim]{len(flagged)} memories below confidence {threshold}[/dim]"
-        )
+        console.print(f"[dim]{len(flagged)} memories below confidence {threshold}[/dim]")
         for mem in flagged[:20]:
-            console.print(
-                f"  [yellow]{mem.id[:8]}[/yellow] {mem.confidence:.2f} {mem.content[:60]}"
-            )
+            console.print(f"  [yellow]{mem.id[:8]}[/yellow] {mem.confidence:.2f} {mem.content[:60]}")
         return
 
     decayed = decay_engine.decay_memories()
@@ -644,9 +618,7 @@ def decay(
 
     flagged = store.get_memories_below_confidence(threshold)
     if flagged:
-        console.print(
-            f"[yellow]⚠ {len(flagged)} memories now below threshold {threshold}[/yellow]"
-        )
+        console.print(f"[yellow]⚠ {len(flagged)} memories now below threshold {threshold}[/yellow]")
 
 
 @app.command()
@@ -671,9 +643,7 @@ def trigger_cmd(
     if ids:
         cache = _get_cache()
         cache.invalidate()
-    console.print(
-        f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected"
-    )
+    console.print(f"[green]Trigger '{event}' fired[/green] - {len(ids)} memories affected")
 
 
 @app.command()
@@ -706,18 +676,14 @@ def audit(
 
 @app.command()
 def doctor(
-    low_confidence_threshold: float = typer.Option(
-        0.5, help="Confidence threshold for warning on weak memories"
-    ),
+    low_confidence_threshold: float = typer.Option(0.5, help="Confidence threshold for warning on weak memories"),
     json_output: bool = typer.Option(False, "--json", help="Print raw JSON report"),
 ):
     """Report memory health, provenance coverage, and observability gaps."""
     from memctrl.doctor import analyze_store_health
 
     store = _get_store()
-    report = analyze_store_health(
-        store, low_confidence_threshold=low_confidence_threshold
-    )
+    report = analyze_store_health(store, low_confidence_threshold=low_confidence_threshold)
 
     if json_output:
         console.print_json(json.dumps(report, indent=2))
@@ -750,9 +716,7 @@ def doctor(
     provenance_table.add_row("Records", str(prov["records"]))
     provenance_table.add_row("Covered memories", str(prov["covered_memories"]))
     provenance_table.add_row("Coverage", f"{prov['coverage'] * 100:.1f}%")
-    provenance_table.add_row(
-        "Low-confidence retrievals", str(prov["low_confidence_retrievals"])
-    )
+    provenance_table.add_row("Low-confidence retrievals", str(prov["low_confidence_retrievals"]))
     console.print(provenance_table)
 
     otel = report["opentelemetry"]
@@ -866,15 +830,11 @@ def provenance(
     # Detect anomalies
     low_conf = tracker.detect_low_confidence_retrievals(threshold=0.5)
     if low_conf:
-        console.print(
-            f"\n[yellow]⚠ {len(low_conf)} low-confidence retrieval(s) detected.[/yellow]"
-        )
+        console.print(f"\n[yellow]⚠ {len(low_conf)} low-confidence retrieval(s) detected.[/yellow]")
 
     imbalance = tracker.detect_source_type_imbalance()
     if imbalance:
-        console.print(
-            f"\n[yellow]⚠ Source imbalance detected:[/yellow] {imbalance['message']}"
-        )
+        console.print(f"\n[yellow]⚠ Source imbalance detected:[/yellow] {imbalance['message']}")
 
     if full:
         # Show full JSON serialization
@@ -904,13 +864,7 @@ def heatmap():
         pct = count / total * 100
         bar_len = int(pct / 5)
         bar = "#" * bar_len + "-" * (20 - bar_len)
-        color = (
-            "green"
-            if layer == "project"
-            else "yellow"
-            if layer == "session"
-            else "blue"
-        )
+        color = "green" if layer == "project" else "yellow" if layer == "session" else "blue"
         console.print(f"  [{color}]{layer:10}[/{color}] {bar} {count:3} ({pct:.0f}%)")
 
     # Tag distribution
@@ -972,27 +926,15 @@ def timeline(
     for ev in events[:limit]:
         ts = ev["ts"].strftime("%Y-%m-%d %H:%M") if ev["ts"] else "?"
         if ev["type"] == "memory":
-            color = (
-                "green"
-                if ev["layer"] == "project"
-                else "yellow"
-                if ev["layer"] == "session"
-                else "blue"
-            )
-            console.print(
-                f"  [dim]{ts}[/dim] [{color}]{ev['icon']}[/{color}] ({ev['layer']}) {ev['content']}"
-            )
+            color = "green" if ev["layer"] == "project" else "yellow" if ev["layer"] == "session" else "blue"
+            console.print(f"  [dim]{ts}[/dim] [{color}]{ev['icon']}[/{color}] ({ev['layer']}) {ev['content']}")
         else:
-            console.print(
-                f"  [dim]{ts}[/dim] [magenta]{ev['icon']}[/magenta] {ev['content']}"
-            )
+            console.print(f"  [dim]{ts}[/dim] [magenta]{ev['icon']}[/magenta] {ev['content']}")
 
 
 @app.command()
 def done(
-    llm_provider: Optional[str] = typer.Option(
-        None, help="LLM provider (openai, anthropic, etc.)"
-    ),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -1008,34 +950,23 @@ def done(
     engine = _get_engine()
     engine.load()
 
-    llm_client = _get_llm_client(
-        provider=llm_provider, model=llm_model, api_key=llm_api_key
-    )
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
     reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=True)
 
     if result.triggered:
-        console.print(
-            f"[green]Session consolidated[/green] - "
-            f"{len(result.consolidated_ids)} memories moved"
-        )
+        console.print(f"[green]Session consolidated[/green] - {len(result.consolidated_ids)} memories moved")
         if result.summary:
-            console.print(
-                Panel(f"[bold]Summary:[/bold] {result.summary}", border_style="green")
-            )
+            console.print(Panel(f"[bold]Summary:[/bold] {result.summary}", border_style="green"))
         if result.new_memories:
-            console.print(
-                f"[dim]Created {len(result.new_memories)} reflection memory[/dim]"
-            )
+            console.print(f"[dim]Created {len(result.new_memories)} reflection memory[/dim]")
     else:
         console.print("[yellow]Nothing to consolidate.[/yellow]")
 
 
 @app.command()
 def reflect(
-    llm_provider: Optional[str] = typer.Option(
-        None, help="LLM provider (openai, anthropic, etc.)"
-    ),
+    llm_provider: Optional[str] = typer.Option(None, help="LLM provider (openai, anthropic, etc.)"),
     llm_model: Optional[str] = typer.Option(None, help="LLM model name"),
     llm_api_key: Optional[str] = typer.Option(None, help="LLM API key"),
 ):
@@ -1051,9 +982,7 @@ def reflect(
     engine = _get_engine()
     engine.load()
 
-    llm_client = _get_llm_client(
-        provider=llm_provider, model=llm_model, api_key=llm_api_key
-    )
+    llm_client = _get_llm_client(provider=llm_provider, model=llm_model, api_key=llm_api_key)
     reflection = ReflectionEngine(store, engine=engine, llm_client=llm_client)
     result = reflection.check_and_reflect(force=False)
 
@@ -1063,9 +992,7 @@ def reflect(
             f"{len(result.consolidated_ids)} memories consolidated"
         )
         if result.summary:
-            console.print(
-                Panel(f"[bold]Summary:[/bold] {result.summary}", border_style="green")
-            )
+            console.print(Panel(f"[bold]Summary:[/bold] {result.summary}", border_style="green"))
     else:
         console.print(
             "[dim]No reflection triggered. Heuristics: time-based ("
@@ -1227,9 +1154,7 @@ def otel_export(
 
     if otlp:
         exporter.export_otlp_json(output)
-        console.print(
-            f"[green]Exported {len(memories)} spans (OTLP) to[/green] {output}"
-        )
+        console.print(f"[green]Exported {len(memories)} spans (OTLP) to[/green] {output}")
     else:
         exporter.export_json(output)
         console.print(f"[green]Exported {len(memories)} spans to[/green] {output}")
@@ -1259,16 +1184,11 @@ def otel_stats():
     stats = exporter.get_stats()
     exporter.stop()
 
-    console.print(
-        Panel("[bold]OpenTelemetry Memory Statistics[/bold]", border_style="cyan")
-    )
+    console.print(Panel("[bold]OpenTelemetry Memory Statistics[/bold]", border_style="cyan"))
     console.print(f"  Total spans: [bold]{stats['total_spans']}[/bold]")
     console.print(f"  Total duration: [bold]{stats['total_duration_ms']} ms[/bold]")
     console.print(f"  Avg duration: [bold]{stats['avg_duration_ms']} ms[/bold]")
-    console.print(
-        f"  Errors: [bold]{stats['error_count']}[/bold] "
-        f"([bold]{stats['error_rate'] * 100:.1f}%[/bold])"
-    )
+    console.print(f"  Errors: [bold]{stats['error_count']}[/bold] ([bold]{stats['error_rate'] * 100:.1f}%[/bold])")
 
     if stats["by_operation"]:
         console.print("\n[bold]By Operation:[/bold]")
@@ -1334,7 +1254,9 @@ def review_heli(
         created_ids = distiller.persist_proposals_to_store(proposals, store)
         cache = _get_cache()
         cache.invalidate()
-        console.print(f"\n[green]Persisted {len(created_ids)} proposals as candidate knowledge into MemCtrl store.[/green]")
+        console.print(
+            f"\n[green]Persisted {len(created_ids)} proposals as candidate knowledge into MemCtrl store.[/green]"
+        )
         console.print("[dim]Use 'memctrl candidates' to review and 'memctrl accept <id>' to promote.[/dim]")
     else:
         console.print("\n[dim]Dry run complete. Use --persist to save proposals as candidate knowledge.[/dim]")

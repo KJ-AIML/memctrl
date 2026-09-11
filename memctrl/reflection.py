@@ -263,8 +263,7 @@ class ReflectionEngine:
                 lines = [f"- {sanitize_text(m.get('content', ''))}" for m in memories]
                 prompt = (
                     "Summarize the following session memories into a concise "
-                    "paragraph (2-3 sentences) capturing what was accomplished:\n\n"
-                    + "\n".join(lines)
+                    "paragraph (2-3 sentences) capturing what was accomplished:\n\n" + "\n".join(lines)
                 )
                 summary = self.llm_client(prompt)
                 if summary and isinstance(summary, str):

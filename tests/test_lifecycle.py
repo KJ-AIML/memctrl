@@ -1,17 +1,12 @@
 """Tests for Phase 2: Minimal Knowledge Lifecycle, Relations, and Evidence References."""
 
 import sqlite3
+from datetime import datetime
+
 import pytest
-from datetime import datetime, timedelta
 
 from memctrl.store import (
-    CLAIM_TYPES,
-    LIFECYCLE_STATES,
-    VERIFICATION_STATES,
-    RELATION_TYPES,
     MemoryStore,
-    MemoryRelation,
-    MemoryEvidence,
 )
 
 
@@ -58,19 +53,13 @@ def test_independent_lifecycle_dimensions(store):
 def test_invalid_lifecycle_values_rejected(store):
     """Unknown enum values must not be accepted."""
     with pytest.raises(ValueError, match="Invalid claim_type"):
-        store.insert_memory(
-            "project", "Invalid fact", claim_type="magical_truth"
-        )
+        store.insert_memory("project", "Invalid fact", claim_type="magical_truth")
 
     with pytest.raises(ValueError, match="Invalid lifecycle_state"):
-        store.insert_memory(
-            "project", "Invalid fact", lifecycle_state="super_accepted"
-        )
+        store.insert_memory("project", "Invalid fact", lifecycle_state="super_accepted")
 
     with pytest.raises(ValueError, match="Invalid verification_state"):
-        store.insert_memory(
-            "project", "Invalid fact", verification_state="absolute_certainty"
-        )
+        store.insert_memory("project", "Invalid fact", verification_state="absolute_certainty")
 
 
 def test_v2_to_v4_migration_preserves_semantics(tmp_path):
@@ -199,14 +188,17 @@ async def test_all_lifecycle_states_truth_table(store):
 
     # Create one memory for each lifecycle state
     m_accepted = store.insert_memory("project", "Accepted fact", lifecycle_state="accepted")
-    m_candidate = store.insert_memory("project", "Candidate fact", lifecycle_state="candidate")
-    m_superseded = store.insert_memory("project", "Superseded fact", lifecycle_state="superseded")
-    m_rejected = store.insert_memory("project", "Rejected fact", lifecycle_state="rejected")
-    m_archived = store.insert_memory("project", "Archived fact", lifecycle_state="archived")
+    _m_candidate = store.insert_memory("project", "Candidate fact", lifecycle_state="candidate")
+    _m_superseded = store.insert_memory("project", "Superseded fact", lifecycle_state="superseded")
+    _m_rejected = store.insert_memory("project", "Rejected fact", lifecycle_state="rejected")
+    _m_archived = store.insert_memory("project", "Archived fact", lifecycle_state="archived")
 
     # And one refuted memory
-    m_refuted = store.insert_memory(
-        "project", "Refuted claim", lifecycle_state="accepted", verification_state="refuted"
+    _m_refuted = store.insert_memory(
+        "project",
+        "Refuted claim",
+        lifecycle_state="accepted",
+        verification_state="refuted",
     )
 
     # 1. Default retrieval: only accepted + non-refuted is eligible
@@ -216,7 +208,14 @@ async def test_all_lifecycle_states_truth_table(store):
 
     # Retriever default
     lookup = {m.id: m.to_dict() for m in store.list_memories(include_history=True)}
-    tree = {"id": "root", "title": "R", "layer": "root", "summary": "", "memory_ids": list(lookup.keys()), "children": []}
+    tree = {
+        "id": "root",
+        "title": "R",
+        "layer": "root",
+        "summary": "",
+        "memory_ids": list(lookup.keys()),
+        "children": [],
+    }
     retriever = MemoryRetriever()
 
     res_default = await retriever.retrieve("fact", tree, memory_lookup=lookup)

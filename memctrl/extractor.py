@@ -130,9 +130,7 @@ class MemoryExtractor:
 
             confidence = mem.get("confidence", 0.5)
             # Clamp to valid levels
-            valid_levels = (
-                list(rules.confidence.values()) if rules.confidence else [0.5, 0.7, 1.0]
-            )
+            valid_levels = list(rules.confidence.values()) if rules.confidence else [0.5, 0.7, 1.0]
             if valid_levels and confidence not in valid_levels:
                 confidence = min(valid_levels, key=lambda x: abs(x - confidence))
 

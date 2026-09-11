@@ -39,9 +39,7 @@ def test_insert_and_get_memory(store):
 
 
 def test_insert_memory_with_tags(store):
-    mid = store.insert_memory(
-        "project", "tagged content", "test", tags=["important", "arch"]
-    )
+    mid = store.insert_memory("project", "tagged content", "test", tags=["important", "arch"])
     mem = store.get_memory(mid)
     assert mem.tags == ["important", "arch"]
 
@@ -317,36 +315,22 @@ def test_memory_from_row_requires_row():
 
 
 def test_tree_node_is_leaf():
-    leaf = TreeNode(
-        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
-    )
-    parent = TreeNode(
-        id="p1", title="parent", layer="project", summary="s", children=[leaf]
-    )
+    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
+    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
     assert leaf.is_leaf() is True
     assert parent.is_leaf() is False
 
 
 def test_tree_node_all_memory_ids():
-    leaf1 = TreeNode(
-        id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"]
-    )
-    leaf2 = TreeNode(
-        id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"]
-    )
-    parent = TreeNode(
-        id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2]
-    )
+    leaf1 = TreeNode(id="l1", title="L1", layer="project", summary="s", memory_ids=["m1"])
+    leaf2 = TreeNode(id="l2", title="L2", layer="project", summary="s", memory_ids=["m2"])
+    parent = TreeNode(id="p1", title="P", layer="project", summary="s", children=[leaf1, leaf2])
     assert set(parent.all_memory_ids()) == {"m1", "m2"}
 
 
 def test_tree_node_find_node():
-    leaf = TreeNode(
-        id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"]
-    )
-    parent = TreeNode(
-        id="p1", title="parent", layer="project", summary="s", children=[leaf]
-    )
+    leaf = TreeNode(id="l1", title="leaf", layer="project", summary="s", memory_ids=["m1"])
+    parent = TreeNode(id="p1", title="parent", layer="project", summary="s", children=[leaf])
     assert parent.find_node("l1") is not None
     assert parent.find_node("xxx") is None
 
@@ -712,6 +696,7 @@ def test_init_db_retry(store):
 def test_v2_to_v3_migration(tmp_path):
     """Opening an existing v2 database must migrate to v3 with no data loss."""
     import sqlite3
+
     db_file = tmp_path / "v2_legacy.db"
 
     # 1. Build an exact v2 database
@@ -827,4 +812,3 @@ def test_v2_to_v3_migration(tmp_path):
     assert reloaded_v2.content == "Legacy v2 fact"
     assert reloaded_v3 is not None
     assert reloaded_v3.content == "New v3 fact"
-

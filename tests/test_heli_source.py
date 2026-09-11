@@ -1,18 +1,14 @@
 """Tests for Phase 5: Read-Only Heli History Source Adapter & Distiller."""
 
 import json
-from datetime import datetime
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from memctrl.cli import app
 from memctrl.sources.heli import (
-    HeliSourceAdapter,
-    HeliTaskRecord,
     HeliDistiller,
-    LessonProposal,
+    HeliSourceAdapter,
 )
 from memctrl.store import MemoryStore
 
@@ -32,14 +28,16 @@ def mock_heli_workspace(tmp_path):
     t1_dir = tasks_dir / "task-101"
     t1_dir.mkdir()
     (t1_dir / "task.json").write_text(
-        json.dumps({
-            "title": "Fix provider hydration loop",
-            "status": "complete",
-            "target": {"repositoryId": "auth-service"},
-            "riskTier": "S2",
-            "completedAt": "2026-08-01T10:00:00Z",
-            "commitSha": "abc101",
-        }),
+        json.dumps(
+            {
+                "title": "Fix provider hydration loop",
+                "status": "complete",
+                "target": {"repositoryId": "auth-service"},
+                "riskTier": "S2",
+                "completedAt": "2026-08-01T10:00:00Z",
+                "commitSha": "abc101",
+            }
+        ),
         encoding="utf-8",
     )
     (t1_dir / "current-task.md").write_text(
@@ -55,11 +53,16 @@ def mock_heli_workspace(tmp_path):
         encoding="utf-8",
     )
     (t1_dir / "diagnosis.json").write_text(
-        json.dumps({
-            "closest_proven_boundary": "HTTP 401 on cold start",
-            "active_hypothesis": "provider cold hydration delay",
-            "contradicted_hypotheses": ["expired client secret", "network firewall drop"],
-        }),
+        json.dumps(
+            {
+                "closest_proven_boundary": "HTTP 401 on cold start",
+                "active_hypothesis": "provider cold hydration delay",
+                "contradicted_hypotheses": [
+                    "expired client secret",
+                    "network firewall drop",
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -67,14 +70,16 @@ def mock_heli_workspace(tmp_path):
     t2_dir = tasks_dir / "task-102"
     t2_dir.mkdir()
     (t2_dir / "task.json").write_text(
-        json.dumps({
-            "title": "Fix token expiration 401",
-            "status": "complete",
-            "target": {"repositoryId": "auth-service"},
-            "riskTier": "S1",
-            "completedAt": "2026-08-05T12:00:00Z",
-            "commitSha": "abc102",
-        }),
+        json.dumps(
+            {
+                "title": "Fix token expiration 401",
+                "status": "complete",
+                "target": {"repositoryId": "auth-service"},
+                "riskTier": "S1",
+                "completedAt": "2026-08-05T12:00:00Z",
+                "commitSha": "abc102",
+            }
+        ),
         encoding="utf-8",
     )
     (t2_dir / "current-task.md").write_text(
@@ -163,6 +168,7 @@ def test_cli_review_heli(mock_heli_workspace, tmp_path):
     """memctrl review heli CLI command works with --dry-run and --persist."""
     db_path = tmp_path / "cli_review.db"
     import os
+
     os.environ["MEMCTRL_DB_PATH"] = str(db_path)
 
     # 1. Dry run

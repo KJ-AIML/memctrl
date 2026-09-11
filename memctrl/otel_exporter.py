@@ -142,27 +142,15 @@ class MemorySpan:
     def __post_init__(self) -> None:
         """Validate fields after construction."""
         if self.operation not in VALID_OPERATIONS:
-            raise ValueError(
-                f"Invalid operation '{self.operation}'. "
-                f"Must be one of: {VALID_OPERATIONS}"
-            )
+            raise ValueError(f"Invalid operation '{self.operation}'. Must be one of: {VALID_OPERATIONS}")
         if self.layer is not None and self.layer not in VALID_LAYERS:
-            raise ValueError(
-                f"Invalid layer '{self.layer}'. Must be one of: {VALID_LAYERS}"
-            )
+            raise ValueError(f"Invalid layer '{self.layer}'. Must be one of: {VALID_LAYERS}")
         if self.memory_type is not None and self.memory_type not in VALID_MEMORY_TYPES:
-            raise ValueError(
-                f"Invalid memory_type '{self.memory_type}'. "
-                f"Must be one of: {VALID_MEMORY_TYPES}"
-            )
+            raise ValueError(f"Invalid memory_type '{self.memory_type}'. Must be one of: {VALID_MEMORY_TYPES}")
         if self.status not in VALID_STATUS:
-            raise ValueError(
-                f"Invalid status '{self.status}'. Must be one of: {VALID_STATUS}"
-            )
+            raise ValueError(f"Invalid status '{self.status}'. Must be one of: {VALID_STATUS}")
         if self.confidence is not None and not (0.0 <= self.confidence <= 1.0):
-            raise ValueError(
-                f"confidence must be between 0.0 and 1.0, got {self.confidence}"
-            )
+            raise ValueError(f"confidence must be between 0.0 and 1.0, got {self.confidence}")
 
     def to_otel_dict(self) -> dict:
         """Convert to OTel-compatible span dictionary format.
@@ -210,9 +198,7 @@ class MemorySpan:
             "kind": 1,  # SPAN_KIND_INTERNAL
             "startTimeUnixNano": str(start_time_ns),
             "endTimeUnixNano": str(end_time_ns),
-            "attributes": [
-                {"key": k, "value": _to_otel_value(v)} for k, v in attrs.items()
-            ],
+            "attributes": [{"key": k, "value": _to_otel_value(v)} for k, v in attrs.items()],
             "status": {
                 "code": status_code,
                 "message": self.error_message or "",
@@ -465,9 +451,7 @@ class _TracedStore:
         finally:
             duration_ms = (_now() - start) * 1000
             memory_id = args[0] if args else kwargs.get("id", "")
-            new_confidence = (
-                args[1] if len(args) > 1 else kwargs.get("new_confidence", 0.0)
-            )
+            new_confidence = args[1] if len(args) > 1 else kwargs.get("new_confidence", 0.0)
             self._exporter.record_update(
                 memory_id=memory_id,
                 layer="",
@@ -565,9 +549,7 @@ class MemoryOTelExporter:
         if _HAS_OTEL:
             self._otel_provider = TracerProvider()
             self._otel_exporter = OtelSdkInMemoryExporter()
-            self._otel_provider.add_span_processor(
-                BatchSpanProcessor(self._otel_exporter)
-            )
+            self._otel_provider.add_span_processor(BatchSpanProcessor(self._otel_exporter))
             trace.set_tracer_provider(self._otel_provider)
             self._otel_tracer = trace.get_tracer("memctrl")
 
@@ -1034,9 +1016,7 @@ class MemoryOTelExporter:
                             results_count=r["results_count"],
                             status=r["status"],
                             error_message=r["error_message"],
-                            attributes=json.loads(r["attributes_json"])
-                            if r["attributes_json"]
-                            else {},
+                            attributes=json.loads(r["attributes_json"]) if r["attributes_json"] else {},
                             service_name=r["service_name"],
                         )
                     )
@@ -1065,9 +1045,7 @@ class MemoryOTelExporter:
             ValueError: If *operation* is not a valid operation name.
         """
         if operation not in VALID_OPERATIONS:
-            raise ValueError(
-                f"Invalid operation '{operation}'. Must be one of: {VALID_OPERATIONS}"
-            )
+            raise ValueError(f"Invalid operation '{operation}'. Must be one of: {VALID_OPERATIONS}")
         spans = self.get_spans()
         return [s for s in spans if s.operation == operation]
 

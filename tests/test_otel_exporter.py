@@ -342,9 +342,7 @@ class TestToOtelValue:
         assert _to_otel_value(False) == {"boolValue": False}
 
     def test_list_value(self):
-        assert _to_otel_value([1, 2]) == {
-            "arrayValue": {"values": [{"intValue": "1"}, {"intValue": "2"}]}
-        }
+        assert _to_otel_value([1, 2]) == {"arrayValue": {"values": [{"intValue": "1"}, {"intValue": "2"}]}}
 
 
 # ---------------------------------------------------------------------------
@@ -637,9 +635,7 @@ class TestGetStats:
 
     def test_stats_with_errors(self, exporter):
         exporter.record_store("m1", "project", "c", 1.0, 1.0)
-        exporter.record_store(
-            "m2", "session", "c", 1.0, 2.0, status="error", error_message="fail"
-        )
+        exporter.record_store("m2", "session", "c", 1.0, 2.0, status="error", error_message="fail")
         exporter.record_retrieve("m3", "project", 3.0)
         stats = exporter.get_stats()
         assert stats["total_spans"] == 3
@@ -728,9 +724,7 @@ class TestExportOtlpJson:
         assert len(scope_spans[0]["spans"]) == 2
 
     def test_export_otlp_span_format(self, exporter, temp_file):
-        exporter.record_store(
-            "m1", "project", "content", 0.95, 5.0, memory_type="semantic"
-        )
+        exporter.record_store("m1", "project", "content", 0.95, 5.0, memory_type="semantic")
         exporter.export_otlp_json(temp_file)
         with open(temp_file, "r") as f:
             data = json.load(f)
@@ -748,9 +742,7 @@ class TestExportOtlpJson:
         assert OTEL_GEN_AI_OPERATION in attrs
 
     def test_export_otlp_error_span(self, exporter, temp_file):
-        exporter.record_retrieve(
-            "m1", "project", 2.0, status="error", error_message="timeout"
-        )
+        exporter.record_retrieve("m1", "project", 2.0, status="error", error_message="timeout")
         exporter.export_otlp_json(temp_file)
         with open(temp_file, "r") as f:
             data = json.load(f)
@@ -939,9 +931,7 @@ class TestThreadSafety:
                     duration_ms=1.0,
                 )
 
-        threads = [
-            threading.Thread(target=worker, args=(t,)) for t in range(num_threads)
-        ]
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(num_threads)]
         for t in threads:
             t.start()
         for t in threads:
@@ -1016,10 +1006,7 @@ class TestServiceName:
         exporter.export_otlp_json(temp_file)
         with open(temp_file, "r") as f:
             data = json.load(f)
-        attrs = {
-            a["key"]: a["value"]
-            for a in data["resourceSpans"][0]["resource"]["attributes"]
-        }
+        attrs = {a["key"]: a["value"] for a in data["resourceSpans"][0]["resource"]["attributes"]}
         assert attrs["service.name"]["stringValue"] == "test-memctrl"
 
 

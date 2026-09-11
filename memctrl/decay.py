@@ -74,9 +74,7 @@ class ConfidenceDecay:
         """
         return self.rules.get(layer, {"rate": 0.0, "floor": 1.0})
 
-    def _compute_new_confidence(
-        self, current: float, rate: float, floor: float, days: int
-    ) -> float:
+    def _compute_new_confidence(self, current: float, rate: float, floor: float, days: int) -> float:
         """Apply exponential decay formula, clamped to floor.
 
         We use multiplicative exponential decay because:
@@ -125,9 +123,7 @@ class ConfidenceDecay:
             if rate <= 0.0 or floor >= 1.0:
                 continue
 
-            new_confidence = self._compute_new_confidence(
-                mem.confidence, rate, floor, days_elapsed
-            )
+            new_confidence = self._compute_new_confidence(mem.confidence, rate, floor, days_elapsed)
 
             if new_confidence != mem.confidence:
                 self.store.update_memory_confidence(mem.id, new_confidence)
@@ -142,9 +138,7 @@ class ConfidenceDecay:
 
         return affected
 
-    def get_flagged_memories(
-        self, floor_override: Optional[float] = None
-    ) -> List["Memory"]:
+    def get_flagged_memories(self, floor_override: Optional[float] = None) -> List["Memory"]:
         """Get memories that have reached or decayed to their layer's floor.
 
         These are candidates for review or deletion by a human operator.
@@ -162,11 +156,7 @@ class ConfidenceDecay:
         memories = self.store.list_memories(include_expired=True)
 
         for mem in memories:
-            threshold = (
-                floor_override
-                if floor_override is not None
-                else self._get_rule(mem.layer)["floor"]
-            )
+            threshold = floor_override if floor_override is not None else self._get_rule(mem.layer)["floor"]
             # Only inferred memories (confidence < 1.0) can be review-flagged by decay
             if mem.confidence < 1.0 and mem.confidence <= threshold:
                 flagged.append(mem)

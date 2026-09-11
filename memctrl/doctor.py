@@ -28,9 +28,7 @@ RECOGNIZED_SOURCES = {
 TRUSTED_SOURCES = RECOGNIZED_SOURCES
 
 
-def analyze_store_health(
-    store, low_confidence_threshold: float = 0.5
-) -> dict[str, Any]:
+def analyze_store_health(store, low_confidence_threshold: float = 0.5) -> dict[str, Any]:
     """Return a health report for a MemoryStore.
 
     The report is intentionally JSON-friendly so the CLI can render it and
@@ -40,15 +38,9 @@ def analyze_store_health(
     stats = store.stats()
     now = datetime.now()
 
-    expired = [
-        mem for mem in memories if mem.expires_at is not None and mem.expires_at < now
-    ]
-    low_confidence = [
-        mem for mem in memories if mem.confidence < low_confidence_threshold
-    ]
-    risky_sources = [
-        mem for mem in memories if mem.source.lower() not in RECOGNIZED_SOURCES
-    ]
+    expired = [mem for mem in memories if mem.expires_at is not None and mem.expires_at < now]
+    low_confidence = [mem for mem in memories if mem.confidence < low_confidence_threshold]
+    risky_sources = [mem for mem in memories if mem.source.lower() not in RECOGNIZED_SOURCES]
     secret_findings = [mem for mem in memories if has_secrets(mem.content)]
 
     provenance_rows = store.get_provenance(limit=1000)

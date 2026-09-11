@@ -79,9 +79,7 @@ def test_explicit_memory_never_decays(decay, store):
 
 def test_explicit_memory_in_project_never_decays(decay, store):
     """Project-layer explicit memories must be completely immune."""
-    mid = store.insert_memory(
-        "project", "ADR-001: we use FastAPI", "test", confidence=1.0
-    )
+    mid = store.insert_memory("project", "ADR-001: we use FastAPI", "test", confidence=1.0)
     affected = decay.decay_memories(days_elapsed=100)
     mem = store.get_memory(mid)
     assert mem.confidence == 1.0
@@ -90,9 +88,7 @@ def test_explicit_memory_in_project_never_decays(decay, store):
 
 def test_inferred_session_memory_decays(decay, store):
     """Session-layer inferred (0.7) memories must decay at the session rate."""
-    mid = store.insert_memory(
-        "session", "inferred session fact", "test", confidence=0.7
-    )
+    mid = store.insert_memory("session", "inferred session fact", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.7 * (1.0 - 0.05)  # 0.665
@@ -105,9 +101,7 @@ def test_inferred_session_memory_decays(decay, store):
 
 def test_inferred_user_memory_decays(decay, store):
     """User-layer inferred (0.7) memories must decay at the slower user rate."""
-    mid = store.insert_memory(
-        "user", "inferred user preference", "test", confidence=0.7
-    )
+    mid = store.insert_memory("user", "inferred user preference", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.7 * (1.0 - 0.01)  # 0.693
@@ -117,9 +111,7 @@ def test_inferred_user_memory_decays(decay, store):
 
 def test_mentioned_memory_decays(decay, store):
     """Mentioned (0.5) memories must also decay."""
-    mid = store.insert_memory(
-        "session", "maybe we should try X", "test", confidence=0.5
-    )
+    mid = store.insert_memory("session", "maybe we should try X", "test", confidence=0.5)
     affected = decay.decay_memories(days_elapsed=1)
     mem = store.get_memory(mid)
     expected = 0.5 * (1.0 - 0.05)  # 0.475
@@ -129,9 +121,7 @@ def test_mentioned_memory_decays(decay, store):
 
 def test_project_inferred_memory_never_decays(decay, store):
     """Project layer has rate=0.0, so even inferred memories should not decay."""
-    mid = store.insert_memory(
-        "project", "inferred project fact", "test", confidence=0.7
-    )
+    mid = store.insert_memory("project", "inferred project fact", "test", confidence=0.7)
     affected = decay.decay_memories(days_elapsed=10)
     mem = store.get_memory(mid)
     assert mem.confidence == 0.7

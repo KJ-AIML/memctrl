@@ -19,36 +19,28 @@ from memctrl.retriever import RetrievalResult
 def test_cached_result_is_stale_different_version():
     """A result is stale if the tree version has changed."""
     result = RetrievalResult(facts=["f1"], trace=["root"], confidence=0.9)
-    cached = CachedResult(
-        result=result, tree_version=1, cached_at=time.monotonic(), query="q"
-    )
+    cached = CachedResult(result=result, tree_version=1, cached_at=time.monotonic(), query="q")
     assert cached.is_stale(current_tree_version=2, ttl_seconds=300.0) is True
 
 
 def test_cached_result_is_stale_same_version():
     """A result is NOT stale if the tree version matches and TTL hasn't expired."""
     result = RetrievalResult(facts=["f1"], trace=["root"], confidence=0.9)
-    cached = CachedResult(
-        result=result, tree_version=1, cached_at=time.monotonic(), query="q"
-    )
+    cached = CachedResult(result=result, tree_version=1, cached_at=time.monotonic(), query="q")
     assert cached.is_stale(current_tree_version=1, ttl_seconds=300.0) is False
 
 
 def test_cached_result_is_stale_ttl_expired():
     """A result is stale if TTL has expired, even if version matches."""
     result = RetrievalResult(facts=["f1"], trace=["root"], confidence=0.9)
-    cached = CachedResult(
-        result=result, tree_version=1, cached_at=time.monotonic() - 10.0, query="q"
-    )
+    cached = CachedResult(result=result, tree_version=1, cached_at=time.monotonic() - 10.0, query="q")
     assert cached.is_stale(current_tree_version=1, ttl_seconds=5.0) is True
 
 
 def test_cached_result_is_not_stale_within_ttl():
     """A result is NOT stale if within TTL and version matches."""
     result = RetrievalResult(facts=["f1"], trace=["root"], confidence=0.9)
-    cached = CachedResult(
-        result=result, tree_version=1, cached_at=time.monotonic(), query="q"
-    )
+    cached = CachedResult(result=result, tree_version=1, cached_at=time.monotonic(), query="q")
     assert cached.is_stale(current_tree_version=1, ttl_seconds=10.0) is False
 
 

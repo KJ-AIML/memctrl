@@ -72,9 +72,7 @@ async def test_keyword_retrieve_no_match():
     lookup = {
         "m1": {"id": "m1", "content": "we use FastAPI", "source": "test"},
     }
-    result = await retriever.retrieve(
-        "something completely unrelated xyz", tree, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("something completely unrelated xyz", tree, memory_lookup=lookup)
     # With no keyword overlap and a relative score threshold, genuinely
     # unrelated queries return empty results instead of weak false positives.
     assert len(result.facts) == 0
@@ -454,9 +452,7 @@ async def test_synonym_expansion_matches_auth():
             "confidence": 1.0,
         },
     }
-    result = await retriever.retrieve(
-        "how do we handle authentication?", tree, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("how do we handle authentication?", tree, memory_lookup=lookup)
     assert len(result.facts) == 1
     assert "JWT" in result.facts[0]
 
@@ -552,9 +548,7 @@ async def test_relative_threshold_filters_weak_matches():
             "confidence": 1.0,
         },
     }
-    result = await retriever.retrieve(
-        "what is our tech stack?", tree, top_k=3, memory_lookup=lookup
-    )
+    result = await retriever.retrieve("what is our tech stack?", tree, top_k=3, memory_lookup=lookup)
     # m1 has high content overlap; m2 has only structural overlap.
     # Relative gate should drop m2.
     assert len(result.facts) == 1
@@ -686,9 +680,7 @@ async def test_retriever_include_candidates():
             "verification_state": "unverified",
         },
     }
-    result = await retriever.retrieve(
-        "auth policy", tree, memory_lookup=lookup, include_candidates=True
-    )
+    result = await retriever.retrieve("auth policy", tree, memory_lookup=lookup, include_candidates=True)
     assert len(result.facts) == 2
 
 

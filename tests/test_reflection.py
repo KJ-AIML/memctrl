@@ -608,10 +608,7 @@ def test_cli_done():
         result = runner.invoke(app, ["done"])
 
         assert result.exit_code == 0
-        assert (
-            "consolidated" in result.output.lower()
-            or "Session consolidated" in result.output
-        )
+        assert "consolidated" in result.output.lower() or "Session consolidated" in result.output
         # 2 memories should have been moved
         assert "2" in result.output
 
@@ -630,10 +627,7 @@ def test_cli_done_empty_session():
         result = runner.invoke(app, ["done"])
 
         assert result.exit_code == 0
-        assert (
-            "0 memories moved" in result.output
-            or "No session memories" in result.output
-        )
+        assert "0 memories moved" in result.output or "No session memories" in result.output
 
         del os.environ["MEMCTRL_DB_PATH"]
 

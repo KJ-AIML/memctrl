@@ -12,10 +12,8 @@ Phase 0 requirements:
 
 from __future__ import annotations
 
-import os
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -136,19 +134,13 @@ def test_cache_scope_isolation(tmp_path):
         confidence=1.0,
         sources=["m1"],
     )
-    result_session = RetrievalResult(
-        facts=["session auth fact"],
-        trace=["searched session tree"],
-        confidence=0.7,
-        sources=["m2"],
-    )
 
     # Cache result for project layer
     cache.set("auth bug", result_project, layer="project")
 
     # Querying for session layer must NOT return project cached result
     session_hit = cache.get("auth bug", layer="session")
-    assert session_hit is None or session_hit.facts == ["session auth fact"]
+    assert session_hit is None
 
     # In persistent cache, restarting cache with same DB must also preserve layer scope
     cache2 = QueryCache(db_path=cache_db)

@@ -89,8 +89,7 @@ class MemoryTreeBuilder:
             id="root",
             title="Memory Tree",
             layer="root",
-            summary=f"Root node with {len(layer_nodes)} layers, "
-            f"{len(memories)} total memories",
+            summary=f"Root node with {len(layer_nodes)} layers, {len(memories)} total memories",
             children=layer_nodes,
         )
         return root
@@ -206,9 +205,7 @@ class MemoryTreeBuilder:
             return await self._cluster_single_batch(layer, memories)
 
         # Split into batches and cluster each one
-        batches = [
-            memories[i : i + batch_size] for i in range(0, len(memories), batch_size)
-        ]
+        batches = [memories[i : i + batch_size] for i in range(0, len(memories), batch_size)]
         batch_nodes: List[TreeNode] = []
         for i, batch in enumerate(batches):
             node = await self._cluster_single_batch(layer, batch, batch_index=i)
@@ -221,9 +218,7 @@ class MemoryTreeBuilder:
             summary=f"{len(memories)} memories in layer '{layer}' (batched)",
             memory_ids=[m["id"] for m in memories],
             children=batch_nodes,
-            confidence=self._avg_confidence(
-                [m["id"] for m in memories], {m["id"]: m for m in memories}
-            ),
+            confidence=self._avg_confidence([m["id"] for m in memories], {m["id"]: m for m in memories}),
         )
 
     async def _cluster_single_batch(self, layer: str, memories: List[dict], batch_index: int = 0) -> TreeNode:
@@ -250,9 +245,7 @@ class MemoryTreeBuilder:
         mem_by_id = {m["id"]: m for m in memories}
 
         for cluster in clusters:
-            cluster_mem_ids = [
-                mid for mid in cluster.get("memory_ids", []) if mid in mem_by_id
-            ]
+            cluster_mem_ids = [mid for mid in cluster.get("memory_ids", []) if mid in mem_by_id]
             if not cluster_mem_ids:
                 continue
 
@@ -295,8 +288,7 @@ class MemoryTreeBuilder:
     def _build_cluster_prompt(self, layer: str, memories: List[dict]) -> str:
         """Build LLM prompt for clustering memories."""
         mem_lines = "\n".join(
-            f"  [{i}] id={m['id']} | {sanitize_text(m['content'])[:200]}"
-            for i, m in enumerate(memories)
+            f"  [{i}] id={m['id']} | {sanitize_text(m['content'])[:200]}" for i, m in enumerate(memories)
         )
         return (
             f"You are a memory organization expert. Group the following "
@@ -411,9 +403,7 @@ class MemoryTreeBuilder:
                 summary=f"{len(group_mems)} memories about {group_name}",
                 memory_ids=[m["id"] for m in group_mems],
                 children=leaf_nodes,
-                confidence=self._avg_confidence(
-                    [m["id"] for m in group_mems], mem_by_id
-                ),
+                confidence=self._avg_confidence([m["id"] for m in group_mems], mem_by_id),
             )
             children.append(cluster)
 
