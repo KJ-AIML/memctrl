@@ -1,13 +1,11 @@
-.PHONY: install test zip clean
-
-install:
-	pip install -e ".[llm,dev]"
-
+.PHONY: build test lint fmt install
+build:
+	cargo build --locked --release
 test:
-	pytest tests/ -v
-
-zip:
-	cd .. && zip -r memctrl.zip memctrl/ -x "memctrl/.git/*" "memctrl/__pycache__/*" "memctrl/*.pyc" "memctrl/.pytest_cache/*"
-
-clean:
-	rm -rf build/ dist/ *.egg-info .pytest_cache __pycache__
+	cargo test --locked --all-targets
+lint:
+	cargo clippy --locked --all-targets -- -D warnings
+fmt:
+	cargo fmt
+install:
+	cargo install --path . --locked

@@ -1,0 +1,186 @@
+{
+  "memories": [
+    {
+      "id": "d9ddcb51-fed6-4e1e-b33e-b1df15c097f8",
+      "layer": "session",
+      "content": "Maybe use Python for a prototype",
+      "source": "fixture",
+      "confidence": 0.5,
+      "created_at": "2026-10-07T21:27:33.654559",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.654559",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "fe06008e-15cc-4cf4-9c67-ffe2e8425d12",
+      "layer": "project",
+      "content": "Redis cache improves API latency",
+      "source": "fixture",
+      "confidence": 0.7,
+      "created_at": "2026-10-07T21:27:33.654067",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.654067",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "cbd8be1e-82fc-416c-9c5e-5f95c2236aab",
+      "layer": "user",
+      "content": "I prefer concise explanations",
+      "source": "fixture",
+      "confidence": 1.0,
+      "created_at": "2026-10-07T21:27:33.653751",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.653751",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "dbf86686-8c3d-494f-8707-da0d143fb69f",
+      "layer": "session",
+      "content": "Investigating deployment errors in Kubernetes",
+      "source": "fixture",
+      "confidence": 0.7,
+      "created_at": "2026-10-07T21:27:33.653368",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.653368",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "52983596-9ac2-4805-9c32-49b0e692000c",
+      "layer": "project",
+      "content": "Authentication uses JWT middleware",
+      "source": "fixture",
+      "confidence": 1.0,
+      "created_at": "2026-10-07T21:27:33.652939",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.652939",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "dc78a624-c191-4f36-8805-6aa775af14b3",
+      "layer": "project",
+      "content": "PostgreSQL is our database",
+      "source": "fixture",
+      "confidence": 1.0,
+      "created_at": "2026-10-07T21:27:33.652598",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.652598",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    },
+    {
+      "id": "0254b5b0-41ea-4364-9575-b4f576e4ddba",
+      "layer": "project",
+      "content": "We use Rust for the backend API",
+      "source": "fixture",
+      "confidence": 1.0,
+      "created_at": "2026-10-07T21:27:33.652087",
+      "expires_at": null,
+      "tags": [],
+      "updated_at": "2026-10-07T21:27:33.652087",
+      "last_accessed_at": null,
+      "access_count": 0,
+      "claim_type": "assertion",
+      "lifecycle_state": "accepted",
+      "verification_state": "unverified",
+      "observed_at": null,
+      "valid_from": null,
+      "valid_until": null
+    }
+  ],
+  "queries": [
+    {
+      "query": "backend API",
+      "facts": [
+        "We use Rust for the backend API"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "query": "database",
+      "facts": [
+        "PostgreSQL is our database"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "query": "authentication",
+      "facts": [
+        "Authentication uses JWT middleware"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "query": "deployment errors",
+      "facts": [
+        "Investigating deployment errors in Kubernetes"
+      ],
+      "confidence": 0.72
+    },
+    {
+      "query": "concise explanations",
+      "facts": [
+        "I prefer concise explanations"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "query": "cache latency",
+      "facts": [
+        "Redis cache improves API latency"
+      ],
+      "confidence": 1.0
+    },
+    {
+      "query": "nonexistent unicorn",
+      "facts": [],
+      "confidence": 0.0
+    }
+  ]
+}
