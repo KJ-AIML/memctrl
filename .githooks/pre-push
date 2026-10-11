@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the same checks as GitHub CI before every push. Enabled by `make hooks`;
+# bypass once with --no-verify.
+exec make ci

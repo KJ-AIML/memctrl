@@ -1,441 +1,83 @@
-<p align="center">
-  <img src="docs/memctrl_logo.png" alt="MemCtrl Logo" width="180">
-</p>
+# MemCtrl 2.0 — Rust
 
-<h1 align="center">MemCtrl</h1>
+Local, explainable memory for coding agents. The executable, library, CLI, MCP server, tests, examples and benchmarks are native Rust. No Python runtime or bridge is included.
 
-<p align="center">
-  <strong>Observable Memory Infrastructure for AI Agents</strong><br>
-  The only memory layer with provenance, confidence decay, and OpenTelemetry observability.
-</p>
+MemCtrl stores facts in SQLite, groups them into a hierarchy, retrieves them with deterministic keyword scoring, and records their sources and reasoning trace. Lifecycle and verification state keep candidates, expired facts and refuted claims out of ordinary retrieval. Optional LLM requests (only with `--llm`) go to OpenAI, xAI, Anthropic or any OpenAI-compatible server such as Ollama.
 
-[![CI](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml/badge.svg)](https://github.com/KJ-AIML/memctrl/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![PyPI](https://img.shields.io/pypi/v/memctrl.svg)](https://pypi.org/project/memctrl/)
-[![Tests](https://img.shields.io/badge/tests-470%2F470%20passing-brightgreen)]()
-
-MemCtrl replaces passive vector dumps with an **observable memory hierarchy**. Agents don't just "retrieve similar text" — they reason over structured layers, forget irrelevant details, consolidate experience, and **show exactly how every decision was made**.
+## Install
 
 ```bash
-# Via pip
-pip install memctrl
+# macOS / Linux: prebuilt binary, verified against SHA256SUMS
+curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | sh
 
-# Or via uv (fast, no global install needed)
-uvx memctrl
+# Any platform with a Rust toolchain
+cargo install --locked memctrl
 
+# From source
+git clone https://github.com/KJ-AIML/memctrl.git && cd memctrl
+cargo install --path . --locked
+```
+
+Windows: download `memctrl-x86_64-pc-windows-msvc.zip` from [Releases](https://github.com/KJ-AIML/memctrl/releases) and put `memctrl.exe` on your `PATH`. Upgrading from 1.x? Read [MIGRATION.md](MIGRATION.md) first.
+
+```bash
 memctrl init
-memctrl add "we use FastAPI + PostgreSQL + Redis cache"
-memctrl query "what is our stack?"
-# → root -> project -> tech_stack -> FastAPI + PostgreSQL + Redis cache
+memctrl add "We use Rust and PostgreSQL" --layer project
+memctrl query "database"
+memctrl tree
+memctrl doctor
 ```
 
-**Every answer shows its reasoning path.** No black-box similarity scores. No forgotten context.
+For local development, `make ci` runs exactly the checks GitHub CI runs (fmt, strict Clippy, tests, release build, Rust-only source). `make hooks` makes git run it before every push.
 
----
+The built CLI is `target/release/memctrl` (`memctrl.exe` on Windows). Run `memctrl --help` and command-specific `--help` for options. Responses are structured JSON; errors go to stderr with a nonzero exit status.
 
-## 🧠 Why MemCtrl?
+## Optional LLM providers
 
-Most agent memory today is **RAG in a trench coat**: chunk text, embed, dump into a vector DB, pray retrieval works. That fails for agents that need to:
+Everything works offline. Add `--llm` to a command to let a model extract memories, pick tree nodes or write summaries.
 
-- Remember architectural decisions **forever**
-- Forget yesterday's debugging session **automatically**
-- Consolidate scattered session notes into **project knowledge**
-- Show **exactly how** it found a memory
-- **Prove** that retrieved memories haven't been poisoned
-
-**The research is clear**: 95% of agent pilots fail — and memory is the primary cause (MIT NANDA, 2025). Enterprises don't need better embeddings. They need **memory they can observe, audit, and trust**.
-
-| Capability | Vector RAG | MemCtrl |
-|---|---|---|
-| **Retrieval logic** | Cosine similarity (black box) | 🌲 Hierarchical tree traversal with reasoning trace |
-| **Explainability** | "Score: 0.87" | `root → project → backend → fastapi` |
-| **Lifespan control** | Manual cleanup | 📜 Rule-driven expiry + never-forget lists |
-| **Knowledge consolidation** | None | 🔄 Automatic session → project merging |
-| **Memory provenance** | None | ✅ Full audit trail: source, confidence, trace |
-| **Observability** | None | 📊 OpenTelemetry `gen_ai.memory.*` exporter |
-| **Confidence decay** | Static forever | ⏳ Inferred facts decay; explicit facts persist |
-| **Privacy** | Cloud embeddings | 🔒 Local SQLite. Your data never leaves your machine. |
-| **Retrieval cost** | Per-query embedding API | 💰 Zero API calls. Tree fits in context. |
-
----
-
-## 🏗️ Architecture
-
-MemCtrl implements a **human-like memory pipeline** with full observability:
-
-```mermaid
-graph TD
-    A[Input: Chat / Code / Events] --> B[Security Scan]
-    B --> C[Memory Extractor]
-    C --> D{Confidence Scoring}
-    D --> E[Working Memory]
-    E --> F[Reflection Engine]
-    F --> G[Compression Layer]
-    G --> H[Long-Term Memory]
-    E --> I[Episodic Memory]
-    I --> J[Forgetting & Expiry]
-    I --> K[Confidence Decay]
-    H --> L[Tree-Based Retrieval]
-    I --> L
-    L --> M[Retrieval Provenance]
-    M --> N[OpenTelemetry Export]
-```
-
-### Memory Layers
-
-| Layer | Analog | Purpose | Default Lifespan |
-|---|---|---|---|
-| 🏗️ **Project** | Semantic memory | Architecture, tech stack, ADRs, "why we chose X" | **Forever** |
-| 📝 **Session** | Working memory | Current task, WIP, what was done today | **7 days** |
-| 👤 **User** | Episodic memory | Preferences, working style, coding patterns | **90 days** |
-
-Rules in `.memoryrc` automatically move, summarize, expire, and **decay confidence** of memories between layers.
-
----
-
-## 🚀 One-Command Quick Start
+| Provider | `--llm-provider` | API | Key variable | Model |
+| --- | --- | --- | --- | --- |
+| OpenAI (default) | `openai` | Chat Completions, strict JSON schema | `OPENAI_API_KEY` | default `gpt-4o-mini` |
+| xAI | `xai` (or `grok`) | Responses, strict JSON schema | `XAI_API_KEY` | set with `--llm-model` |
+| Anthropic | `anthropic` | Messages, JSON schema output | `ANTHROPIC_API_KEY` | set with `--llm-model` |
+| Local / compatible | `compatible` (or `ollama`) | Chat Completions, JSON mode | optional on loopback | set with `--llm-model` |
 
 ```bash
-# Option 1: pip
-pip install memctrl
-
-# Option 2: uv — fast, modern Python packaging
-uvx memctrl           # run without installing
-# or
-uv tool install memctrl  # install permanently
-
-memctrl init          # creates .memoryrc + .memctrl/ in your project
-memctrl install       # registers SKILL.md with your AI assistant
+export XAI_API_KEY=...            # or keep it under any name and pass --llm-api-key-env NAME
+memctrl query "database" --llm --llm-provider xai --llm-model <model>
+memctrl add "$(cat notes.md)" --llm --llm-provider ollama --llm-model llama3 --llm-base-url http://localhost:11434/v1
 ```
 
-Then open your AI assistant and type:
+Settings resolve in this order: flags (`--llm-provider`, `--llm-model`, `--llm-base-url`, `--llm-api-key-env`), then `MEMCTRL_LLM_PROVIDER` / `MEMCTRL_LLM_MODEL` / `MEMCTRL_LLM_BASE_URL` / `MEMCTRL_LLM_API_KEY`, then the provider's own key variable, then the preset. Keys never go in argv or config files.
 
-```
-Please analyze this project and store what you learn in memctrl.
-```
+Requests time out after 120 s. Transport errors and 5xx responses are retried up to `MEMCTRL_LLM_MAX_RETRIES` times (default 2), with exponential backoff. A 429 is retried once, and only when `Retry-After` is 30 s or less. Other 4xx responses fail immediately. If a provider rejects its structured-output field, the request is repeated once without it; responses are always validated locally. The design follows xAI's open-source Grok Build CLI (`xai-org/grok-build`).
 
-Later, ask:
+## Behavior
 
-```
-What did we decide about authentication?
-# → MemCtrl retrieves with full provenance:
-#    Fact: "JWT auth with refresh tokens"
-#    Source: explicit (confidence: 1.0)
-#    Trace: root → project → architecture → auth
-#    Why matched: exact keyword match + high confidence
-```
+- `project` facts have no default expiry; `session` defaults to seven days and `user` to 90 days. Configure layers, triggers, retention and confidence in `.memoryrc` TOML.
+- Deterministic retrieval needs no network or embeddings. Cache identity includes query, layer, result limit and temporal eligibility. Mutations invalidate caches across SQLite connections.
+- Superseding, refuting, evidence links and consolidation use transactions. Reflection retains source facts and creates candidate lessons that require review.
+- Text and nested JSON credentials/PII are redacted before storage and external text output. Credential-bearing identifiers are rejected to preserve lookup identity.
+- Explicit decay and reinforcement update confidence; local provenance and OpenTelemetry spans support inspection and OTLP JSON export.
+- Heli history is read without modifying its source files. Imported lessons remain candidates with evidence links.
+- Native JSON checkpoint and agent-state APIs replace Python-specific LangGraph inheritance.
 
----
+## MCP
 
-## 🛠️ Platform Support
-
-Register the skill with your AI assistant:
-
-| Platform | Command |
-|---|---|
-| Claude Code | `memctrl install --tool claude_code` |
-| Codex | `memctrl install --tool codex` |
-| Cursor | `memctrl install --tool cursor` |
-| Kimi Code | `memctrl install --tool kimi` |
-| Pi | `memctrl install --tool pi` |
-| AxGa | `memctrl install --tool axga` |
-
-Project-scoped install (commits into your repo):
-
-```bash
-memctrl install --project
-```
-
----
-
-## 📖 Command Reference
-
-### Core Memory Commands
-
-| Command | Description |
-|---|---|
-| `memctrl init` | Create `.memoryrc` + `.memctrl/` in current directory |
-| `memctrl add <text>` | Add a memory (default layer: `session`) |
-| `memctrl add <text> --layer project` | Add a permanent project memory |
-| `memctrl query <question>` | Retrieve memories with reasoning trace |
-| `memctrl list` | List all memories (optionally `--layer project`) |
-| `memctrl tree` | Display the memory tree (Rich-formatted) |
-| `memctrl heatmap` | Show memory distribution by layer and tags |
-| `memctrl timeline` | Show chronological memory events |
-| `memctrl forget <id>` | Remove a specific memory |
-| `memctrl clear` | Clear all memories or a specific layer |
-
-### Automation & Audit
-
-| Command | Description |
-|---|---|
-| `memctrl trigger <event>` | Manually fire a trigger rule |
-| `memctrl audit` | Show complete trigger audit log |
-| `memctrl doctor` | Report stale memories, provenance gaps, risky sources, and OTel health |
-| `memctrl done` | Explicit session end → immediate consolidation |
-| `memctrl reflect` | Check heuristics → consolidate if any fire |
-| `memctrl serve` | Start MCP server (stdio transport) |
-| `memctrl --version` | Show version |
-
-### Observability
-
-| Command | Description |
-|---|---|
-| `memctrl otel-export` | Export memory spans to JSON |
-| `memctrl otel-stats` | Show memory operation statistics |
-
----
-
-## 🔒 Security & Privacy
-
-- **🛡️ Secret Redaction** — API keys, tokens, passwords, AWS keys, and private keys are automatically detected and replaced with `[REDACTED_<LABEL>]` before storage.
-- **🔏 PII Redaction** — Emails, SSNs, and phone numbers are sanitized.
-- **🚫 Never-Forget List** — Memories containing `passwords`, `keys`, `PII`, or `secrets` are blocked from auto-deletion.
-- **📍 Local-Only Default** — All data lives in `.memctrl/memories.db` inside your project. No cloud. No telemetry. No analytics.
-- **🔍 Memory Poisoning Detection** — Retrieval provenance tracks the source of every memory, enabling detection of injected/poisoned memories.
-
----
-
-## ⚙️ Configuration (`.memoryrc`)
-
-Created automatically by `memctrl init`:
-
-```toml
-[memctrl]
-db_path = ".memctrl/memories.db"
-
-[layers]
-project = "architecture decisions, tech stack, ADRs, why we chose X"
-session = "current task, WIP, what was done this session"
-user = "preferences, working style, patterns, personal rules"
-
-[triggers]
-on_commit = "consolidate session -> project"
-on_session_end = "summarize session -> user"
-'on_file "docs/ADR-*.md"' = "extract -> project"
-'on_file "*.md"' = "extract -> project if contains decision"
-
-[forget]
-never = ["passwords", "keys", "PII", "secrets"]
-after_days = { session = 7, user = 90 }
-
-[extract]
-confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
-```
-
-Hot-reload enabled: edit `.memoryrc` and changes apply immediately.
-
----
-
-## 🧩 MCP Server
-
-MemCtrl exposes an MCP server for deep IDE integration using **stdio transport**:
-
-```bash
-memctrl serve
-```
-
-**Available tools:**
-- `memctrl_query` — Ask the memory tree
-- `memctrl_add` — Add a memory programmatically
-- `memctrl_trigger` — Fire automation rules
-- `memctrl_tree` — Get structured tree JSON
-- `memctrl_audit` — Read the trigger log
-
-Register with Claude Code / Cursor / Kimi Code via MCP config:
+Point your MCP client at the native executable using absolute paths:
 
 ```json
 {
   "mcpServers": {
     "memctrl": {
-      "command": "memctrl",
-      "args": ["serve"],
-      "env": {}
+      "command": "/absolute/path/to/memctrl",
+      "args": ["--db", "/absolute/path/to/memories.db", "--rc", "/absolute/path/to/.memoryrc", "serve"]
     }
   }
 }
 ```
 
----
+The server uses the official Rust MCP SDK over stdio. Stdout contains only protocol messages. Its seven tools are `memctrl_query`, `memctrl_add`, `memctrl_trigger`, `memctrl_tree`, `memctrl_audit`, `memctrl_candidates` and `memctrl_review`. Configuration reloads for each tool request.
 
-## 🔌 Integrations
-
-MemCtrl is designed to plug into existing agent stacks:
-
-| Framework | Status | Notes |
-|---|---|---|
-| **MCP** | ✅ Ready | Stdio transport server included |
-| **Claude Code** | ✅ Ready | `memctrl install --tool claude_code` |
-| **LangGraph** | ✅ Ready | `MemCtrlSaver` checkpoint + `MemoryNode` (requires `pip install "memctrl[langgraph]"`) |
-| **OpenTelemetry** | ✅ Ready | First reference implementation for `gen_ai.memory.*` conventions |
-| **CrewAI** | 🚧 Planned | Long-term memory backend |
-| **AutoGen** | 🚧 Planned | Agent memory provider |
-| **OpenAI Agents SDK** | 🚧 Planned | Context persistence layer |
-
-### LangGraph Quick Start
-
-```python
-from langgraph.graph import StateGraph
-from memctrl.integrations.langgraph import MemCtrlSaver, MemoryNode
-
-workflow = StateGraph(...)
-workflow.add_node("memory", MemoryNode())
-workflow.add_edge("agent", "memory")
-
-# Persistent checkpoints with MemCtrl
-app = workflow.compile(checkpointer=MemCtrlSaver())
-```
-
-### OpenTelemetry Quick Start
-
-```python
-from memctrl.otel_exporter import MemoryOTelExporter
-
-exporter = MemoryOTelExporter(service_name="my-agent")
-exporter.start()
-
-# All memory operations are automatically traced
-exporter.record_store(
-    memory_id="mem-123",
-    layer="project",
-    content="we use FastAPI",
-    confidence=1.0,
-)
-
-# Export to Datadog, Grafana, Jaeger, Honeycomb...
-exporter.export_otlp_json("spans.json")
-```
-
----
-
-## 📊 Benchmarks
-
-MemCtrl includes a small retention benchmark for local experimentation. Treat it as a harness for testing retrieval behavior, trace coverage, and memory-management overhead as the project evolves; it is not a validated vector database comparison yet.
-
-| Metric | Baseline (Vector RAG) | MemCtrl | Improvement |
-|---|---|---|---|
-| Context retention | Demo harness only | No validated claim yet | Pending |
-| Retrieval explainability | Demo harness only | No validated claim yet | Pending |
-| Memory management overhead | Demo harness only | No validated claim yet | Pending |
-| Long-horizon task success | Not measured | Not measured | Pending |
-| Repeat query latency | Local cache check | Environment dependent | Pending |
-
-> 📈 Run benchmarks locally: `python benchmarks/retention_benchmark.py`  
-Before publishing performance claims, run a larger benchmark with real vector baselines, enough queries for variance, and documented methodology.
-
----
-
-## 🗺️ Roadmap
-
-### Phase 1 — Foundation ✅ (v1.0)
-- [x] Hierarchical tree-based retrieval (PageIndex-inspired)
-- [x] Rule-governed memory layers (project/session/user)
-- [x] Security scanning (secrets, PII)
-- [x] MCP server
-- [x] CLI with rich formatting
-- [x] Project-local database isolation
-
-### Phase 2 — Agent Runtime ✅ (v1.1)
-- [x] **Confidence Decay** — Inferred facts decay if not reinforced
-- [x] **Query Result Cache** — Repeat queries return in <1ms
-- [x] **Reflection Engine** — Auto-detect session end (git/time/explicit)
-- [x] **Incremental Tree Rebuild** — Only rebuild affected branches
-- [x] **Benchmark Harness** — Documented, reproducible methodology
-- [x] **LangGraph Verification** — 13 tests, honest status
-
-### Phase 3 — Observability ✅ (v1.2)
-- [x] **Retrieval Provenance** — Full audit trail for every retrieval
-- [x] **OpenTelemetry Exporter** — First reference implementation for `gen_ai.memory.*`
-- [x] **Memory Span** — Context manager for operation tracing
-
-### Phase 4 — Enterprise 🚧 (v1.3)
-- [ ] Memory Poisoning Detection — MINJA attack defense
-- [ ] Procedural Memory — Workflow/rule storage (blue ocean)
-- [ ] Multi-agent Consistency — Shared project layer across agents
-- [ ] Confidence Drift Detection — Alert when memories go stale
-
-### Phase 5 — Cognition 🔮 (v2.0)
-- [ ] Self-modeling (agent knows what it knows)
-- [ ] Behavioral adaptation from memory
-- [ ] Autonomous memory optimization
-- [ ] Cross-project user layer sharing
-
----
-
-## 🎮 Demo
-
-Run the repeated-bug demo for the sharpest product story:
-
-```bash
-python examples/killer_demo.py
-```
-
-It simulates a coding agent that remembers an old JWT middleware incident and avoids repeating the same production bug in a later sprint.
-
-See `examples/coding_agent_demo.py` for a broader multi-session simulation:
-
-```bash
-python examples/coding_agent_demo.py
-```
-
-This demo simulates an AI coding agent working across multiple sessions. Watch how MemCtrl:
-- Remembers architectural decisions **forever** (project layer)
-- Tracks daily tasks in **session** layer
-- Automatically **consolidates** session notes into project knowledge
-- Shows the exact **reasoning trace** for every retrieval
-- **Decays confidence** of old inferred facts
-
----
-
-## 📦 Requirements
-
-| Requirement | Minimum | Recommended |
-|---|---|---|
-| Python | 3.10+ | 3.12+ |
-| SQLite | bundled with Python | — |
-| Package manager | pip | [uv](https://github.com/astral-sh/uv) |
-
-**Install via pip:**
-```bash
-pip install memctrl
-```
-
-**Install via uv (faster, no global clutter):**
-```bash
-uvx memctrl              # run once, no install
-uv tool install memctrl  # install as a tool
-```
-
-Optional LLM backends (for extraction only):
-
-| Backend | Setup |
-|---|---|
-| OpenAI | `export OPENAI_API_KEY=sk-...` |
-| LiteLLM | Any provider OpenAI-compatible |
-| Local | Ollama (set `MEMCTRL_LLM_BASE_URL`) |
-
-Optional observability backends:
-
-| Backend | Setup |
-|---|---|
-| Datadog | OTLP receiver enabled |
-| Grafana/Jaeger | OTLP collector running |
-| Honeycomb | Direct OTLP ingestion |
-
----
-
-## 🤝 Contributing
-
-```bash
-git clone https://github.com/KJ-AIML/memctrl.git
-cd memctrl
-pip install -e ".[llm,dev]"
-pytest tests/ -v
-```
-
----
-
-## 📄 License
-
-MIT © 2025 MemCtrl Contributors
+See [MIGRATION.md](MIGRATION.md) before opening an existing database, [RUST-RESEARCH.md](RUST-RESEARCH.md) for research/design tradeoffs, and [docs/RUST-VERIFICATION.md](docs/RUST-VERIFICATION.md) for current checks and limitations. Historical documents in `docs/history` describe earlier releases.

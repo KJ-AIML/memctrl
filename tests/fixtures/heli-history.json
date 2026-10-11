@@ -1,0 +1,387 @@
+[
+  {
+    "task_id": "heli-task-001",
+    "title": "Fix provider hydration 401 loop on cold start",
+    "status": "complete",
+    "target_repo": "auth-service",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c001a1",
+    "plan_steps": [],
+    "evidence_items": [
+      "Cold start trace showed 401 before client._hydrated flag was True"
+    ],
+    "decisions": [
+      "Verify provider hydration state before treating repeated 401 as credential failure."
+    ],
+    "diagnosis": {
+      "closest_proven_boundary": "HTTP 401 on cold start",
+      "active_hypothesis": "provider cold hydration delay",
+      "contradicted_hypotheses": [
+        "credential revocation",
+        "network firewall drop"
+      ]
+    },
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-002",
+    "title": "Fix token expiration 401 clock skew",
+    "status": "complete",
+    "target_repo": "auth-service",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c002b2",
+    "plan_steps": [],
+    "evidence_items": [
+      "JWT exp was 3 seconds behind server clock due to VM drift"
+    ],
+    "decisions": [
+      "Add 10s leeway for token expiration clock skew when token signature is valid."
+    ],
+    "diagnosis": {
+      "closest_proven_boundary": "JWT validation rejection",
+      "active_hypothesis": "VM clock skew drift",
+      "contradicted_hypotheses": [
+        "provider cold hydration delay"
+      ]
+    },
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-003",
+    "title": "Command tier tokenizer evasion with quoted program names",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c003c3",
+    "plan_steps": [],
+    "evidence_items": [
+      "Quoted program path 'C:\\tools\\heli.mjs push' bypassed unquoted token match"
+    ],
+    "decisions": [
+      "Command-tier tokenizer must strip surrounding quotes per token and tokenize shell separators."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-004",
+    "title": "Windows PowerShell quoting and heredoc friction",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c004d4",
+    "plan_steps": [],
+    "evidence_items": [
+      "Bash heredoc syntax EOF failed in powershell.exe"
+    ],
+    "decisions": [
+      "Treat host shell quoting and heredoc failures as command friction, not failed engineering attempts."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-005",
+    "title": "Cloud sync storage migration from D1 to Durable Objects",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S3",
+    "completed_at": null,
+    "commit_sha": "c005e5",
+    "plan_steps": [],
+    "evidence_items": [
+      "Durable Object serialization prevented concurrent bundle write races in cloud sync"
+    ],
+    "decisions": [
+      "Superseded D1 database storage with Cloudflare Durable Objects + R2 for bundle storage."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-006",
+    "title": "SQLite busy timeout under rapid concurrent CLI writes",
+    "status": "complete",
+    "target_repo": "memctrl",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c006f6",
+    "plan_steps": [],
+    "evidence_items": [
+      "WAL mode + retry with backoff on database is locked resolved concurrency spikes"
+    ],
+    "decisions": [
+      "Use WAL mode, synchronous=NORMAL, and exponential backoff retry for SQLite writes."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-007",
+    "title": "PreToolUse hook patch path parsing security guard",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c007a7",
+    "plan_steps": [],
+    "evidence_items": [
+      "apply_patch embedded target file path inside patch text header"
+    ],
+    "decisions": [
+      "Inspect patch text for file target paths in PreToolUse write guard."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-008",
+    "title": "False premise on CI test flake blamed on network",
+    "status": "complete",
+    "target_repo": "memctrl",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c008b8",
+    "plan_steps": [],
+    "evidence_items": [
+      "Network mock passed 1000 runs; dictionary order in test runner was non-deterministic"
+    ],
+    "decisions": [
+      "Run verify-premise before attempting network retry fixes on test failures."
+    ],
+    "diagnosis": {
+      "closest_proven_boundary": "Test failure in dictionary ordering assertion",
+      "active_hypothesis": "non-deterministic dictionary iteration order",
+      "contradicted_hypotheses": [
+        "network timeout flake"
+      ]
+    },
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-009",
+    "title": "Auto-push race during workspace unlink",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c009c9",
+    "plan_steps": [],
+    "evidence_items": [
+      "heli ws unlink racing auto-push handled benignly via warn-only catch"
+    ],
+    "decisions": [
+      "Unlink workspace returns immediately to local-only; skipped auto-push is informational."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-010",
+    "title": "E2E bundle decryption key derivation memory limits",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c010d0",
+    "plan_steps": [],
+    "evidence_items": [
+      "scrypt memory cost N=16384 fits safely within worker memory limit"
+    ],
+    "decisions": [
+      "Use bounded scrypt cost parameters for client-side AES-256-GCM encryption."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-011",
+    "title": "Multilingual audit support for Thai terminology",
+    "status": "complete",
+    "target_repo": "memctrl",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c011e1",
+    "plan_steps": [],
+    "evidence_items": [
+      "Thai query \u0e01\u0e32\u0e23\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a\u0e04\u0e27\u0e32\u0e21\u0e1b\u0e25\u0e2d\u0e14\u0e20\u0e31\u0e22 matched security audit terms"
+    ],
+    "decisions": [
+      "Retain multilingual keyword synonyms for security and deployment domains."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-012",
+    "title": "Upgrade legacy shared current-task to concurrent task isolation",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c012f2",
+    "plan_steps": [],
+    "evidence_items": [
+      "Concurrent sessions had race conditions on single current-task.md file"
+    ],
+    "decisions": [
+      "Isolate task state per task ID under .heli-harness/tasks/<id>/ with write leases."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-013",
+    "title": "Supersede Redis memory cache with local SQLite WAL cache",
+    "status": "complete",
+    "target_repo": "memctrl",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c013a3",
+    "plan_steps": [],
+    "evidence_items": [
+      "Redis dependency added friction for local CLI; SQLite WAL latency was < 1ms"
+    ],
+    "decisions": [
+      "Superseded Redis caching in favor of zero-dependency SQLite WAL cache."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-014",
+    "title": "Two-attempt engineering stop rule vs command friction",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c014b4",
+    "plan_steps": [],
+    "evidence_items": [
+      "Engineers stopped prematurely due to bash quoting syntax errors"
+    ],
+    "decisions": [
+      "Separate command friction count from implementation failure count in task governance."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-015",
+    "title": "Secret scan false positive filter for synthetic test keys",
+    "status": "complete",
+    "target_repo": "memctrl",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c015c5",
+    "plan_steps": [],
+    "evidence_items": [
+      "Synthetic test keys in tests/ fixtures blocked pre-push scan"
+    ],
+    "decisions": [
+      "Allow explicit synthetic test key exemption in test fixture directories."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-016",
+    "title": "Provider hydration timeout on cold worker restart",
+    "status": "complete",
+    "target_repo": "auth-service",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c016d6",
+    "plan_steps": [],
+    "evidence_items": [
+      "Telemetry confirmed repeated 401 on cold boot was provider hydration delay"
+    ],
+    "decisions": [
+      "Implement explicit wait_for_hydration retry loop during provider boot."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-017",
+    "title": "Investigate WebSocket ping drop hypothesis",
+    "status": "complete",
+    "target_repo": "connectra",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c017e7",
+    "plan_steps": [],
+    "evidence_items": [
+      "Cloudflare Tunnel logs showed zero dropped pings; client browser timer was throttling"
+    ],
+    "decisions": [
+      "Refuted hypothesis that network tunnel dropped WebSocket pings."
+    ],
+    "diagnosis": {
+      "closest_proven_boundary": "Client timer throttling in background tab",
+      "active_hypothesis": "browser background throttling",
+      "contradicted_hypotheses": [
+        "network tunnel dropped WebSocket pings"
+      ]
+    },
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-018",
+    "title": "Multi-agent lease takeover conflict and stale fencing",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S2",
+    "completed_at": null,
+    "commit_sha": "c018f8",
+    "plan_steps": [],
+    "evidence_items": [
+      "Second writer was correctly denied when active lease was valid"
+    ],
+    "decisions": [
+      "Enforce write lease expiration checking and require explicit takeover confirmation."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-019",
+    "title": "Cross-machine task target path normalization",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S1",
+    "completed_at": null,
+    "commit_sha": "c019a9",
+    "plan_steps": [],
+    "evidence_items": [
+      "Absolute paths in target.json failed when pulled to machine with different username"
+    ],
+    "decisions": [
+      "Store workspace-relative paths in cloud-sync target metadata."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  },
+  {
+    "task_id": "heli-task-020",
+    "title": "Offline doctor health verification",
+    "status": "complete",
+    "target_repo": "heli-harness",
+    "risk_tier": "S0",
+    "completed_at": null,
+    "commit_sha": "c020b0",
+    "plan_steps": [],
+    "evidence_items": [
+      "heli doctor completed with exit code 0 without network requests"
+    ],
+    "decisions": [
+      "heli doctor must remain 100% offline and never trigger network egress."
+    ],
+    "diagnosis": null,
+    "raw_content": ""
+  }
+]

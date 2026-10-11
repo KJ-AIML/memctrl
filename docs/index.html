@@ -400,14 +400,14 @@
             <p>An operating system for long-lived agent memory — hierarchical, explainable, and self-managing. Replace passive vector dumps with human-like memory layers.</p>
             <div class="hero-buttons">
                 <a href="https://github.com/KJ-AIML/memctrl" class="btn btn-primary">Get Started</a>
-                <a href="https://pypi.org/project/memctrl/" class="btn btn-secondary">pip install memctrl</a>
-                <a href="https://docs.astral.sh/uv/" class="btn btn-secondary" style="border-color: var(--accent-secondary); color: var(--accent-secondary);">uvx memctrl</a>
+                <a href="https://github.com/KJ-AIML/memctrl/tree/feat/rust-runtime" class="btn btn-secondary">cargo install --path . --locked</a>
+                <a href="https://www.rust-lang.org/tools/install" class="btn btn-secondary" style="border-color: var(--accent-secondary); color: var(--accent-secondary);">memctrl --help</a>
             </div>
 
             <div class="code-block">
-<span class="comment"># Install via pip or uv</span><br>
-<span class="prompt">$</span> pip install memctrl<br>
-<span class="comment"># or: uvx memctrl (no install needed)</span><br><br>
+<span class="comment"># Build the Rust source checkout</span><br>
+<span class="prompt">$</span> cargo install --path . --locked<br>
+<span class="comment"># Clone and checkout feat/rust-runtime first</span><br><br>
 <span class="prompt">$</span> memctrl init<br>
 <span class="comment"># Created .memoryrc + .memctrl/memories.db</span><br><br>
 <span class="prompt">$</span> memctrl add <span class="string">"we use FastAPI + PostgreSQL"</span> --layer project<br>
@@ -664,7 +664,7 @@
             <p>Join developers building the future of AI cognition.</p>
             <div class="hero-buttons">
                 <a href="https://github.com/KJ-AIML/memctrl" class="btn btn-primary">Star on GitHub</a>
-                <a href="https://pypi.org/project/memctrl/" class="btn btn-secondary">pip install memctrl</a>
+                <a href="https://github.com/KJ-AIML/memctrl/tree/feat/rust-runtime" class="btn btn-secondary">cargo install --path . --locked</a>
             </div>
         </div>
     </section>
@@ -672,7 +672,7 @@
     <footer>
         <div class="container">
             <p>MemCtrl — Observable Memory Infrastructure for AI Agents</p>
-            <p style="margin-top: 8px;"><a href="https://github.com/KJ-AIML/memctrl">GitHub</a> &middot; <a href="https://pypi.org/project/memctrl/">PyPI</a> &middot; MIT License</p>
+            <p style="margin-top: 8px;"><a href="https://github.com/KJ-AIML/memctrl">GitHub</a> &middot; <a href="https://github.com/KJ-AIML/memctrl/tree/feat/rust-runtime">PyPI</a> &middot; MIT License</p>
         </div>
     </footer>
 
