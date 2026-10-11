@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use memctrl::{
-    agent, decay, doctor, heli, installer,
+    agent, context, decay, doctor, heli, installer,
     llm::{LlmClient, LlmConfig, LlmSettings},
     mcp,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
@@ -97,6 +97,15 @@ struct Listing {
     #[arg(long, help = "Include expired and inactive lifecycle records")]
     include_history: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ContextFormat {
+    /// Markdown for people and AGENTS.md.
+    Markdown,
+    /// Machine-readable entries plus the Markdown.
+    Json,
+    /// Claude Code SessionStart hook output (additionalContext).
+    Hook,
+}
 #[derive(Subcommand)]
 enum Command {
     /// Create rules and initialize the database.
@@ -104,12 +113,34 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Install SKILL.md for a coding tool.
+    /// Install SKILL.md for a coding tool (and optionally a Claude Code session-start hook).
     Install {
         #[arg(long)]
         tool: Option<String>,
         #[arg(long)]
         project: bool,
+        #[arg(
+            long,
+            help = "Claude Code only: add a SessionStart hook that injects `memctrl context`"
+        )]
+        hook: bool,
+    },
+    /// Print a budgeted brief of the highest-trust memories for a session start.
+    Context {
+        #[arg(long, default_value_t = context::DEFAULT_BUDGET, help = "Approximate token budget")]
+        budget: usize,
+        #[arg(
+            long = "layer",
+            help = "Layer to include (repeatable; default: project and user)"
+        )]
+        layers: Vec<String>,
+        #[arg(long, value_enum, default_value_t = ContextFormat::Markdown)]
+        format: ContextFormat,
+        #[arg(
+            long,
+            help = "Write the brief between memctrl markers in this file (e.g. AGENTS.md) instead of printing it"
+        )]
+        write: Option<PathBuf>,
     },
     /// Store a memory (or explicitly request LLM extraction).
     Add {
@@ -378,10 +409,18 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             std::fs::write(&cli.rc, DEFAULT_RULES)?;
             json!({"status":"initialized","rules":cli.rc,"database":find_db(cli)?})
         }
-        Command::Install { tool, project } => {
+        Command::Install {
+            tool,
+            project,
+            hook,
+        } => {
             let tool = tool
                 .as_deref()
                 .context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
+            ensure!(
+                !*hook || matches!(tool, "claude" | "claude_code"),
+                "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
+            );
             let root = if *project {
                 std::env::current_dir()?
             } else {
@@ -391,7 +430,59 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                         .context("home directory is not configured; use --project")?,
                 )
             };
-            json!({"path":installer::install(tool,*project,&root)?})
+            let path = installer::install(tool, *project, &root)?;
+            let mut output = json!({"path": path});
+            if let Some(legacy) = installer::legacy_skill_path(tool)
+                .map(|relative| root.join(relative))
+                .filter(|p| p.exists())
+            {
+                output["legacy_skill"] = json!(legacy);
+                output["note"] =
+                    json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
+            }
+            if *hook {
+                let executable = std::env::current_exe()?;
+                let (settings, changed) =
+                    installer::install_hook(&root, &installer::hook_command(&executable))?;
+                output["hook"] = json!(settings);
+                output["hook_changed"] = json!(changed);
+            }
+            output
+        }
+        Command::Context {
+            budget,
+            layers,
+            format,
+            write,
+        } => {
+            let layers: Vec<String> = if layers.is_empty() {
+                context::DEFAULT_LAYERS
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect()
+            } else {
+                layers.clone()
+            };
+            let brief = context::session_brief(store, &layers, *budget, &|_| None)?;
+            if let Some(path) = write {
+                let existing = match std::fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(error) => return Err(error.into()),
+                };
+                let updated = memctrl::fsutil::upsert_block(
+                    &existing,
+                    context::BEGIN_MARKER,
+                    context::END_MARKER,
+                    &context::marked_block(&brief),
+                );
+                let written = memctrl::fsutil::write_atomic(path, updated.as_bytes())?;
+                json!({"written":written,"shown":brief.entries.len(),"eligible":brief.eligible,"approx_tokens":brief.approx_tokens})
+            } else if *format == ContextFormat::Json {
+                serde_json::to_value(&brief)?
+            } else {
+                Value::String(brief.markdown)
+            }
         }
         Command::Add {
             content,
@@ -716,6 +807,25 @@ async fn run(cli: Cli) -> Result<()> {
     } else {
         find_db(&cli)?
     };
+    // A session-start hook runs in every repository; where memctrl was never set up it must
+    // print nothing and create nothing.
+    if let Command::Context { format, write, .. } = &cli.command {
+        if !db.exists() {
+            if write.is_some() {
+                bail!(
+                    "no memctrl database at {}; run `memctrl init` first",
+                    db.display()
+                );
+            }
+            if *format == ContextFormat::Json {
+                let empty = json!({"entries":[],"eligible":0,"store":"missing"});
+                std::io::stdout()
+                    .lock()
+                    .write_all((empty.to_string() + "\n").as_bytes())?;
+            }
+            return Ok(());
+        }
+    }
     if let Some(parent) = db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
@@ -748,7 +858,17 @@ async fn run(cli: Cli) -> Result<()> {
             json!({"interface":"cli"}),
         )?;
     }
-    let encoded = serde_json::to_string(&sanitize_value(&result))? + "\n";
+    let encoded = match (&cli.command, &result) {
+        (Command::Context { format, .. }, Value::String(markdown)) => match format {
+            ContextFormat::Hook => {
+                json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
+                    .to_string()
+                    + "\n"
+            }
+            _ => markdown.clone(),
+        },
+        _ => serde_json::to_string(&sanitize_value(&result))? + "\n",
+    };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
     Ok(())
 }
@@ -756,6 +876,7 @@ fn command_name(command: &Command) -> &'static str {
     match command {
         Command::Init { .. } => "init",
         Command::Install { .. } => "install",
+        Command::Context { .. } => "context",
         Command::Add { .. } => "store",
         Command::Query { .. } => "retrieve",
         Command::List(_) => "list",

@@ -527,6 +527,23 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
         self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;
         Ok(())
     }
+    /// Provenance that names memories by id only. Used for records written on every session
+    /// start, where copying each memory's content would grow the table without adding audit value.
+    pub fn save_provenance_ids(
+        &self,
+        query: &str,
+        memory_ids: &[String],
+        searched: usize,
+        method: &str,
+        avg_confidence: f64,
+    ) -> Result<()> {
+        let sources: Vec<Value> = memory_ids
+            .iter()
+            .map(|id| json!({"memory_id":id,"match_reason":method}))
+            .collect();
+        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,avg_confidence,json!(sources).to_string()])?;
+        Ok(())
+    }
     pub fn maintenance(&self, key: &str, details: Value) -> Result<()> {
         validate_identifier(key, "maintenance key")?;
         self.conn.execute("INSERT INTO maintenance_state(key,last_run_at,metadata_json) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET last_run_at=excluded.last_run_at,metadata_json=excluded.metadata_json",params![key,now(),sanitize_value(&details).to_string()])?;

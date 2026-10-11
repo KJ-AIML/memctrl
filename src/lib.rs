@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 pub mod agent;
+pub mod context;
 pub mod decay;
 pub mod doctor;
+pub mod fsutil;
 pub mod heli;
 pub mod installer;
 pub mod llm;

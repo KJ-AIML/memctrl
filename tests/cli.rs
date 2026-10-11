@@ -297,7 +297,7 @@ fn sdk_stdio_initialize_tools_validation_and_rule_reload() {
     assert!(initialized["result"]["capabilities"]["tools"].is_object());
     server.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
     let listed = server.request(2, "tools/list", json!({}));
-    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 7);
+    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 8);
     let added = server.call(
         3,
         "memctrl_add",
@@ -405,8 +405,107 @@ fn llm_is_opt_in_and_installer_respects_scope() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(home.join(".codex/skills/memctrl/SKILL.md").exists());
-    assert!(!dir.path().join(".codex/skills/memctrl/SKILL.md").exists());
+    assert!(home.join(".agents/skills/memctrl/SKILL.md").exists());
+    assert!(!dir.path().join(".agents/skills/memctrl/SKILL.md").exists());
     success(&dir, &["install", "--tool", "codex", "--project"]);
-    assert!(dir.path().join(".codex/skills/memctrl/SKILL.md").exists());
+    assert!(dir.path().join(".agents/skills/memctrl/SKILL.md").exists());
+}
+
+/// The session-start brief: silent where memctrl was never set up, Markdown by default, hook JSON
+/// for Claude Code, and an idempotent marked block when written into AGENTS.md.
+#[test]
+fn context_brief_is_silent_without_a_store_and_renders_every_format() {
+    let dir = TempDir::new().unwrap();
+    let out = invoke(&dir, &["context"]);
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty(), "no store means no brief");
+    assert!(
+        !dir.path().join(".memctrl").exists(),
+        "a hook must not create a store"
+    );
+    assert_eq!(
+        success(&dir, &["context", "--format", "json"])["store"],
+        "missing"
+    );
+
+    success(&dir, &["init"]);
+    success(
+        &dir,
+        &[
+            "add",
+            "We chose SQLx over Diesel",
+            "--layer",
+            "project",
+            "--claim-type",
+            "decision",
+        ],
+    );
+    success(
+        &dir,
+        &["add", "Scratch note for today", "--layer", "session"],
+    );
+    let out = invoke(&dir, &["context"]);
+    assert!(out.status.success());
+    let markdown = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        markdown.starts_with("# Project memory (memctrl)"),
+        "{markdown}"
+    );
+    assert!(markdown.contains("## Decisions") && markdown.contains("We chose SQLx over Diesel"));
+    assert!(
+        !markdown.contains("Scratch note"),
+        "session layer is opt-in"
+    );
+
+    let out = invoke(&dir, &["context", "--layer", "session", "--format", "hook"]);
+    let hook: Value = serde_json::from_slice(&out.stdout).expect("hook output is JSON");
+    assert_eq!(hook["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    let injected = hook["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(injected.contains("Scratch note") && !injected.contains("SQLx"));
+
+    let agents = dir.path().join("AGENTS.md");
+    std::fs::write(&agents, "# Agent rules\n\nRun make ci.\n").unwrap();
+    for _ in 0..2 {
+        let written = success(&dir, &["context", "--write", "AGENTS.md"]);
+        assert_eq!(written["shown"], 1);
+    }
+    let text = std::fs::read_to_string(&agents).unwrap();
+    assert!(text.starts_with("# Agent rules\n\nRun make ci.\n"));
+    assert_eq!(
+        text.matches("<!-- memctrl:context:begin -->").count(),
+        1,
+        "{text}"
+    );
+    assert!(text.contains("We chose SQLx over Diesel"));
+}
+
+#[test]
+fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
+    let dir = TempDir::new().unwrap();
+    let first = success(
+        &dir,
+        &["install", "--tool", "claude", "--project", "--hook"],
+    );
+    assert!(dir.path().join(".claude/skills/memctrl/SKILL.md").exists());
+    assert!(!dir.path().join(".claude/agent").exists());
+    assert_eq!(first["hook_changed"], true);
+    let second = success(
+        &dir,
+        &["install", "--tool", "claude", "--project", "--hook"],
+    );
+    assert_eq!(second["hook_changed"], false);
+    let settings: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap(),
+    )
+    .unwrap();
+    let command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert!(command.ends_with("context --format hook"), "{command}");
+    assert!(
+        failure(&dir, &["install", "--tool", "codex", "--project", "--hook"])
+            .contains("only available for Claude Code")
+    );
 }

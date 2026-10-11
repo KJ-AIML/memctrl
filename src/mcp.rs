@@ -31,6 +31,42 @@ fn optional_string<'a>(args: &'a Value, key: &str) -> Result<Option<&'a str>> {
             .ok_or_else(|| anyhow::anyhow!("{key} must be a string")),
     }
 }
+fn layers(args: &Value) -> Result<Vec<String>> {
+    match args.get("layers") {
+        None => Ok(crate::context::DEFAULT_LAYERS
+            .iter()
+            .map(|l| l.to_string())
+            .collect()),
+        Some(v) => {
+            let items = v
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("layers must be an array of strings"))?;
+            ensure!(!items.is_empty(), "layers must not be empty");
+            items
+                .iter()
+                .map(|item| {
+                    let layer = item
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("layers must be an array of strings"))?;
+                    validate_identifier(layer, "layer")?;
+                    Ok(layer.to_string())
+                })
+                .collect()
+        }
+    }
+}
+fn budget(args: &Value) -> Result<usize> {
+    match args.get("budget") {
+        None => Ok(crate::context::DEFAULT_BUDGET),
+        Some(v) => {
+            let n = v
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("budget must be a nonnegative integer"))?;
+            ensure!(n <= 100_000, "budget must be at most 100000");
+            Ok(n as usize)
+        }
+    }
+}
 fn limit(args: &Value) -> Result<usize> {
     match args.get("limit") {
         None => Ok(50),
@@ -80,6 +116,16 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 query,
                 layer,
                 limit(args)?,
+            )?)?
+        }
+        "memctrl_context" => {
+            let layers = layers(args)?;
+            let budget = budget(args)?;
+            serde_json::to_value(crate::context::session_brief(
+                store,
+                &layers,
+                budget,
+                &|_| None,
             )?)?
         }
         "memctrl_trigger" => {
@@ -160,6 +206,12 @@ fn tools() -> Vec<Tool> {
             "Store a memory",
             json!({"content":{"type":"string"},"layer":{"type":"string"},"source":{"type":"string","default":"mcp"}}),
             vec!["content", "layer"],
+        ),
+        (
+            "memctrl_context",
+            "Brief of the highest-trust project memories within a token budget; call at session start",
+            json!({"layers":{"type":"array","items":{"type":"string"},"default":["project","user"]},"budget":{"type":"integer","minimum":0,"maximum":100000,"default":1500}}),
+            vec![],
         ),
         (
             "memctrl_trigger",
@@ -295,6 +347,41 @@ mod tests {
             store.get_memory(&id, true)?.unwrap().lifecycle_state,
             LifecycleState::Accepted
         );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    #[test]
+    fn context_tool_validates_before_writing_provenance() -> Result<()> {
+        let mut store = MemoryStore::open(":memory:")?;
+        let rules = Rules::default();
+        store.insert_memory(NewMemory {
+            layer: "project".into(),
+            content: "Releases are cut from main".into(),
+            ..Default::default()
+        })?;
+        for args in [
+            json!({"layers":"project"}),
+            json!({"layers":[]}),
+            json!({"layers":[7]}),
+            json!({"budget":-1}),
+            json!({"budget":1_000_000}),
+        ] {
+            assert!(dispatch(&mut store, &rules, "memctrl_context", &args).is_err());
+        }
+        assert!(
+            store.provenance(10)?.is_empty(),
+            "invalid input must not record anything"
+        );
+        let brief = dispatch(&mut store, &rules, "memctrl_context", &json!({}))?;
+        assert_eq!(brief["entries"][0]["content"], "Releases are cut from main");
+        assert!(brief["markdown"]
+            .as_str()
+            .unwrap()
+            .contains("## Facts and conventions"));
         Ok(())
     }
 }

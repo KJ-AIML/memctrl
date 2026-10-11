@@ -1,95 +1,89 @@
 ---
 name: memctrl
 description: |
-  MANDATORY: Before starting ANY work in this project, load context from
-  memctrl. After finishing work, store what was learned. This is the project's
-  cognitive memory layer — not optional.
-
-  CRITICAL RULES:
-  1. ALWAYS run `memctrl query "current project context"` at session start
-  2. ALWAYS run `memctrl add` after architecture decisions or discoveries
-  3. ALWAYS run `memctrl trigger on_session_end` before ending session
-  4. NEVER say "I don't remember" — query memctrl first
+  Project memory for this repository: decisions and their reasons, conventions, environment
+  quirks and known pitfalls, stored locally by memctrl. Use it when you need project context
+  you can't work out from the code ("why did we choose X?", "how do tests run here?"), and
+  whenever you learn something a future session should know.
 ---
 
-# MemCtrl — Mandatory Memory Protocol
+# memctrl: project memory
 
-## ⚡ Session Start Protocol (REQUIRED)
+memctrl keeps durable project knowledge in a local SQLite store. Each memory carries a layer, a claim type, a verification state and, optionally, citations to the code it describes. Results come back as JSON.
 
-Run this **before** any coding, planning, or discussion:
+## At session start
 
-```bash
-memctrl query "current project context"
-memctrl query "what decisions have been made"
-memctrl query "what is the tech stack"
-```
-
-If no context exists (new project), initialize:
-```bash
-memctrl init --force
-```
-
-## 📝 During Work — Store Automatically
-
-After ANY of these events, run `memctrl add` **immediately**:
-
-| Event | Example Command |
-|-------|----------------|
-| Architecture decision | `memctrl add "Using FastAPI + async SQLAlchemy" --layer project` |
-| Bug discovered | `memctrl add "JWT validation fails on expired tokens — use jose" --layer project` |
-| Tech choice | `memctrl add "Chose PostgreSQL over SQLite for concurrent writes" --layer project` |
-| Current task | `memctrl add "Implementing OAuth2 login flow" --layer session` |
-| User preference | `memctrl add "Prefers explicit types over generics" --layer user` |
-| Refactoring | `memctrl add "Renamed UserService -> AuthService" --layer project` |
-
-## 🏁 Session End Protocol (REQUIRED)
-
-Before ending ANY session:
+If the Claude Code hook is installed (`memctrl install --tool claude --hook`), a brief of the highest-trust memories is already in your context under "Project memory (memctrl)". Otherwise, load it yourself:
 
 ```bash
-memctrl trigger on_session_end
-memctrl audit
+memctrl context
 ```
 
-Configured session-end rules create reviewable lessons while preserving source facts. Run explicit maintenance commands when required.
+Entries under **Check before trusting** are disputed, or their cited code changed after they were saved. Confirm them against the code before relying on them.
 
-## 🔍 When User Asks Context Questions
+## Look things up
 
-If user asks anything like:
-- "Why did we choose X?"
-- "What was the decision about Y?"
-- "What were we doing last time?"
-- "What's our tech stack?"
-
-**NEVER guess.** Always run:
-```bash
-memctrl query "<user's question>"
-```
-
-## 🧠 Memory Layers
-
-| Layer | Purpose | When to Use | Expiry |
-|-------|---------|-------------|--------|
-| **project** | Architecture, ADRs, tech stack, refactors | Permanent decisions | Never |
-| **session** | Current task, WIP, what was done today | Temporary work | 7 days |
-| **user** | Preferences, coding style, patterns | Personal habits | 90 days |
-
-## 📋 Quick Commands
+Search with the specific words a memory would contain: names, file paths, commands, error text. Generic phrases like "project context" match little.
 
 ```bash
-memctrl query "<question>"              # Retrieve with reasoning trace
-memctrl add "<fact>" --layer project    # Store permanent knowledge
-memctrl add "<fact>" --layer session    # Store temporary work
-memctrl tree                             # View full memory hierarchy
-memctrl trigger on_session_end          # Consolidate & cleanup
-memctrl audit                            # Review memory log
+memctrl query "integration tests postgres"
+memctrl query "SQLx Diesel"
+memctrl query "ไลเซนส์"            # Thai, Chinese and Japanese work too
 ```
 
-## 🌐 MCP Server (if running)
+Each fact comes with `why`: the matched terms, the score and, for cited memories, `freshness` (`fresh`, `stale` or `uncited`). Treat `stale` as a lead to verify, not a fact.
 
-If `memctrl serve` is active, use these tools directly:
-- `memctrl_query(query, layer?)` — Retrieve memories
-- `memctrl_add(content, layer, source?)` — Store memory
-- `memctrl_trigger(event, context?)` — Fire rule trigger
-- `memctrl_tree()` — Get memory hierarchy
-- `memctrl_audit(limit?)` — View audit log
+## Save what a future session needs
+
+Save knowledge that isn't obvious from the code: decisions with their reasons, conventions, quirks, dead ends. Never save secrets; memctrl redacts known patterns, but the habit matters.
+
+```bash
+memctrl add "We chose SQLx over Diesel: compile-time checked queries caught 3 prod bugs" \
+  --layer project --claim-type decision --cite src/db/mod.rs:12-40
+memctrl add "Integration tests need Postgres: docker compose up -d db" --layer project --cite docker-compose.yml
+memctrl add "Prefers small PRs with one concern each" --layer user
+memctrl add "Migrating auth to sessions; login done, logout next" --layer session
+```
+
+| Layer | For | Default expiry |
+| --- | --- | --- |
+| `project` | Decisions, conventions, architecture, pitfalls | none |
+| `user` | The person's preferences and working style | 90 days |
+| `session` | Current task and work in progress | 7 days |
+
+Claim types are `decision`, `assertion` (default), `observation` and `hypothesis`. `--cite path[:line[-line]]` (repeatable) links a memory to code, so memctrl can tell when that code changes.
+
+A memory containing hidden Unicode or instruction-like text ("ignore previous instructions") is saved as a **candidate**, not accepted. The output says `"status": "quarantined"`, and a human reviews it with `memctrl candidates` and `memctrl accept <id>`.
+
+## Keep memory correct
+
+```bash
+memctrl supersede <old_id> <new_id>        # the new memory replaces the old one
+memctrl refute <id> -r "reason"            # wrong; refutation is permanent
+memctrl dispute <id>                       # doubtful; shown under "Check before trusting"
+memctrl stale                              # memories whose cited code changed
+memctrl refresh <id>                       # after re-checking, re-anchor its citations
+```
+
+## Share with the team
+
+```bash
+memctrl export            # writes .memctrl/memory.md for review in pull requests
+memctrl import .memctrl/memory.md
+```
+
+## Session end
+
+```bash
+memctrl trigger on_session_end    # applies configured consolidation rules
+```
+
+## MCP tools
+
+When memctrl runs as an MCP server (`memctrl serve`), the same operations are available as tools:
+- `memctrl_context`: the session brief
+- `memctrl_query(query, layer?, limit?)`
+- `memctrl_add(content, layer, source?, claim_type?, tags?, cite?)`
+- `memctrl_stale(layer?)`
+- `memctrl_candidates(layer?, limit?)` and `memctrl_review(id, action, reason?)`
+- `memctrl_trigger(event, context?)`, `memctrl_tree()` and `memctrl_audit(limit?)`
