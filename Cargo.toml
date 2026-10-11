@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["ai", "agents", "memory", "mcp", "sqlite"]
 categories = ["command-line-utilities", "database"]
 # Ship only what the binary and library need; schema.sql and assets/SKILL.md are embedded.
-include = ["src/**/*", "assets/SKILL.md", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "MIGRATION.md"]
+include = ["src/**/*", "assets/**/*", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "MIGRATION.md"]
 
 [dependencies]
 anyhow = "1"

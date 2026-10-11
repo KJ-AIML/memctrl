@@ -106,6 +106,12 @@ enum ContextFormat {
     /// Claude Code SessionStart hook output (additionalContext).
     Hook,
 }
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum EvalRetriever {
+    Lexical,
+    Legacy,
+    Both,
+}
 #[derive(Subcommand)]
 enum Command {
     /// Create rules and initialize the database.
@@ -199,6 +205,23 @@ enum Command {
             help = "Fail if the file is not up to date instead of writing it"
         )]
         check: bool,
+    },
+    /// Measure retrieval quality on a suite (built in, or --file) without touching your database.
+    Eval {
+        #[arg(
+            long,
+            help = "JSON suite: {name, memories:[{key,content,...}], cases:[{query,expect,kind}]}"
+        )]
+        file: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = EvalRetriever::Both)]
+        retriever: EvalRetriever,
+        #[arg(long, default_value_t = 5)]
+        top_k: usize,
+        #[arg(
+            long,
+            help = "Fail unless lexical hit@k on answerable cases reaches this rate (0-1)"
+        )]
+        min_hit_rate: Option<f64>,
     },
     /// Import a memctrl export; never overwrites local memories.
     Import {
@@ -969,6 +992,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             }
         },
         Command::Serve => bail!("serve is handled separately"),
+        Command::Eval { .. } => bail!("eval is handled separately"),
     };
     Ok(sanitize_value(&result))
 }
@@ -984,6 +1008,44 @@ async fn run(cli: Cli) -> Result<()> {
     } else {
         find_db(&cli)?
     };
+    // Evaluation runs on an in-memory store and never opens or creates the real database.
+    if let Command::Eval {
+        file,
+        retriever,
+        top_k,
+        min_hit_rate,
+    } = &cli.command
+    {
+        let text = match file {
+            Some(path) => std::fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?,
+            None => memctrl::eval::BUILTIN_SUITE.to_string(),
+        };
+        let suite = memctrl::eval::parse_suite(&text)?;
+        let retrievers = match retriever {
+            EvalRetriever::Lexical => vec![memctrl::eval::Retriever::Lexical],
+            EvalRetriever::Legacy => vec![memctrl::eval::Retriever::Legacy],
+            EvalRetriever::Both => vec![
+                memctrl::eval::Retriever::Lexical,
+                memctrl::eval::Retriever::Legacy,
+            ],
+        };
+        let options = retriever::SearchOptions::from_rules(&rules);
+        let report = memctrl::eval::run(&suite, &retrievers, *top_k, &options)?;
+        if let Some(floor) = min_hit_rate {
+            memctrl::model::validate_confidence(*floor)?;
+            let rate = report["results"]["lexical"]["hit_at_k"]
+                .as_f64()
+                .context("--min-hit-rate needs the lexical retriever and answerable cases")?;
+            ensure!(
+                rate >= *floor,
+                "lexical hit@{top_k} is {rate}, below --min-hit-rate {floor}"
+            );
+        }
+        let encoded = serde_json::to_string(&sanitize_value(&report))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
     if let Command::Context { format, write, .. } = &cli.command {
@@ -1058,6 +1120,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Stale { .. } => "stale",
         Command::Refresh { .. } => "refresh",
         Command::Export { .. } => "export",
+        Command::Eval { .. } => "eval",
         Command::Import { .. } => "import",
         Command::Add { .. } => "store",
         Command::Query { .. } => "retrieve",
