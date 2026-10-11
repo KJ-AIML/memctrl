@@ -2,12 +2,35 @@ name: Rust CI
 on:
   push:
     branches: [main, master]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "MIGRATION.md"
+      - "RELEASE_NOTES.md"
+      - "DISTRIBUTION.md"
+      - "RUST-RESEARCH.md"
+      - "AGENTS.md"
   pull_request:
     branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "MIGRATION.md"
+      - "RELEASE_NOTES.md"
+      - "DISTRIBUTION.md"
+      - "RUST-RESEARCH.md"
+      - "AGENTS.md"
 permissions:
   contents: read
+# A newer commit on the same branch or PR cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   rust:
+    # Drafts skip the 3-OS matrix; marking the PR ready triggers it (ready_for_review).
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     strategy:
       fail-fast: false
       matrix:

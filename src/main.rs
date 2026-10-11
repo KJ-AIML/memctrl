@@ -2,7 +2,7 @@ use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use memctrl::{
     agent, decay, doctor, heli, installer,
-    llm::LlmClient,
+    llm::{LlmClient, LlmConfig, LlmSettings},
     mcp,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     reflection, retriever,
@@ -45,13 +45,24 @@ struct Cli {
 }
 #[derive(Args, Default)]
 struct LlmOptions {
-    #[arg(long, help = "Explicitly enable calls to an OpenAI-compatible LLM")]
+    #[arg(long, help = "Explicitly enable calls to an LLM provider")]
     llm: bool,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "openai, xai, anthropic or compatible (default: MEMCTRL_LLM_PROVIDER or openai)"
+    )]
     llm_provider: Option<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Model name (default: MEMCTRL_LLM_MODEL; required for xai and anthropic)"
+    )]
     llm_model: Option<String>,
-    #[arg(long)]
+    #[arg(long, help = "Base URL, e.g. http://localhost:11434/v1 for Ollama")]
+    llm_base_url: Option<String>,
+    #[arg(long, help = "Name of the environment variable that holds the API key")]
+    llm_api_key_env: Option<String>,
+    /// Deprecated: a key in argv is visible in process listings and shell history.
+    #[arg(long, hide = true)]
     llm_api_key: Option<String>,
 }
 impl LlmOptions {
@@ -59,19 +70,22 @@ impl LlmOptions {
         if !self.llm {
             return Ok(None);
         }
-        if let Some(provider) = &self.llm_provider {
-            ensure!(
-                ["openai", "compatible"].contains(&provider.as_str()),
-                "LLM provider must be openai or compatible"
+        if self.llm_api_key.is_some() {
+            eprintln!(
+                "{}",
+                json!({"warning": "--llm-api-key exposes the key to other processes; use --llm-api-key-env or MEMCTRL_LLM_API_KEY"})
             );
         }
-        if let Some(model) = &self.llm_model {
-            std::env::set_var("MEMCTRL_LLM_MODEL", model);
-        }
-        if let Some(key) = &self.llm_api_key {
-            std::env::set_var("MEMCTRL_LLM_API_KEY", key);
-        }
-        Ok(Some(LlmClient::from_env()?))
+        let settings = LlmSettings {
+            provider: self.llm_provider.clone(),
+            model: self.llm_model.clone(),
+            base_url: self.llm_base_url.clone(),
+            api_key_env: self.llm_api_key_env.clone(),
+            api_key: self.llm_api_key.clone(),
+            max_retries: None,
+        };
+        let config = LlmConfig::resolve(&settings, |name| std::env::var(name).ok())?;
+        Ok(Some(LlmClient::from_config(config)?))
     }
 }
 #[derive(Args)]

@@ -1,0 +1,110 @@
+name: Release
+
+# Pull requests build and smoke-test every release target without publishing anything.
+# Pushing a `vX.Y.Z` tag builds the same artifacts and creates a *draft* GitHub release
+# with SHA256SUMS; a maintainer reviews the draft and publishes it by hand.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+    paths:
+      - ".github/workflows/release.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "install.sh"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, run: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, run: true }
+          - { target: aarch64-apple-darwin, os: macos-latest, run: true }
+          # Cross-compiled on Apple silicon; Rosetta is not guaranteed, so it is not executed.
+          - { target: x86_64-apple-darwin, os: macos-latest, run: false }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --locked --release --bin memctrl --target ${{ matrix.target }}
+      - name: Smoke test
+        if: matrix.run
+        shell: bash
+        run: |
+          bin="target/${{ matrix.target }}/release/memctrl"
+          [ -f "$bin.exe" ] && bin="$bin.exe"
+          "$bin" --version
+          db="$RUNNER_TEMP/smoke.db"
+          "$bin" --db "$db" add "Release smoke: we use SQLite" --layer project
+          "$bin" --db "$db" query "SQLite" | grep -q "Release smoke"
+      - name: Package
+        shell: bash
+        run: |
+          name="memctrl-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp README.md LICENSE MIGRATION.md "dist/$name/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/memctrl.exe" "dist/$name/"
+            (cd dist && 7z a -tzip "$name.zip" "$name" > /dev/null)
+          else
+            cp "target/${{ matrix.target }}/release/memctrl" "dist/$name/"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          fi
+          rm -rf "dist/$name"
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memctrl-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  draft-release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the crate version
+        run: |
+          crate=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          test "${GITHUB_REF_NAME#v}" = "$crate" || { echo "tag $GITHUB_REF_NAME != Cargo.toml $crate"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum memctrl-* > SHA256SUMS && cat SHA256SUMS
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft --verify-tag \
+            --title "MemCtrl $GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md

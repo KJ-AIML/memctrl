@@ -2,17 +2,25 @@
 
 Local, explainable memory for coding agents. The executable, library, CLI, MCP server, tests, examples and benchmarks are native Rust. No Python runtime or bridge is included.
 
-MemCtrl stores facts in SQLite, groups them into a hierarchy, retrieves them with deterministic keyword scoring, and records their sources and reasoning trace. Lifecycle and verification state keep candidates, expired facts and refuted claims out of ordinary retrieval. Optional LLM requests use an OpenAI-compatible endpoint.
+MemCtrl stores facts in SQLite, groups them into a hierarchy, retrieves them with deterministic keyword scoring, and records their sources and reasoning trace. Lifecycle and verification state keep candidates, expired facts and refuted claims out of ordinary retrieval. Optional LLM requests (only with `--llm`) go to OpenAI, xAI, Anthropic or any OpenAI-compatible server such as Ollama.
 
-## Build and run
-
-Install a stable Rust toolchain, then:
+## Install
 
 ```bash
-git clone https://github.com/KJ-AIML/memctrl.git
-cd memctrl
-git checkout feat/rust-runtime
+# macOS / Linux: prebuilt binary, verified against SHA256SUMS
+curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | sh
+
+# Any platform with a Rust toolchain
+cargo install --locked memctrl
+
+# From source
+git clone https://github.com/KJ-AIML/memctrl.git && cd memctrl
 cargo install --path . --locked
+```
+
+Windows: download `memctrl-x86_64-pc-windows-msvc.zip` from [Releases](https://github.com/KJ-AIML/memctrl/releases) and put `memctrl.exe` on your `PATH`. Upgrading from 1.x? Read [MIGRATION.md](MIGRATION.md) first.
+
+```bash
 memctrl init
 memctrl add "We use Rust and PostgreSQL" --layer project
 memctrl query "database"
@@ -20,18 +28,30 @@ memctrl tree
 memctrl doctor
 ```
 
-Source installation is supported. This migration does not publish a crates.io package or GitHub release.
-
-For local development:
-
-```bash
-cargo test --locked --all-targets
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo build --locked --release --bin memctrl --examples
-```
+For local development, `make ci` runs exactly the checks GitHub CI runs (fmt, strict Clippy, tests, release build, Rust-only source). `make hooks` makes git run it before every push.
 
 The built CLI is `target/release/memctrl` (`memctrl.exe` on Windows). Run `memctrl --help` and command-specific `--help` for options. Responses are structured JSON; errors go to stderr with a nonzero exit status.
+
+## Optional LLM providers
+
+Everything works offline. Add `--llm` to a command to let a model extract memories, pick tree nodes or write summaries.
+
+| Provider | `--llm-provider` | API | Key variable | Model |
+| --- | --- | --- | --- | --- |
+| OpenAI (default) | `openai` | Chat Completions, strict JSON schema | `OPENAI_API_KEY` | default `gpt-4o-mini` |
+| xAI | `xai` (or `grok`) | Responses, strict JSON schema | `XAI_API_KEY` | set with `--llm-model` |
+| Anthropic | `anthropic` | Messages, JSON schema output | `ANTHROPIC_API_KEY` | set with `--llm-model` |
+| Local / compatible | `compatible` (or `ollama`) | Chat Completions, JSON mode | optional on loopback | set with `--llm-model` |
+
+```bash
+export XAI_API_KEY=...            # or keep it under any name and pass --llm-api-key-env NAME
+memctrl query "database" --llm --llm-provider xai --llm-model <model>
+memctrl add "$(cat notes.md)" --llm --llm-provider ollama --llm-model llama3 --llm-base-url http://localhost:11434/v1
+```
+
+Settings resolve in this order: flags (`--llm-provider`, `--llm-model`, `--llm-base-url`, `--llm-api-key-env`), then `MEMCTRL_LLM_PROVIDER` / `MEMCTRL_LLM_MODEL` / `MEMCTRL_LLM_BASE_URL` / `MEMCTRL_LLM_API_KEY`, then the provider's own key variable, then the preset. Keys never go in argv or config files.
+
+Requests time out after 120 s. Transport errors and 5xx responses are retried up to `MEMCTRL_LLM_MAX_RETRIES` times (default 2), with exponential backoff. A 429 is retried once, and only when `Retry-After` is 30 s or less. Other 4xx responses fail immediately. If a provider rejects its structured-output field, the request is repeated once without it; responses are always validated locally. The design follows xAI's open-source Grok Build CLI (`xai-org/grok-build`).
 
 ## Behavior
 
