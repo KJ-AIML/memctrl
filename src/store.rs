@@ -189,7 +189,8 @@ CREATE INDEX IF NOT EXISTS idx_provenance_ts ON provenance(timestamp);
 CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
 CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
-CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
+CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);")?;
         let indexed:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='memory_fts')",[],|r|r.get(0))?;
         self.conn.execute_batch(SEARCH_SCHEMA)?;
         if !indexed { self.rebuild_search_index()?; }
@@ -335,6 +336,8 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
                 )?;
                 self.conn
                     .execute("DELETE FROM memory_evidence WHERE memory_id=?", [id])?;
+                self.conn
+                    .execute("DELETE FROM memory_citations WHERE memory_id=?", [id])?;
                 self.conn.execute("DELETE FROM tree_nodes", [])?;
             }
             Ok(count > 0)
@@ -454,6 +457,103 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
             .prepare("SELECT * FROM memory_evidence WHERE memory_id=? ORDER BY created_at,id")?;
         let values=stmt.query_map([id],|r|Ok(json!({"id":r.get::<_,String>("id")?,"memory_id":r.get::<_,String>("memory_id")?,"source_system":sanitize_text(&r.get::<_,String>("source_system")?),"source_id":sanitize_text(&r.get::<_,String>("source_id")?),"source_revision":r.get::<_,Option<String>>("source_revision")?.map(|v|sanitize_revision(&v)),"relation":r.get::<_,String>("relation")?,"created_at":r.get::<_,String>("created_at")?,"metadata":json_column(r,"metadata_json")?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
+    }
+    /// Inserts a memory and its citations together, or neither.
+    pub fn insert_memory_with_citations(
+        &self,
+        memory: NewMemory,
+        anchors: &[crate::citations::Anchor],
+        commit_sha: Option<&str>,
+    ) -> Result<String> {
+        self.atomic(|| {
+            let id = self.insert_memory(memory)?;
+            for anchor in anchors {
+                self.add_citation(&id, anchor, commit_sha)?;
+            }
+            Ok(id)
+        })
+    }
+    /// Adds a citation unless the memory already cites the same path and lines. Returns the
+    /// citation id and whether it was newly created.
+    pub fn add_citation(
+        &self,
+        memory_id: &str,
+        anchor: &crate::citations::Anchor,
+        commit_sha: Option<&str>,
+    ) -> Result<(String, bool)> {
+        self.atomic(|| {
+            self.require_memory(memory_id)?;
+            let existing: Option<String> = self.conn.query_row(
+                "SELECT id FROM memory_citations WHERE memory_id=?1 AND path=?2 AND line_start IS ?3 AND line_end IS ?4",
+                params![memory_id, anchor.path, anchor.line_start, anchor.line_end],
+                |r| r.get(0),
+            ).optional()?;
+            if let Some(id) = existing {
+                return Ok((id, false));
+            }
+            let id = Uuid::new_v4().to_string();
+            self.conn.execute(
+                "INSERT INTO memory_citations(id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,commit_sha,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                params![id, memory_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, commit_sha.map(sanitize_revision), now()],
+            )?;
+            Ok((id, true))
+        })
+    }
+    /// Replaces a citation's location and hashes after a human re-checked the memory.
+    pub fn reanchor_citation(
+        &self,
+        citation_id: &str,
+        anchor: &crate::citations::Anchor,
+        commit_sha: Option<&str>,
+    ) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE memory_citations SET path=?2,line_start=?3,line_end=?4,file_hash=?5,span_hash=?6,head_hash=?7,commit_sha=COALESCE(?8,commit_sha),refreshed_at=?9 WHERE id=?1",
+            params![citation_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, commit_sha.map(sanitize_revision), now()],
+        )? > 0)
+    }
+    pub fn citations(&self, memory_id: &str) -> Result<Vec<crate::citations::Citation>> {
+        let mut statement = self.conn.prepare_cached(
+            "SELECT id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,commit_sha,created_at,refreshed_at FROM memory_citations WHERE memory_id=? ORDER BY created_at,id",
+        )?;
+        let rows = statement
+            .query_map([memory_id], |r| {
+                Ok(crate::citations::Citation {
+                    id: r.get(0)?,
+                    memory_id: r.get(1)?,
+                    path: sanitize_text(&r.get::<_, String>(2)?),
+                    line_start: r.get(3)?,
+                    line_end: r.get(4)?,
+                    file_hash: r.get(5)?,
+                    span_hash: r.get(6)?,
+                    head_hash: r.get(7)?,
+                    commit_sha: r
+                        .get::<_, Option<String>>(8)?
+                        .map(|v| sanitize_revision(&v)),
+                    created_at: r.get(9)?,
+                    refreshed_at: r.get(10)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+    /// Ids of every memory with at least one citation.
+    pub fn cited_memory_ids(&self) -> Result<Vec<String>> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT DISTINCT memory_id FROM memory_citations ORDER BY memory_id")?;
+        let ids = statement
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(ids)
+    }
+    /// Appends an audit record (shown by `memctrl audit`).
+    pub fn log_event(&self, event: &str, action: &str, memory_ids: &[String]) -> Result<()> {
+        validate_identifier(event, "event")?;
+        self.conn.execute(
+            "INSERT INTO triggers_log(id,event,action,memories_affected,timestamp) VALUES(?,?,?,?,?)",
+            params![Uuid::new_v4().to_string(), event, sanitize_text(action), serde_json::to_string(memory_ids)?, now()],
+        )?;
+        Ok(())
     }
     pub fn consolidate_and_log(
         &self,
@@ -676,6 +776,7 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
                 "tree_nodes",
                 "memory_relations",
                 "memory_evidence",
+                "memory_citations",
                 "triggers_log",
                 "provenance",
                 "otel_spans",

@@ -297,7 +297,7 @@ fn sdk_stdio_initialize_tools_validation_and_rule_reload() {
     assert!(initialized["result"]["capabilities"]["tools"].is_object());
     server.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
     let listed = server.request(2, "tools/list", json!({}));
-    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 8);
+    assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 9);
     let added = server.call(
         3,
         "memctrl_add",

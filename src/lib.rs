@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 pub mod agent;
+pub mod citations;
 pub mod context;
 pub mod decay;
 pub mod doctor;

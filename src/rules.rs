@@ -57,6 +57,8 @@ pub struct Rules {
     /// Custom synonym groups from `[retrieval] aliases`.
     pub aliases: Vec<Vec<String>>,
     pub builtin_aliases: bool,
+    /// `[citations] root`, resolved against the rules file's directory.
+    pub citations_root: Option<std::path::PathBuf>,
 }
 
 impl Default for Rules {
@@ -114,6 +116,7 @@ impl Default for Rules {
             db_path: None,
             aliases: Vec::new(),
             builtin_aliases: true,
+            citations_root: None,
         }
     }
 }
@@ -258,6 +261,14 @@ impl Rules {
                     rules.aliases.push(cleaned);
                 }
             }
+        }
+        if let Some(root) = raw.get("citations").and_then(|v| v.get("root")) {
+            let root = root.as_str().context("citations.root must be a string")?;
+            let base = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
+            rules.citations_root = Some(base.join(root));
         }
         if let Some(path) = raw.get("memctrl").and_then(|v| v.get("db_path")) {
             rules.db_path = Some(path.as_str().context("db_path must be a string")?.into());

@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use memctrl::{
-    agent, context, decay, doctor, heli, installer,
+    agent, citations, context, decay, doctor, heli, installer,
     llm::{LlmClient, LlmConfig, LlmSettings},
     mcp,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
@@ -161,9 +161,30 @@ enum Command {
         tags: Vec<String>,
         #[arg(long)]
         expires_at: Option<String>,
+        #[arg(
+            long = "cite",
+            value_name = "PATH[:LINE[-LINE]]",
+            help = "Code this memory describes (repeatable); memctrl flags the memory when it changes"
+        )]
+        cite: Vec<String>,
         #[command(flatten)]
         llm: LlmOptions,
     },
+    /// Link an existing memory to the code it describes.
+    Cite {
+        memory_id: String,
+        #[arg(required = true, value_name = "PATH[:LINE[-LINE]]")]
+        specs: Vec<String>,
+    },
+    /// List memories whose cited code changed or disappeared.
+    Stale {
+        #[arg(long)]
+        layer: Option<String>,
+        #[arg(long, help = "Include memories whose citations are still fresh")]
+        all: bool,
+    },
+    /// Re-anchor a memory's citations to the current code after re-checking the memory.
+    Refresh { memory_id: String },
     /// Retrieve relevant active memories with provenance.
     Query {
         query_text: String,
@@ -391,6 +412,9 @@ fn selected_memory_ids(
         selected_memory_ids(child, selected, include, output);
     }
 }
+fn project_root(rules: &Rules) -> Result<PathBuf> {
+    citations::project_root(rules.citations_root.as_deref())
+}
 fn require_memory(store: &MemoryStore, id: &str) -> Result<()> {
     validate_identifier(id, "memory_id")?;
     ensure!(store.get_memory(id, true)?.is_some(), "memory not found");
@@ -463,7 +487,9 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             } else {
                 layers.clone()
             };
-            let brief = context::session_brief(store, &layers, *budget, &|_| None)?;
+            let notes = citations::stale_notes(store, rules);
+            let brief =
+                context::session_brief(store, &layers, *budget, &|m| notes.get(&m.id).cloned())?;
             if let Some(path) = write {
                 let existing = match std::fs::read_to_string(path) {
                     Ok(text) => text,
@@ -494,10 +520,30 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             verification_state,
             tags,
             expires_at,
+            cite,
             llm,
         } => {
             validate_layer(Some(layer))?;
             validate_identifier(source, "source")?;
+            ensure!(
+                cite.is_empty() || !llm.llm,
+                "--cite applies to one memory; add cited memories without --llm"
+            );
+            // Resolve and hash every citation before writing anything.
+            let mut anchors = Vec::new();
+            let mut root = None;
+            if !cite.is_empty() {
+                let base = project_root(rules)?;
+                let cwd = std::env::current_dir()?;
+                for spec in cite {
+                    anchors.push(citations::anchor(
+                        &base,
+                        &cwd,
+                        &citations::parse_spec(spec)?,
+                    )?);
+                }
+                root = Some(base);
+            }
             let memory = NewMemory {
                 content: content.clone(),
                 layer: layer.clone(),
@@ -520,9 +566,38 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 }
                 let ids = store.insert_memories(memories)?;
                 json!({"memory_ids":ids,"status":"stored"})
+            } else if let Some(root) = root {
+                let commit = citations::current_commit(&root);
+                let id = store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?;
+                json!({"id":id,"status":"stored","citations":anchors.len()})
             } else {
                 json!({"id":store.insert_memory(memory)?,"status":"stored"})
             }
+        }
+        Command::Cite { memory_id, specs } => {
+            require_memory(store, memory_id)?;
+            let root = project_root(rules)?;
+            let cwd = std::env::current_dir()?;
+            let anchors = specs
+                .iter()
+                .map(|spec| citations::anchor(&root, &cwd, &citations::parse_spec(spec)?))
+                .collect::<Result<Vec<_>>>()?;
+            let commit = citations::current_commit(&root);
+            let mut added = 0;
+            for anchor in &anchors {
+                if store.add_citation(memory_id, anchor, commit.as_deref())?.1 {
+                    added += 1;
+                }
+            }
+            json!({"id":memory_id,"added":added,"citations":citations::describe(store,&root,memory_id)?})
+        }
+        Command::Stale { layer, all } => {
+            validate_layer(layer.as_deref())?;
+            citations::stale_report(store, &project_root(rules)?, layer.as_deref(), *all)?
+        }
+        Command::Refresh { memory_id } => {
+            require_memory(store, memory_id)?;
+            citations::refresh(store, &project_root(rules)?, memory_id)?
         }
         Command::Query {
             query_text,
@@ -545,13 +620,17 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     *limit,
                 )?)?
             } else {
-                serde_json::to_value(retriever::retrieve_with(
+                let mut result = retriever::retrieve_with(
                     store,
                     query_text,
                     layer.as_deref(),
                     *limit,
                     &retriever::SearchOptions::from_rules(rules),
-                )?)?
+                )?;
+                if let Ok(root) = project_root(rules) {
+                    citations::annotate(store, &root, &mut result)?;
+                }
+                serde_json::to_value(result)?
             }
         }
         Command::List(options) | Command::Candidates(options) => {
@@ -574,7 +653,11 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::Show { memory_id } | Command::History { memory_id } => {
             require_memory(store, memory_id)?;
-            json!({"memory":store.get_memory(memory_id,true)?,"relations":store.relations(memory_id)?,"evidence":store.evidence(memory_id)?})
+            let cited = match project_root(rules) {
+                Ok(root) => citations::describe(store, &root, memory_id)?,
+                Err(_) => json!(store.citations(memory_id)?),
+            };
+            json!({"memory":store.get_memory(memory_id,true)?,"relations":store.relations(memory_id)?,"evidence":store.evidence(memory_id)?,"citations":cited})
         }
         Command::Accept { memory_id } => mcp::dispatch(
             store,
@@ -688,6 +771,12 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 .map(|m| m.id)
                 .collect();
             report["weak_memory_ids"] = json!(weak);
+            report["stale_memories"] = match project_root(rules) {
+                Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
+                    .as_array()
+                    .map_or(0, Vec::len)),
+                Err(_) => Value::Null,
+            };
             report
         }
         Command::Provenance {
@@ -879,6 +968,9 @@ fn command_name(command: &Command) -> &'static str {
         Command::Init { .. } => "init",
         Command::Install { .. } => "install",
         Command::Context { .. } => "context",
+        Command::Cite { .. } => "cite",
+        Command::Stale { .. } => "stale",
+        Command::Refresh { .. } => "refresh",
         Command::Add { .. } => "store",
         Command::Query { .. } => "retrieve",
         Command::List(_) => "list",

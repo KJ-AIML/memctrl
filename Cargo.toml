@@ -25,6 +25,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "time"] }
 rmcp = { version = "3.5", features = ["server", "transport-io"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
