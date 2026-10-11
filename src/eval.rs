@@ -123,6 +123,19 @@ impl Tally {
     }
 }
 
+/// A UUID-shaped id derived from a suite key.
+fn stable_id(key: &str) -> String {
+    let hex = crate::citations::digest(key);
+    format!(
+        "{}-{}-4{}-8{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[13..16],
+        &hex[17..20],
+        &hex[20..32]
+    )
+}
+
 fn round(value: f64) -> f64 {
     (value * 1000.0).round() / 1000.0
 }
@@ -146,14 +159,21 @@ pub fn run(
     let store = MemoryStore::open(":memory:")?;
     let mut key_of = HashMap::new();
     for memory in &suite.memories {
-        let id = store.insert_memory(NewMemory {
-            layer: memory.layer.clone(),
-            content: memory.content.clone(),
-            claim_type: memory.claim_type,
-            verification_state: memory.verification_state,
-            source: "eval".into(),
-            ..Default::default()
-        })?;
+        // Ids and timestamps derive from the suite, so tie-breaks (by id) and therefore every
+        // metric are identical from run to run.
+        let id = stable_id(&memory.key);
+        store.insert_memory_as(
+            NewMemory {
+                layer: memory.layer.clone(),
+                content: memory.content.clone(),
+                claim_type: memory.claim_type,
+                verification_state: memory.verification_state,
+                source: "eval".into(),
+                ..Default::default()
+            },
+            &id,
+            Some("2026-01-01T00:00:00Z"),
+        )?;
         key_of.insert(id, memory.key.clone());
     }
     let memories = store.list_memories(None, false)?;

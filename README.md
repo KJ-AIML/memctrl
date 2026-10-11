@@ -126,7 +126,7 @@ Built-in suite (30 memories, 48 queries), k=5:
 | | lexical (2.1) | legacy keyword scorer (2.0) |
 | --- | --- | --- |
 | hit@k on answerable queries | 0.927 | 0.756 |
-| MRR | 0.915 | 0.756 |
+| MRR | 0.915 | 0.728 |
 | unanswerable queries correctly empty | 0.857 | 0.429 |
 | Thai, Chinese, Japanese, Korean | 10 / 10 | 2 / 10 |
 | median latency | 0.13 ms | 2.8 ms |
