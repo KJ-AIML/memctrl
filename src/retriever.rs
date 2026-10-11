@@ -270,22 +270,11 @@ fn fingerprint(ids: &[&str]) -> String {
     format!("{hash:016x}")
 }
 
-/// Runs `operation` under an immediate transaction (when none is open) plus a savepoint, so no
+/// Runs `operation` under the writer lock (`AtomicWrite` begins IMMEDIATE at top level), so no
 /// other connection can change the snapshot between reading and publishing.
 fn under_writer_lock<T>(store: &MemoryStore, operation: impl FnOnce() -> Result<T>) -> Result<T> {
-    let transaction = if store.conn.is_autocommit() {
-        Some(rusqlite::Transaction::new_unchecked(
-            &store.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?)
-    } else {
-        None
-    };
     let guard = AtomicWrite::new(&store.conn)?;
     let result = operation()?;
     guard.commit()?;
-    if let Some(transaction) = transaction {
-        transaction.commit()?;
-    }
     Ok(result)
 }

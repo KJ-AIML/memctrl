@@ -11,10 +11,10 @@ fn patterns() -> &'static Vec<(Regex, &'static str)> {
         (r"(?i)\bgh[pousr]_[a-z0-9]{36,}\b","GITHUB_TOKEN"),
         (r"(?i)\bgithub_pat_[a-z0-9_]{20,}\b","GITHUB_TOKEN"),
         (r"(?i)\bAKIA[0-9A-Z]{16}\b","AWS_KEY"),
-        (r#"(?i)\b(api[_\-\s]?key["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+))"#,"API_KEY"),
-        (r#"(?i)\b(?:bearer\s+[^\s,;}]+|(?:auth|access|refresh)[_-]?token["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+))"#,"TOKEN"),
-        (r#"(?i)\b(?:password|passwd|passphrase)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"#,"PASSWORD"),
-        (r#"(?i)\b(?:secret|client[_-]?secret)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;}]+)"#,"SECRET"),
+        (r#"(?i)\b(api[_\-\s]?key["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+))"#,"API_KEY"),
+        (r#"(?i)\b(?:bearer\s+\S+|(?:auth|access|refresh)[_-]?token["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+))"#,"TOKEN"),
+        (r#"(?i)\b(?:password|passwd|passphrase)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+)"#,"PASSWORD"),
+        (r#"(?i)\b(?:secret|client[_-]?secret)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+)"#,"SECRET"),
         (r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@","CREDENTIAL"),
         (r"\b[A-Za-z0-9/+=]{40,}\b","TOKEN"),
         (r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}\b","EMAIL"),
@@ -92,12 +92,21 @@ fn sensitive_label(key: &str) -> Option<&'static str> {
 }
 pub fn sanitize_text(input: &str) -> String {
     // Parsing first prevents the textual matcher from leaving JSON secret values behind.
+    // A JSON document inside text is user content, so its numbers are redacted too.
     match serde_json::from_str::<Value>(input) {
-        Ok(value) if value.is_object() || value.is_array() => sanitize_value(&value).to_string(),
+        Ok(value) if value.is_object() || value.is_array() => {
+            sanitize_tree(&value, true).to_string()
+        }
         _ => redact_raw(input),
     }
 }
+/// Sanitizes structured values. Numeric fields are kept: in structured output and metadata
+/// they are schema values (timestamps, counts), while numbers inside text documents are
+/// handled as content by `sanitize_text`.
 pub fn sanitize_value(input: &Value) -> Value {
+    sanitize_tree(input, false)
+}
+fn sanitize_tree(input: &Value, content: bool) -> Value {
     match input {
         Value::Object(map) => Value::Object(
             map.iter()
@@ -105,7 +114,7 @@ pub fn sanitize_value(input: &Value) -> Value {
                     let safe = match key.as_str() {
                         "source_revision" | "commitSha" | "commit_sha" => match value {
                             Value::String(s) => Value::String(sanitize_revision(s)),
-                            _ => sanitize_value(value),
+                            _ => sanitize_tree(value, content),
                         },
                         "source_revisions" => match value {
                             Value::Array(values) => Value::Array(
@@ -113,23 +122,34 @@ pub fn sanitize_value(input: &Value) -> Value {
                                     .iter()
                                     .map(|v| match v {
                                         Value::String(s) => Value::String(sanitize_revision(s)),
-                                        _ => sanitize_value(v),
+                                        _ => sanitize_tree(v, content),
                                     })
                                     .collect(),
                             ),
-                            _ => sanitize_value(value),
+                            _ => sanitize_tree(value, content),
                         },
                         _ => match sensitive_label(key) {
                             Some(label) => Value::String(format!("[REDACTED_{label}]")),
-                            None => sanitize_value(value),
+                            None => sanitize_tree(value, content),
                         },
                     };
                     (redact_raw(key), safe)
                 })
                 .collect(),
         ),
-        Value::Array(items) => Value::Array(items.iter().map(sanitize_value).collect()),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|v| sanitize_tree(v, content)).collect())
+        }
         Value::String(text) => Value::String(sanitize_text(text)),
+        Value::Number(number) if content => {
+            let text = number.to_string();
+            let safe = redact_raw(&text);
+            if safe == text {
+                input.clone()
+            } else {
+                Value::String(safe)
+            }
+        }
         other => other.clone(),
     }
 }
@@ -142,7 +162,7 @@ pub fn sanitize_revision(input: &str) -> String {
 }
 pub fn has_secrets(input: &str) -> bool {
     match serde_json::from_str::<Value>(input) {
-        Ok(value) if value.is_object() || value.is_array() => sanitize_value(&value) != value,
+        Ok(value) if value.is_object() || value.is_array() => sanitize_tree(&value, true) != value,
         _ => redact_raw(input) != input,
     }
 }

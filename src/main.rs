@@ -413,10 +413,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     m.expires_at = rules.expiry(&m.layer);
                     m.validate()?;
                 }
-                let ids = memories
-                    .into_iter()
-                    .map(|m| store.insert_memory(m))
-                    .collect::<Result<Vec<_>>>()?;
+                let ids = store.insert_memories(memories)?;
                 json!({"memory_ids":ids,"status":"stored"})
             } else {
                 json!({"id":store.insert_memory(memory)?,"status":"stored"})
@@ -526,17 +523,9 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         Command::Clear { layer, yes } => {
             validate_layer(layer.as_deref())?;
             ensure!(*yes, "clear requires --yes");
-            let count = if layer.is_some() {
-                let memories = store.list_memories(layer.as_deref(), true)?;
-                let mut count = 0;
-                for m in memories {
-                    if store.delete_memory(&m.id)? {
-                        count += 1;
-                    }
-                }
-                count
-            } else {
-                store.clear()?
+            let count = match layer {
+                Some(layer) => store.clear_layer(layer)?,
+                None => store.clear()?,
             };
             json!({"deleted":count})
         }

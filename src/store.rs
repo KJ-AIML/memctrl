@@ -14,17 +14,26 @@ use uuid::Uuid;
 pub struct MemoryStore {
     pub conn: Connection,
 }
-// Savepoints compose with a caller's transaction; Drop guarantees rollback on errors/panics.
+// At top level this is `BEGIN IMMEDIATE`: the write lock is taken before any read, so a commit
+// from another connection can't invalidate the snapshot mid-operation (SQLITE_BUSY_SNAPSHOT,
+// which busy_timeout does not retry). Inside a caller's transaction it is a nested savepoint.
+// Drop guarantees rollback on errors/panics.
 pub(crate) struct AtomicWrite<'a> {
     conn: &'a Connection,
-    name: String,
+    name: Option<String>,
     active: bool,
 }
 impl<'a> AtomicWrite<'a> {
     pub(crate) fn new(conn: &'a Connection) -> Result<Self> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
-        let name = format!("memctrl_{}", NEXT.fetch_add(1, Ordering::Relaxed));
-        conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+        let name = if conn.is_autocommit() {
+            conn.execute_batch("BEGIN IMMEDIATE")?;
+            None
+        } else {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let name = format!("memctrl_{}", NEXT.fetch_add(1, Ordering::Relaxed));
+            conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+            Some(name)
+        };
         Ok(Self {
             conn,
             name,
@@ -32,7 +41,10 @@ impl<'a> AtomicWrite<'a> {
         })
     }
     pub(crate) fn commit(mut self) -> Result<()> {
-        self.conn.execute_batch(&format!("RELEASE {}", self.name))?;
+        match &self.name {
+            Some(name) => self.conn.execute_batch(&format!("RELEASE {name}"))?,
+            None => self.conn.execute_batch("COMMIT")?,
+        }
         self.active = false;
         Ok(())
     }
@@ -40,9 +52,12 @@ impl<'a> AtomicWrite<'a> {
 impl Drop for AtomicWrite<'_> {
     fn drop(&mut self) {
         if self.active {
-            let _ = self
-                .conn
-                .execute_batch(&format!("ROLLBACK TO {}; RELEASE {}", self.name, self.name));
+            let _ = match &self.name {
+                Some(name) => self
+                    .conn
+                    .execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}")),
+                None => self.conn.execute_batch("ROLLBACK"),
+            };
         }
     }
 }
@@ -210,6 +225,28 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
             bail!("memory does not exist")
         }
         Ok(())
+    }
+    /// Inserts every memory or none (e.g. a batch extracted by `add --llm`).
+    pub fn insert_memories(&self, memories: Vec<NewMemory>) -> Result<Vec<String>> {
+        self.atomic(|| {
+            memories
+                .into_iter()
+                .map(|m| self.insert_memory(m))
+                .collect()
+        })
+    }
+    /// Deletes every memory in `layer`, with its relations and evidence, or none.
+    pub fn clear_layer(&self, layer: &str) -> Result<usize> {
+        validate_identifier(layer, "layer")?;
+        self.atomic(|| {
+            let mut count = 0;
+            for memory in self.list_memories(Some(layer), true)? {
+                if self.delete_memory(&memory.id)? {
+                    count += 1;
+                }
+            }
+            Ok(count)
+        })
     }
     pub fn delete_memory(&self, id: &str) -> Result<bool> {
         self.atomic(|| {
