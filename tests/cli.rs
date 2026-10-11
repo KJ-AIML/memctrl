@@ -135,7 +135,7 @@ fn invalid_input_is_nonzero_and_sanitized() {
     success(&dir, &["init", "--force"]);
     let out = invoke(&dir, &["--version"]);
     assert!(out.status.success());
-    assert!(String::from_utf8_lossy(&out.stdout).contains("2.0.0"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains(env!("CARGO_PKG_VERSION")));
     let help = invoke(&dir, &["--help"]);
     assert!(help.status.success());
     let text = String::from_utf8_lossy(&help.stdout);

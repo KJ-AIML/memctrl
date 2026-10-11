@@ -1,6 +1,6 @@
 # MemCtrl 2.1 implementation plan
 
-Status: implemented on branch `feat/memory-2.1` (see "Delivery" at the end).
+Status: implemented on branch `feat/memory-2.1` (see "Delivery" at the end). Not merged, tagged or released.
 Source: research brief of 2026-10-12. It covered the market scan, risks of memory for developers, and probes of the 2.0.0 release binary.
 
 ## Goal
@@ -93,3 +93,21 @@ Then make memory reviewable and shareable through git, defend the write path aga
 - guard quarantine
 - the export → import round trip is lossless, and edited entries become candidates
 - eval floors are met
+
+## Delivery
+
+Commits on `feat/memory-2.1`, one per phase, each passing `make ci`:
+
+| Phase | Commit | Result |
+| --- | --- | --- |
+| 1 | `feat(context)` | `context`, `install --hook`, fixed skill paths, `memctrl_context` |
+| 2 | `feat(search)` | FTS5 BM25 + trigrams, aliases, `why`; about 10 ms at 3,000 memories (from about 120 ms) |
+| 3 | `feat(citations)` | `--cite`, `cite`, `stale`, `refresh`, freshness everywhere memories are used, `memctrl_stale` |
+| 4 | `feat(guard,mirror)` | write guard on all write paths; `export` / `import`, byte-identical round trip |
+| 5 | `feat(eval)` | `memctrl eval`; hit@5 0.927 vs 0.756 (2.0), negatives 0.857 vs 0.429, CJK and Thai 10/10 vs 2/10 |
+| 6 | `docs(release)` | README, MIGRATION, release notes, version 2.1.0 |
+
+Deviations from the plan:
+- Freshness is not part of ranking; it only labels results. This keeps cache identity independent of the working tree.
+- Hand-written bullets in an export import as candidates, filed under the section heading they sit beneath. This came out of designing import and makes the file a review channel for new memories.
+- Citation hashes are a 128-bit SHA-256 prefix, because full 256-bit hex is redacted by output sanitizing.
