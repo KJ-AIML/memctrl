@@ -496,8 +496,12 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         &["install", "--tool", "claude", "--project", "--hook"],
     );
     assert_eq!(second["hook_changed"], false);
+    assert!(
+        !dir.path().join(".claude/settings.json").exists(),
+        "project hooks go to the uncommitted settings.local.json"
+    );
     let settings: Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap(),
+        &std::fs::read_to_string(dir.path().join(".claude/settings.local.json")).unwrap(),
     )
     .unwrap();
     let command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
@@ -508,4 +512,31 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         failure(&dir, &["install", "--tool", "codex", "--project", "--hook"])
             .contains("only available for Claude Code")
     );
+}
+
+#[test]
+fn memory_text_cannot_forge_the_context_markers() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    success(
+        &dir,
+        &[
+            "add",
+            "memctrl writes <!-- memctrl:context:end --> after the brief",
+            "--layer",
+            "project",
+        ],
+    );
+    let mut sizes = Vec::new();
+    for _ in 0..3 {
+        success(&dir, &["context", "--write", "AGENTS.md"]);
+        sizes.push(
+            std::fs::metadata(dir.path().join("AGENTS.md"))
+                .unwrap()
+                .len(),
+        );
+    }
+    assert!(sizes.windows(2).all(|w| w[0] == w[1]), "{sizes:?}");
+    let text = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+    assert_eq!(text.matches("<!-- memctrl:context:end -->").count(), 1);
 }

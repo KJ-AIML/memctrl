@@ -285,3 +285,34 @@ fn indexes_self_heal_after_writes_by_a_sqlite_without_fts5() {
     let mut store = MemoryStore::open(&path).unwrap();
     assert!(top(&mut store, "fts5 support").is_none());
 }
+
+#[test]
+fn expired_memories_never_crowd_out_valid_ones() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    let past = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339();
+    for i in 0..600 {
+        store
+            .insert_memory(NewMemory {
+                layer: "session".into(),
+                content: format!("deploy rollback note {i}"),
+                expires_at: Some(past.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    // Legacy naive timestamps take the same path.
+    store
+        .conn
+        .execute(
+            "INSERT INTO memories(id,layer,content,source,expires_at) VALUES('naive-1','session','deploy rollback naive','py','2001-01-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+    let valid = add(
+        &store,
+        "project",
+        "Deploy rollback uses the previous image tag",
+    );
+    let result = retriever::retrieve(&mut store, "deploy rollback", None, 5).unwrap();
+    assert_eq!(result.memory_ids, vec![valid], "{:?}", result.trace);
+}

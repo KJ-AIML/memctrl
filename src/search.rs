@@ -207,8 +207,15 @@ fn escape_like(text: &str) -> String {
         .replace('_', "\\_")
 }
 
-const ELIGIBLE: &str =
-    "m.lifecycle_state='accepted' AND m.verification_state<>'refuted' AND (?2 IS NULL OR m.layer=?2)";
+/// Eligibility in SQL, applied before any limit so expired or not-yet-valid memories can't
+/// crowd valid ones out of the shortlist. `julianday` reads RFC 3339 and legacy naive
+/// timestamps alike and yields NULL (ineligible) for anything unparseable, matching
+/// `Memory::eligible`, which still has the final say.
+const ELIGIBLE: &str = "m.lifecycle_state='accepted' AND m.verification_state<>'refuted' \
+     AND (?2 IS NULL OR m.layer=?2) \
+     AND (m.expires_at IS NULL OR julianday(m.expires_at) >= julianday('now')) \
+     AND (m.valid_from IS NULL OR julianday(m.valid_from) <= julianday('now')) \
+     AND (m.valid_until IS NULL OR julianday(m.valid_until) > julianday('now'))";
 
 /// BM25 hits for one FTS5 expression, as (rowid, score) with larger scores better.
 fn fts_hits(

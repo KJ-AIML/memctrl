@@ -41,7 +41,7 @@ Agents skip optional lookups, so memory has to arrive without being asked for. `
 
 | Host | How it loads |
 | --- | --- |
-| Claude Code | `memctrl install --tool claude --hook` adds a SessionStart hook (`--project` for this repo, otherwise your user settings). It also runs after `/clear`, resume and compaction. |
+| Claude Code | `memctrl install --tool claude --hook` adds a SessionStart hook. With `--project` it goes in this repo's `.claude/settings.local.json`, which is personal and not committed; otherwise it goes in your user settings. It also runs after `/clear`, resume and compaction. |
 | Codex, Cursor, others | `memctrl context --write AGENTS.md` refreshes a marked block in AGENTS.md. |
 | Any MCP host | the `memctrl_context` tool |
 
@@ -80,13 +80,15 @@ memctrl refresh <id>                            # after re-checking, re-anchor (
 
 Statuses are `fresh`, `moved` (the same lines now start elsewhere), `changed`, `missing`, `unresolved` (outside the project root) and `unchecked` (not a regular file, or over 8 MB). Paths are relative to the project root. The root is `MEMCTRL_PROJECT_ROOT`, else `[citations] root` in `.memoryrc`, else the nearest directory containing `.git`.
 
+Secrets files (`.env`, keys, `.npmrc`, files under `.ssh`, and so on) can't be cited: citation hashes travel in exports, and a short secret can be guessed back from its hash.
+
 ## Safe writes and review
 
 Memory is replayed into every future session, so a stored instruction is a persistent prompt injection. A new memory becomes a **candidate** instead of active knowledge when it contains:
-- hidden Unicode: bidi controls, tag characters, zero-width characters
-- instruction-like text: "ignore previous instructions", fake `<system>` tags, `curl … | sh`, "send the API keys to …"
+- hidden Unicode: any invisible character, bidi controls, tag characters. Joiners and selectors inside emoji or non-Latin text are allowed.
+- instruction-like text: "ignore previous instructions", fake `<system>` tags, `curl … | sh`, "send the API keys to …". Matching ignores invisible characters and common lookalike letters.
 
-`add` then reports `"status": "quarantined"` with the reasons. Review with `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>`.
+`add` then reports `"status": "quarantined"` with the reasons. This is a heuristic filter: it never blocks, and determined phrasing can still get past it. Reviewing candidates is the safety net. Review with `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>`.
 
 ```toml
 [guard]
@@ -102,7 +104,14 @@ memctrl export --check    # in CI: fail when the file is out of date
 memctrl import .memctrl/memory.md
 ```
 
-The export is plain Markdown: readable entries plus metadata comments (identity, states, citations, a content hash). Import never overwrites local memories. Unchanged entries keep their identity. Edited entries come back as candidates, and so do new `- ` bullets a teammate writes in a PR, filed under the section heading they sit beneath. `.memctrl/.gitignore` keeps the database out of git.
+The export is plain Markdown: readable entries plus metadata comments (identity, states, citations, a content hash). Import never raises trust:
+- Local memories are never overwritten. Unchanged entries keep their identity.
+- Edited entries come back as candidates, and so do new `- ` bullets a teammate writes in a PR, filed under the section heading they sit beneath.
+- A memory you `forget` stays forgotten.
+- Text you already hold in any state, refuted included, is not added again.
+- Verification arrives as `unverified` unless you pass `--trust-verification`, since anyone who can edit the file can write metadata.
+
+`.memctrl/.gitignore` keeps the database out of git.
 
 ## Measuring retrieval
 

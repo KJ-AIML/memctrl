@@ -1,7 +1,11 @@
 //! Markdown mirror of shared memory: exported for review in pull requests, imported on other
 //! machines. The text stays readable; a metadata comment after each entry carries identity,
 //! states, citations and a content hash, so hand edits are detected rather than trusted.
-use crate::citations::{digest, parse_spec, Anchor};
+//!
+//! Import never raises trust: verification is capped at `unverified` unless the caller opts in,
+//! forgotten memories stay forgotten, text the local store already holds (in any state,
+//! refuted included) is never added again, and everything passes the write guard.
+use crate::citations::{parse_spec, text_digest, Anchor};
 use crate::guard::{self, Policy};
 use crate::model::{ClaimType, LifecycleState, Memory, NewMemory, VerificationState};
 use crate::sanitize::{sanitize_text, validate_identifier};
@@ -17,6 +21,8 @@ const HEADER: &str = "<!-- memctrl export v1. Review changes like code. Edit ent
 (edited entries return as candidates on import) and add new `- ` bullets for teammates to review; \
 keep the memctrl comments intact. -->";
 const HEADER_PREFIX: &str = "<!-- memctrl export v1";
+/// Metadata comments sit at exactly two spaces of indentation.
+const META_LINE: &str = "  <!-- memctrl {";
 const META_PREFIX: &str = "<!-- memctrl {";
 const META_SUFFIX: &str = "} -->";
 const GITIGNORE: &str =
@@ -33,6 +39,8 @@ struct CiteMeta {
     span_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     head_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    head_offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -84,8 +92,10 @@ fn claim_for_heading(heading: &str) -> ClaimType {
     }
 }
 
+/// Content lines that could be mistaken for markup (a backslash, or an HTML comment at any
+/// indentation) get a leading backslash, which `unescape` removes.
 fn escape(line: &str) -> String {
-    if line.starts_with('\\') || line.starts_with("<!--") {
+    if line.starts_with('\\') || line.trim_start().starts_with("<!--") {
         format!("\\{line}")
     } else {
         line.to_string()
@@ -94,6 +104,14 @@ fn escape(line: &str) -> String {
 
 fn unescape(line: &str) -> String {
     line.strip_prefix('\\').unwrap_or(line).to_string()
+}
+
+/// Strips a byte-order mark and converts CRLF line endings, as editors and `core.autocrlf`
+/// checkouts produce them.
+pub fn normalize(text: &str) -> String {
+    text.strip_prefix('\u{feff}')
+        .unwrap_or(text)
+        .replace("\r\n", "\n")
 }
 
 fn lines_label(start: Option<u32>, end: Option<u32>) -> Option<String> {
@@ -151,6 +169,7 @@ pub fn render(store: &MemoryStore, layers: &[String]) -> Result<(String, usize)>
                 file_hash: c.file_hash,
                 span_hash: c.span_hash,
                 head_hash: c.head_hash,
+                head_offset: c.head_offset,
             })
             .collect();
         let meta = Meta {
@@ -167,7 +186,7 @@ pub fn render(store: &MemoryStore, layers: &[String]) -> Result<(String, usize)>
             valid_from: memory.valid_from.clone(),
             valid_until: memory.valid_until.clone(),
             cite,
-            sha: digest(&canonical(content)),
+            sha: text_digest(content),
         };
         out.push_str(&format!(
             "  <!-- memctrl {} -->\n",
@@ -175,16 +194,6 @@ pub fn render(store: &MemoryStore, layers: &[String]) -> Result<(String, usize)>
         ));
     }
     Ok((out, memories.len()))
-}
-
-/// The text form hashed for edit detection: trailing whitespace per line removed.
-fn canonical(content: &str) -> String {
-    content
-        .trim_end()
-        .split('\n')
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Ensures a `.gitignore` next to an export inside `.memctrl/`, so committing the folder never
@@ -228,9 +237,9 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
     };
     for (index, line) in text.lines().enumerate() {
         let number = index + 1;
-        let trimmed = line.trim();
         if let Some(entry) = open.as_mut() {
-            if trimmed.starts_with(META_PREFIX) && trimmed.ends_with(META_SUFFIX) {
+            if line.starts_with(META_LINE) && line.trim_end().ends_with(META_SUFFIX) {
+                let trimmed = line.trim();
                 let json = &trimmed["<!-- memctrl ".len()..trimmed.len() - " -->".len()];
                 let meta: Meta = serde_json::from_str(json)
                     .with_context(|| format!("line {number}: invalid memctrl metadata"))?;
@@ -259,7 +268,7 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
             });
         } else if let Some(title) = line.strip_prefix("## ") {
             heading = title.trim().to_string();
-        } else if trimmed.starts_with(META_PREFIX) {
+        } else if line.trim_start().starts_with(META_PREFIX) {
             bail!("line {number}: memctrl metadata without an entry above it");
         }
     }
@@ -269,21 +278,42 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
     Ok(entries)
 }
 
+/// Citation digests are always 32 lowercase hex digits; anything else could never verify.
+fn digest_like(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
 fn anchor_from(cite: &CiteMeta) -> Result<Anchor> {
     let spec = match &cite.lines {
         Some(lines) => format!("{}:{lines}", cite.path),
         None => cite.path.clone(),
     };
     let parsed = parse_spec(&spec)?;
-    let hex = |h: &str| h.len() <= 64 && !h.is_empty() && h.chars().all(|c| c.is_ascii_hexdigit());
-    ensure!(hex(&cite.file_hash), "citation file_hash must be hex");
+    ensure!(
+        digest_like(&cite.file_hash),
+        "citation file_hash must be 32 lowercase hex digits"
+    );
     for hash in [&cite.span_hash, &cite.head_hash].into_iter().flatten() {
-        ensure!(hex(hash), "citation hashes must be hex");
+        ensure!(
+            digest_like(hash),
+            "citation hashes must be 32 lowercase hex digits"
+        );
     }
     ensure!(
         parsed.line_start.is_some() == cite.span_hash.is_some(),
         "line-range citations need a span_hash"
     );
+    if let (Some(offset), Some(start), Some(end)) =
+        (cite.head_offset, parsed.line_start, parsed.line_end)
+    {
+        ensure!(
+            offset <= end - start,
+            "citation head_offset is outside its span"
+        );
+    }
     Ok(Anchor {
         path: parsed.path,
         line_start: parsed.line_start,
@@ -291,7 +321,34 @@ fn anchor_from(cite: &CiteMeta) -> Result<Anchor> {
         file_hash: cite.file_hash.clone(),
         span_hash: cite.span_hash.clone(),
         head_hash: cite.head_hash.clone(),
+        head_offset: cite.head_offset,
     })
+}
+
+/// How an import treats the file.
+#[derive(Debug, Clone)]
+pub struct ImportOptions {
+    /// Layer for hand-written entries.
+    pub default_layer: String,
+    pub dry_run: bool,
+    /// Keep `supported` verification from the file. Off by default: anyone who can edit the
+    /// file can write metadata, so imported claims arrive unverified.
+    pub trust_verification: bool,
+}
+impl Default for ImportOptions {
+    fn default() -> Self {
+        Self {
+            default_layer: "project".into(),
+            dry_run: false,
+            trust_verification: false,
+        }
+    }
+}
+
+enum Skip {
+    Forgotten,
+    DuplicateId,
+    DuplicateContent,
 }
 
 enum Action {
@@ -307,30 +364,38 @@ enum Action {
     },
     Unchanged,
     KeptLocal,
+    Skipped(Skip),
 }
 
-/// Imports an export. Atomic, and never overwrites local state:
-/// - an unknown id with untouched text is inserted with its original identity and states;
-/// - a known id is left alone (reported as unchanged or kept_local);
-/// - edited text and hand-written bullets become new candidates for review;
-/// - every entry passes the write guard, and text already stored anywhere is skipped.
+/// Imports an export atomically; see the module docs for the trust rules.
 pub fn import(
     store: &MemoryStore,
     text: &str,
-    default_layer: &str,
+    options: &ImportOptions,
     policy: &Policy,
-    dry_run: bool,
 ) -> Result<Value> {
-    validate_identifier(default_layer, "layer")?;
-    let entries = parse(text)?;
+    validate_identifier(&options.default_layer, "layer")?;
+    let text = normalize(text);
+    let entries = parse(&text)?;
+    // Plan under the writer lock, so nothing changes between checking and writing.
+    let lock = if options.dry_run {
+        None
+    } else {
+        Some(AtomicWrite::new(&store.conn)?)
+    };
     let mut known: HashSet<String> = store
         .list_memories(None, true)?
         .into_iter()
         .map(|m| m.content)
         .collect();
+    let (forgotten_ids, forgotten_text) = store.tombstones()?;
+    let mut seen_ids = HashSet::new();
+    let mut capped = 0;
     let mut plan = Vec::new();
     for entry in &entries {
         let content = sanitize_text(&entry.content);
+        let digest = text_digest(&content);
+        let blocked = known.contains(&content) || forgotten_text.contains(&digest);
         let context = |e: anyhow::Error| e.context(format!("entry at line {}", entry.line));
         let action = match &entry.meta {
             Some(meta) => {
@@ -345,8 +410,9 @@ pub fn import(
                     .map(anchor_from)
                     .collect::<Result<Vec<_>>>()
                     .map_err(context)?;
-                let edited = digest(&canonical(&entry.content)) != meta.sha;
-                let base = NewMemory {
+                let edited = text_digest(&entry.content) != meta.sha;
+                let mut verification = meta.verification_state;
+                let base = |verification| NewMemory {
                     layer: meta.layer.clone(),
                     content: content.clone(),
                     source: meta.source.clone(),
@@ -358,38 +424,47 @@ pub fn import(
                     valid_until: meta.valid_until.clone(),
                     claim_type: meta.claim_type,
                     lifecycle_state: LifecycleState::Accepted,
-                    verification_state: meta.verification_state,
+                    verification_state: verification,
                 };
-                let local = store.get_memory(&meta.id, true)?;
-                if edited {
-                    if known.contains(&content) {
+                if !seen_ids.insert(meta.id.clone()) {
+                    Action::Skipped(Skip::DuplicateId)
+                } else if forgotten_ids.contains(&meta.id) || forgotten_text.contains(&digest) {
+                    Action::Skipped(Skip::Forgotten)
+                } else if edited {
+                    if blocked {
                         Action::Unchanged
                     } else {
-                        let mut memory = base;
+                        let mut memory = base(VerificationState::Unverified);
                         memory.lifecycle_state = LifecycleState::Candidate;
-                        memory.verification_state = VerificationState::Unverified;
                         memory.tags.push("import:edited".into());
                         Action::Candidate { memory, anchors }
                     }
-                } else if let Some(local) = local {
+                } else if let Some(local) = store.get_memory(&meta.id, true)? {
                     if local.content == content {
                         Action::Unchanged
                     } else {
                         Action::KeptLocal
                     }
+                } else if blocked {
+                    // The same text is already stored under another id, possibly refuted.
+                    Action::Skipped(Skip::DuplicateContent)
                 } else {
+                    if verification == VerificationState::Supported && !options.trust_verification {
+                        verification = VerificationState::Unverified;
+                        capped += 1;
+                    }
                     Action::Keep {
                         id: meta.id.clone(),
                         created_at: meta.created_at.clone(),
-                        memory: base,
+                        memory: base(verification),
                         anchors,
                     }
                 }
             }
-            None if known.contains(&content) => Action::Unchanged,
+            None if blocked => Action::Unchanged,
             None => Action::Candidate {
                 memory: NewMemory {
-                    layer: default_layer.to_string(),
+                    layer: options.default_layer.clone(),
                     content: content.clone(),
                     source: "import".into(),
                     claim_type: claim_for_heading(&entry.heading),
@@ -406,17 +481,16 @@ pub fn import(
         }
         plan.push(action);
     }
-    let guard_write = if dry_run {
-        None
-    } else {
-        Some(AtomicWrite::new(&store.conn)?)
-    };
     let (mut imported, mut candidates, mut quarantined) = (Vec::new(), Vec::new(), 0);
     let (mut unchanged, mut kept_local) = (0, 0);
+    let (mut forgotten, mut duplicate_ids, mut duplicate_content) = (0, 0, 0);
     for action in plan {
         match action {
             Action::Unchanged => unchanged += 1,
             Action::KeptLocal => kept_local += 1,
+            Action::Skipped(Skip::Forgotten) => forgotten += 1,
+            Action::Skipped(Skip::DuplicateId) => duplicate_ids += 1,
+            Action::Skipped(Skip::DuplicateContent) => duplicate_content += 1,
             Action::Keep {
                 id,
                 created_at,
@@ -428,7 +502,7 @@ pub fn import(
                     guard::quarantine(&mut memory, &verdict);
                     quarantined += 1;
                 }
-                if !dry_run {
+                if !options.dry_run {
                     store.insert_memory_as(memory.clone(), &id, Some(&created_at))?;
                     for anchor in &anchors {
                         store.add_citation(&id, anchor, None)?;
@@ -449,7 +523,7 @@ pub fn import(
                     guard::quarantine(&mut memory, &verdict);
                     quarantined += 1;
                 }
-                let id = if dry_run {
+                let id = if options.dry_run {
                     "(dry run)".to_string()
                 } else {
                     store.insert_memory_with_citations(memory, &anchors, None)?
@@ -458,8 +532,8 @@ pub fn import(
             }
         }
     }
-    if let Some(guard_write) = guard_write {
-        guard_write.commit()?;
+    if let Some(lock) = lock {
+        lock.commit()?;
     }
     Ok(json!({
         "entries": entries.len(),
@@ -467,8 +541,10 @@ pub fn import(
         "candidates": candidates,
         "unchanged": unchanged,
         "kept_local": kept_local,
+        "skipped": {"forgotten": forgotten, "duplicate_id": duplicate_ids, "duplicate_content": duplicate_content},
+        "verification_capped": capped,
         "quarantined": quarantined,
-        "dry_run": dry_run,
+        "dry_run": options.dry_run,
     }))
 }
 
@@ -476,27 +552,32 @@ pub fn import(
 mod tests {
     use super::*;
 
+    fn render_entry(content: &str) -> String {
+        let mut text = format!("{HEADER}\n");
+        for (i, line) in content.split('\n').enumerate() {
+            let line = escape(line);
+            if i == 0 {
+                text.push_str(&format!("- {line}\n"));
+            } else if line.is_empty() {
+                text.push('\n');
+            } else {
+                text.push_str(&format!("  {line}\n"));
+            }
+        }
+        text
+    }
+
     #[test]
     fn content_lines_that_look_like_markup_survive_a_round_trip() {
         for content in [
             "plain",
             "<!-- memctrl {\"id\":\"x\"} -->",
+            "first\n   <!-- memctrl {\"id\":\"x\"} -->",
             "\\leading backslash",
             "first\n\nsecond paragraph\n- not a bullet",
             "two\n\n\nblank lines",
         ] {
-            let mut text = format!("{HEADER}\n");
-            for (i, line) in content.split('\n').enumerate() {
-                let line = escape(line);
-                if i == 0 {
-                    text.push_str(&format!("- {line}\n"));
-                } else if line.is_empty() {
-                    text.push('\n');
-                } else {
-                    text.push_str(&format!("  {line}\n"));
-                }
-            }
-            let entries = parse(&text).unwrap();
+            let entries = parse(&render_entry(content)).unwrap();
             assert_eq!(entries.len(), 1, "{content:?}");
             assert_eq!(entries[0].content, content);
         }
@@ -513,5 +594,11 @@ mod tests {
         assert_eq!(hand.len(), 2);
         assert_eq!(hand[0].heading, "Decisions");
         assert!(hand.iter().all(|e| e.meta.is_none()));
+    }
+
+    #[test]
+    fn byte_order_marks_and_crlf_are_normalized() {
+        let text = format!("\u{feff}{HEADER}\r\n- hello\r\n");
+        assert_eq!(parse(&normalize(&text)).unwrap()[0].content, "hello");
     }
 }

@@ -59,6 +59,7 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Guarded writes.** Memories with hidden Unicode or instruction-like text are stored as candidates (`status: quarantined`, tags `guard:*`) instead of being accepted. Set `[guard] mode = "off"` to restore 2.0 behavior.
 - **New commands and tools:** `context`, `cite`, `stale`, `refresh`, `export`, `import`, `eval`, `install --hook`, and the MCP tools `memctrl_context` and `memctrl_stale`. `memctrl_add` accepts `claim_type`, `tags` and `cite`.
 - **Writers need FTS5.** The search indexes are kept in sync by triggers, so any program that writes to `memories` needs a SQLite build with FTS5. memctrl 2.x binaries bundle it, and so do most language runtimes. Tools without it, such as macOS's `/usr/bin/sqlite3`, can still read the database, but their writes fail with `no such module: fts5`; nothing is corrupted. To write with such a tool, drop the three `memory_fts_*` triggers first. memctrl notices the missing triggers (or index row counts that no longer match) on its next start, recreates the triggers and re-indexes.
+- **`forget` is remembered.** It records a tombstone (id and content digest) so `import` can't bring the memory back. `clear` resets tombstones along with everything else.
 - **`memctrl init`** also writes `.memctrl/.gitignore`, so the database stays out of git when `.memctrl/memory.md` is committed. `memctrl maintenance` rebuilds the search indexes.
 
 ## Recovery note

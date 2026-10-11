@@ -234,6 +234,11 @@ enum Command {
         layer: String,
         #[arg(long)]
         dry_run: bool,
+        #[arg(
+            long,
+            help = "Keep `supported` verification from the file (by default imported claims arrive unverified)"
+        )]
+        trust_verification: bool,
     },
     /// Retrieve relevant active memories with provenance.
     Query {
@@ -465,6 +470,15 @@ fn selected_memory_ids(
 fn project_root(rules: &Rules) -> Result<PathBuf> {
     citations::project_root(rules.citations_root.as_deref())
 }
+/// Relative output paths must resolve inside the project, so a committed symlink can't redirect
+/// a write. Absolute paths are the caller's explicit choice.
+fn confinement(path: &Path, rules: &Rules) -> Result<Option<PathBuf>> {
+    Ok(if path.is_relative() {
+        Some(project_root(rules)?)
+    } else {
+        None
+    })
+}
 fn require_memory(store: &MemoryStore, id: &str) -> Result<()> {
     validate_identifier(id, "memory_id")?;
     ensure!(store.get_memory(id, true)?.is_some(), "memory not found");
@@ -518,8 +532,11 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             }
             if *hook {
                 let executable = std::env::current_exe()?;
-                let (settings, changed) =
-                    installer::install_hook(&root, &installer::hook_command(&executable))?;
+                let (settings, changed) = installer::install_hook(
+                    &root,
+                    installer::settings_file(*project),
+                    &installer::hook_command(&executable),
+                )?;
                 output["hook"] = json!(settings);
                 output["hook_changed"] = json!(changed);
             }
@@ -553,8 +570,11 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     context::BEGIN_MARKER,
                     context::END_MARKER,
                     &context::marked_block(&brief),
-                );
-                let written = memctrl::fsutil::write_atomic(path, updated.as_bytes())?;
+                )
+                .with_context(|| format!("cannot update {}", path.display()))?;
+                let confine = confinement(path, rules)?;
+                let written =
+                    memctrl::fsutil::write_atomic(path, updated.as_bytes(), confine.as_deref())?;
                 json!({"written":written,"shown":brief.entries.len(),"eligible":brief.eligible,"approx_tokens":brief.approx_tokens})
             } else if *format == ContextFormat::Json {
                 serde_json::to_value(&brief)?
@@ -679,7 +699,10 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 layers.clone()
             };
             let (text, count) = mirror::render(store, &layers)?;
-            let current = std::fs::read_to_string(out).ok();
+            // Compare as text: a CRLF checkout or a BOM is not a content change.
+            let current = std::fs::read_to_string(out)
+                .ok()
+                .map(|t| mirror::normalize(&t));
             let up_to_date = current.as_deref() == Some(text.as_str());
             if *check {
                 ensure!(
@@ -690,7 +713,8 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 json!({"output":out,"memories":count,"up_to_date":true})
             } else {
                 if !up_to_date {
-                    memctrl::fsutil::write_atomic(out, text.as_bytes())?;
+                    let confine = confinement(out, rules)?;
+                    memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
                 }
                 mirror::ensure_gitignore(out)?;
                 json!({"output":out,"memories":count,"changed":!up_to_date})
@@ -700,11 +724,17 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             file,
             layer,
             dry_run,
+            trust_verification,
         } => {
             validate_layer(Some(layer))?;
             let text = std::fs::read_to_string(file)
                 .with_context(|| format!("cannot read {}", file.display()))?;
-            let mut report = mirror::import(store, &text, layer, &rules.guard, *dry_run)?;
+            let options = mirror::ImportOptions {
+                default_layer: layer.clone(),
+                dry_run: *dry_run,
+                trust_verification: *trust_verification,
+            };
+            let mut report = mirror::import(store, &text, &options, &rules.guard)?;
             report["file"] = json!(file);
             report
         }
@@ -815,7 +845,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::Forget { memory_id } => {
             require_memory(store, memory_id)?;
-            ensure!(store.delete_memory(memory_id)?, "memory not found");
+            ensure!(store.forget_memory(memory_id)?, "memory not found");
             json!({"id":memory_id,"status":"deleted"})
         }
         Command::Clear { layer, yes } => {
@@ -970,7 +1000,14 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     dry_run: _,
                     repo,
                 },
-        } => heli::review_filtered(store, workspace, *persist, *completed, repo.as_deref())?,
+        } => heli::review_with_policy(
+            store,
+            workspace,
+            *persist,
+            *completed,
+            repo.as_deref(),
+            &rules.guard,
+        )?,
         Command::Agent { command } => match command {
             AgentCommand::Put { thread_id, state } => {
                 validate_identifier(thread_id, "thread_id")?;

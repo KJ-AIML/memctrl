@@ -194,6 +194,10 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);")?;
         // Rebuild when the indexes are new, when a sync trigger was missing (for example dropped
         // so a SQLite without FTS5 could write), or when row counts show the index drifted.
+        // Databases written by pre-release builds of this branch lack head_offset.
+        let mut statement=self.conn.prepare("PRAGMA table_info(memory_citations)")?;
+        let citation_columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
+        if !citation_columns.contains("head_offset"){self.conn.execute_batch("ALTER TABLE memory_citations ADD COLUMN head_offset INTEGER")?;}
         let healthy:bool=self.conn.query_row("SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_fts','memory_fts_tri'))=2 AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('memory_fts_insert','memory_fts_delete','memory_fts_update'))=3",[],|r|r.get(0))?;
         self.conn.execute_batch(SEARCH_SCHEMA)?;
         let drifted:bool=healthy && self.conn.query_row("SELECT (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_docsize) OR (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_tri_docsize)",[],|r|r.get(0))?;
@@ -362,6 +366,36 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             Ok(count > 0)
         })
     }
+    /// Deletes a memory on purpose and remembers that it was forgotten, so importing an older
+    /// export can't bring it (or the same text under another id) back.
+    pub fn forget_memory(&self, id: &str) -> Result<bool> {
+        self.atomic(|| {
+            let Some(memory) = self.get_memory(id, true)? else {
+                return Ok(false);
+            };
+            self.conn.execute(
+                "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at) VALUES(?,?,?)",
+                params![id, crate::citations::text_digest(&memory.content), now()],
+            )?;
+            self.delete_memory(id)
+        })
+    }
+    /// Ids and content digests of forgotten memories.
+    pub fn tombstones(&self) -> Result<(HashSet<String>, HashSet<String>)> {
+        let mut statement = self
+            .conn
+            .prepare("SELECT id,content_digest FROM memory_tombstones")?;
+        let mut ids = HashSet::new();
+        let mut digests = HashSet::new();
+        for row in
+            statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        {
+            let (id, digest) = row?;
+            ids.insert(id);
+            digests.insert(digest);
+        }
+        Ok((ids, digests))
+    }
     pub fn update_layer(&self, id: &str, layer: &str) -> Result<bool> {
         validate_identifier(layer, "layer")?;
         Ok(self.conn.execute(
@@ -512,8 +546,8 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             }
             let id = Uuid::new_v4().to_string();
             self.conn.execute(
-                "INSERT INTO memory_citations(id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,commit_sha,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                params![id, memory_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, commit_sha.map(sanitize_revision), now()],
+                "INSERT INTO memory_citations(id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,head_offset,commit_sha,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                params![id, memory_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, anchor.head_offset, commit_sha.map(sanitize_revision), now()],
             )?;
             Ok((id, true))
         })
@@ -526,13 +560,13 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         commit_sha: Option<&str>,
     ) -> Result<bool> {
         Ok(self.conn.execute(
-            "UPDATE memory_citations SET path=?2,line_start=?3,line_end=?4,file_hash=?5,span_hash=?6,head_hash=?7,commit_sha=COALESCE(?8,commit_sha),refreshed_at=?9 WHERE id=?1",
-            params![citation_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, commit_sha.map(sanitize_revision), now()],
+            "UPDATE memory_citations SET path=?2,line_start=?3,line_end=?4,file_hash=?5,span_hash=?6,head_hash=?7,head_offset=?8,commit_sha=COALESCE(?9,commit_sha),refreshed_at=?10 WHERE id=?1",
+            params![citation_id, anchor.path, anchor.line_start, anchor.line_end, anchor.file_hash, anchor.span_hash, anchor.head_hash, anchor.head_offset, commit_sha.map(sanitize_revision), now()],
         )? > 0)
     }
     pub fn citations(&self, memory_id: &str) -> Result<Vec<crate::citations::Citation>> {
         let mut statement = self.conn.prepare_cached(
-            "SELECT id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,commit_sha,created_at,refreshed_at FROM memory_citations WHERE memory_id=? ORDER BY created_at,id",
+            "SELECT id,memory_id,path,line_start,line_end,file_hash,span_hash,head_hash,head_offset,commit_sha,created_at,refreshed_at FROM memory_citations WHERE memory_id=? ORDER BY created_at,id",
         )?;
         let rows = statement
             .query_map([memory_id], |r| {
@@ -545,11 +579,12 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                     file_hash: r.get(5)?,
                     span_hash: r.get(6)?,
                     head_hash: r.get(7)?,
+                    head_offset: r.get(8)?,
                     commit_sha: r
-                        .get::<_, Option<String>>(8)?
+                        .get::<_, Option<String>>(9)?
                         .map(|v| sanitize_revision(&v)),
-                    created_at: r.get(9)?,
-                    refreshed_at: r.get(10)?,
+                    created_at: r.get(10)?,
+                    refreshed_at: r.get(11)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -796,6 +831,7 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                 "memory_relations",
                 "memory_evidence",
                 "memory_citations",
+                "memory_tombstones",
                 "triggers_log",
                 "provenance",
                 "otel_spans",

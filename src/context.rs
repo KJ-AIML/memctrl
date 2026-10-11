@@ -108,8 +108,14 @@ fn section(memory: &Memory, stale: bool) -> Section {
     }
 }
 
+/// One line of brief text. HTML comment openers are escaped (`<\!--` still renders as `<!--`)
+/// so memory text can never forge the markers that `--write` uses to find its block.
 fn one_line(content: &str) -> String {
-    let flat = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    let flat = content
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace("<!--", "<\\!--");
     if flat.chars().count() <= MAX_ENTRY_CHARS {
         return flat;
     }

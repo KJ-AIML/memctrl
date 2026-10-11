@@ -106,6 +106,8 @@ Commits on `feat/memory-2.1`, one per phase, each passing `make ci`:
 | 4 | `feat(guard,mirror)` | write guard on all write paths; `export` / `import`, byte-identical round trip |
 | 5 | `feat(eval)` | `memctrl eval`; hit@5 0.927 vs 0.756 (2.0), negatives 0.857 vs 0.429, CJK and Thai 10/10 vs 2/10 |
 | 6 | `docs(release)` | README, MIGRATION, release notes, version 2.1.0 |
+| Smoke | `fix(search)` | tested against the real 2.0.0 binary; index self-heals; writers need FTS5 (documented) |
+| Review | `fix(review)` | independent review findings: 1 high, 6 medium, 7 low, all addressed with regression tests |
 
 Deviations from the plan:
 - Freshness is not part of ranking; it only labels results. This keeps cache identity independent of the working tree.

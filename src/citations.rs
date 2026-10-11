@@ -11,6 +11,8 @@ use std::path::{Component, Path, PathBuf};
 /// Files above this size are not hashed; their citations report `unchecked`.
 pub const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_SPAN_LINES: u32 = 2000;
+/// Upper bound on candidate positions verified when looking for a moved span.
+const MAX_MOVE_CANDIDATES: usize = 64;
 
 /// A citation as the user wrote it: `path`, `path:LINE` or `path:START-END`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,8 +31,10 @@ pub struct Anchor {
     pub line_end: Option<u32>,
     pub file_hash: String,
     pub span_hash: Option<String>,
-    /// Hash of the span's first line, used to find the span again after it moves.
+    /// Hash of the span's first non-blank line, used to find the span again after it moves.
     pub head_hash: Option<String>,
+    /// Position of that line within the span (0 = first line).
+    pub head_offset: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,6 +47,7 @@ pub struct Citation {
     pub file_hash: String,
     pub span_hash: Option<String>,
     pub head_hash: Option<String>,
+    pub head_offset: Option<u32>,
     /// Git commit checked out when the citation was taken, if known.
     pub commit_sha: Option<String>,
     pub created_at: String,
@@ -144,6 +149,10 @@ pub fn parse_spec(spec: &str) -> Result<CitationSpec> {
         !has_secrets(&normalized),
         "citation path must not contain credentials"
     );
+    ensure!(
+        !secret_file(&normalized),
+        "refusing to cite {normalized}: it looks like a secrets file, and citation hashes are shared through exports"
+    );
     let as_path = Path::new(&normalized);
     ensure!(
         !as_path.is_absolute()
@@ -162,6 +171,57 @@ pub fn parse_spec(spec: &str) -> Result<CitationSpec> {
         line_start,
         line_end,
     })
+}
+
+/// Files that hold credentials. Their line hashes would be shared through `memctrl export`, and a
+/// short secret can be recovered from an unsalted hash by guessing.
+fn secret_file(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    if lower
+        .split('/')
+        .any(|part| matches!(part, ".ssh" | ".aws" | ".gnupg" | ".docker" | ".kube"))
+    {
+        return true;
+    }
+    let name = lower.rsplit('/').next().unwrap_or("");
+    if [".example", ".sample", ".template", ".dist", ".pub"]
+        .iter()
+        .any(|s| name.ends_with(s))
+    {
+        return false;
+    }
+    name == ".env"
+        || name.starts_with(".env.")
+        || name.ends_with(".env")
+        || [
+            ".pem",
+            ".key",
+            ".p12",
+            ".pfx",
+            ".keystore",
+            ".jks",
+            ".tfstate",
+            ".tfvars",
+        ]
+        .iter()
+        .any(|s| name.ends_with(s))
+        || ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"]
+            .iter()
+            .any(|s| name.starts_with(s))
+        || matches!(
+            name,
+            ".npmrc"
+                | ".pypirc"
+                | ".netrc"
+                | ".git-credentials"
+                | ".htpasswd"
+                | "credentials"
+                | "credentials.json"
+                | "secrets.json"
+                | "secrets.yaml"
+                | "secrets.yml"
+                | "service-account.json"
+        )
 }
 
 /// The project root: `MEMCTRL_PROJECT_ROOT`, else the configured root, else the nearest
@@ -198,6 +258,18 @@ fn normalize(text: &str) -> Vec<String> {
 pub fn digest(text: &str) -> String {
     let hash = Sha256::digest(text.as_bytes());
     hash.iter().take(16).map(|b| format!("{b:02x}")).collect()
+}
+
+/// Digest of memory text for edit detection and tombstones: trailing whitespace per line and
+/// trailing blank lines are ignored, so editors that trim whitespace don't count as edits.
+pub fn text_digest(content: &str) -> String {
+    let canonical = content
+        .trim_end()
+        .split('\n')
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    digest(&canonical)
 }
 
 fn span(lines: &[String], start: u32, end: u32) -> Option<String> {
@@ -259,7 +331,7 @@ pub fn anchor(root: &Path, cwd: &Path, spec: &CitationSpec) -> Result<Anchor> {
         Err(_) => bail!("cited file {relative} cannot be read inside the project root"),
     };
     let lines = normalize(&text);
-    let (span_hash, head_hash) = match (spec.line_start, spec.line_end) {
+    let (span_hash, head_hash, head_offset) = match (spec.line_start, spec.line_end) {
         (Some(start), Some(end)) => {
             let cited = span(&lines, start, end).with_context(|| {
                 format!(
@@ -267,12 +339,16 @@ pub fn anchor(root: &Path, cwd: &Path, spec: &CitationSpec) -> Result<Anchor> {
                     lines.len()
                 )
             })?;
-            (
-                Some(digest(&cited)),
-                Some(digest(&lines[start as usize - 1])),
-            )
+            // Anchor on the first non-blank line: blank lines would match almost anywhere.
+            let head = (start..=end)
+                .map(|n| (n - start, &lines[n as usize - 1]))
+                .find(|(_, line)| !line.trim().is_empty());
+            match head {
+                Some((offset, line)) => (Some(digest(&cited)), Some(digest(line)), Some(offset)),
+                None => (Some(digest(&cited)), None, None),
+            }
         }
-        _ => (None, None),
+        _ => (None, None, None),
     };
     Ok(Anchor {
         path: relative,
@@ -281,6 +357,7 @@ pub fn anchor(root: &Path, cwd: &Path, spec: &CitationSpec) -> Result<Anchor> {
         file_hash: digest(&lines.join("\n")),
         span_hash,
         head_hash,
+        head_offset,
     })
 }
 
@@ -303,16 +380,29 @@ pub fn check(root: &Path, citation: &Citation) -> Status {
     if span(&lines, start, end).is_some_and(|s| &digest(&s) == span_hash) {
         return Status::Fresh;
     }
-    // Look for the same lines elsewhere: only positions whose first line matches are hashed.
+    // Look for the same lines elsewhere. Each line is hashed at most once; only positions whose
+    // anchor line matches (non-blank, so candidates are rare) are verified, and at most
+    // MAX_MOVE_CANDIDATES of them.
     let width = (end - start + 1) as usize;
+    let offset = citation.head_offset.unwrap_or(0) as usize;
     if let Some(head) = &citation.head_hash {
-        for index in 0..lines.len().saturating_sub(width - 1) {
-            if &digest(&lines[index]) == head
-                && digest(&lines[index..index + width].join("\n")) == *span_hash
-            {
+        let mut verified = 0;
+        for (index, line) in lines.iter().enumerate() {
+            if index < offset || line.trim().is_empty() || &digest(line) != head {
+                continue;
+            }
+            let begin = index - offset;
+            if begin + width > lines.len() {
+                continue;
+            }
+            verified += 1;
+            if digest(&lines[begin..begin + width].join("\n")) == *span_hash {
                 return Status::Moved {
-                    line_start: index as u32 + 1,
+                    line_start: begin as u32 + 1,
                 };
+            }
+            if verified == MAX_MOVE_CANDIDATES {
+                break;
             }
         }
     }
@@ -564,6 +654,7 @@ mod tests {
             file_hash: anchor.file_hash.clone(),
             span_hash: anchor.span_hash.clone(),
             head_hash: anchor.head_hash.clone(),
+            head_offset: anchor.head_offset,
             commit_sha: None,
             created_at: "now".into(),
             refreshed_at: None,
@@ -583,7 +674,16 @@ mod tests {
         assert_eq!(parse_spec("./docs/a.md:7").unwrap().line_end, Some(7));
         assert_eq!(parse_spec("Makefile").unwrap().line_start, None);
         assert_eq!(parse_spec("weird:name.md").unwrap().path, "weird:name.md");
+        for allowed in [".env.example", "deploy/id_rsa.pub", "config/app.toml"] {
+            assert!(parse_spec(allowed).is_ok(), "{allowed}");
+        }
         for bad in [
+            ".env",
+            "config/.env.production",
+            "certs/server.pem",
+            "home/.ssh/config",
+            "infra/terraform.tfstate",
+            ".npmrc",
             "",
             "/etc/passwd",
             "../outside.rs",
@@ -644,6 +744,23 @@ mod tests {
         );
         assert_eq!(freshness(&[Status::Unchecked]), Some("unknown"));
         assert_eq!(freshness(&[]), None);
+    }
+
+    #[test]
+    fn spans_starting_with_blank_lines_are_found_after_moving() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let body = "\n\nfn retry() {\n    backoff();\n}\n";
+        std::fs::write(root.join("r.rs"), format!("// a\n{body}")).unwrap();
+        let c = citation(&anchor(root, root, &parse_spec("r.rs:2-6").unwrap()).unwrap());
+        assert_eq!(
+            c.head_offset,
+            Some(2),
+            "anchored on the first non-blank line"
+        );
+        let filler = "\n".repeat(5000);
+        std::fs::write(root.join("r.rs"), format!("// a\n// b\n{filler}{body}")).unwrap();
+        assert_eq!(check(root, &c), Status::Moved { line_start: 5003 });
     }
 
     #[test]
