@@ -141,11 +141,11 @@ fn llm_selection_is_rechecked_and_labelled_when_published() -> anyhow::Result<()
     let (method, sources) = latest_method(&store)?;
     assert_eq!(method, "llm_selection");
     assert!(
-        sources.contains("llm_selection") && !sources.contains("keyword_tree"),
+        sources.contains("llm_selection") && !sources.contains("lexical_bm25"),
         "{sources}"
     );
     memctrl::retriever::retrieve(&mut store, "SQLite memory", None, 5)?;
-    assert_eq!(latest_method(&store)?.0, "keyword_tree");
+    assert_eq!(latest_method(&store)?.0, "lexical_bm25");
     Ok(())
 }
 

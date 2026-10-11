@@ -545,11 +545,12 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     *limit,
                 )?)?
             } else {
-                serde_json::to_value(retriever::retrieve(
+                serde_json::to_value(retriever::retrieve_with(
                     store,
                     query_text,
                     layer.as_deref(),
                     *limit,
+                    &retriever::SearchOptions::from_rules(rules),
                 )?)?
             }
         }
@@ -757,6 +758,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::OtelStats => telemetry::stats(store)?,
         Command::Maintenance => {
+            store.rebuild_search_index()?;
             store.checkpoint()?;
             json!({"status":"checkpointed","stats":store.stats()?})
         }

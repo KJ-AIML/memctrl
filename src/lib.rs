@@ -13,6 +13,7 @@ pub mod reflection;
 pub mod retriever;
 pub mod rules;
 pub mod sanitize;
+pub mod search;
 pub mod span;
 pub mod store;
 pub mod telemetry;

@@ -14,6 +14,28 @@ use uuid::Uuid;
 pub struct MemoryStore {
     pub conn: Connection,
 }
+/// Full-text indexes over `memories`, kept in sync by triggers so every writer (including 2.0
+/// binaries and the Python 1.x store) maintains them. Both are external-content tables: they
+/// store only the index, never a second copy of memory text.
+/// - `memory_fts`: Porter-stemmed words (content and tags) for space-delimited scripts.
+/// - `memory_fts_tri`: character trigrams, for scripts written without spaces and substrings.
+const SEARCH_SCHEMA: &str = "
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, tags, content='memories', content_rowid='rowid', tokenize='porter unicode61 remove_diacritics 2');
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts_tri USING fts5(content, content='memories', content_rowid='rowid', tokenize='trigram');
+CREATE TRIGGER IF NOT EXISTS memory_fts_insert AFTER INSERT ON memories BEGIN
+  INSERT INTO memory_fts(rowid,content,tags) VALUES(new.rowid,new.content,new.tags);
+  INSERT INTO memory_fts_tri(rowid,content) VALUES(new.rowid,new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS memory_fts_delete AFTER DELETE ON memories BEGIN
+  INSERT INTO memory_fts(memory_fts,rowid,content,tags) VALUES('delete',old.rowid,old.content,old.tags);
+  INSERT INTO memory_fts_tri(memory_fts_tri,rowid,content) VALUES('delete',old.rowid,old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS memory_fts_update AFTER UPDATE OF content,tags ON memories BEGIN
+  INSERT INTO memory_fts(memory_fts,rowid,content,tags) VALUES('delete',old.rowid,old.content,old.tags);
+  INSERT INTO memory_fts_tri(memory_fts_tri,rowid,content) VALUES('delete',old.rowid,old.content);
+  INSERT INTO memory_fts(rowid,content,tags) VALUES(new.rowid,new.content,new.tags);
+  INSERT INTO memory_fts_tri(rowid,content) VALUES(new.rowid,new.content);
+END;";
 // At top level this is `BEGIN IMMEDIATE`: the write lock is taken before any read, so a commit
 // from another connection can't invalidate the snapshot mid-operation (SQLITE_BUSY_SNAPSHOT,
 // which busy_timeout does not retry). Inside a caller's transaction it is a nested savepoint.
@@ -168,6 +190,9 @@ CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
 CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
 CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
+        let indexed:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='memory_fts')",[],|r|r.get(0))?;
+        self.conn.execute_batch(SEARCH_SCHEMA)?;
+        if !indexed { self.rebuild_search_index()?; }
         for table in ["memories","tree_nodes","memory_relations","memory_evidence"]{
             for event in ["INSERT","DELETE","UPDATE"]{
                 let clause=if table=="memories" && event=="UPDATE" {"UPDATE OF layer,content,source,confidence,created_at,expires_at,tags,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until"}else{event};
@@ -176,6 +201,58 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
         }
         Ok(())
     })
+    }
+    /// Re-derives both full-text indexes from `memories`. Runs once when the indexes are created
+    /// (so migrated databases are searchable) and from `memctrl maintenance`.
+    pub fn rebuild_search_index(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "INSERT INTO memory_fts(memory_fts) VALUES('rebuild');
+             INSERT INTO memory_fts_tri(memory_fts_tri) VALUES('rebuild');",
+        )?;
+        Ok(())
+    }
+    /// Ids of memories eligible for ordinary retrieval, without reading or sanitizing content.
+    /// Cheap enough to run on every query to bind cache entries to the eligible set.
+    pub fn eligible_ids(&self, layer: Option<&str>) -> Result<Vec<String>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id,expires_at,valid_from,valid_until FROM memories
+             WHERE (?1 IS NULL OR layer=?1) AND lifecycle_state='accepted' AND verification_state<>'refuted'",
+        )?;
+        let at = chrono::Utc::now();
+        let rows = statement.query_map(params![layer], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, expires, from, until) = row?;
+            if temporally_valid(expires.as_deref(), from.as_deref(), until.as_deref(), at) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    }
+    /// Full memories for the given SQLite rowids (search hits), keyed by rowid.
+    pub fn memories_by_rowid(&self, rowids: &[i64]) -> Result<HashMap<i64, Memory>> {
+        let mut found = HashMap::new();
+        let mut statement = self
+            .conn
+            .prepare("SELECT rowid AS memctrl_rowid,* FROM memories WHERE rowid=?")?;
+        for rowid in rowids {
+            if let Some(pair) = statement
+                .query_row([rowid], |r| {
+                    Ok((r.get::<_, i64>("memctrl_rowid")?, memory_row(r)?))
+                })
+                .optional()?
+            {
+                found.insert(pair.0, pair.1);
+            }
+        }
+        Ok(found)
     }
     pub fn insert_memory(&self, mut memory: NewMemory) -> Result<String> {
         memory.validate()?;
@@ -521,7 +598,11 @@ CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
         let mut sources = Vec::new();
         for (index, id) in result.memory_ids.iter().enumerate() {
             if let Some(memory) = self.get_memory(id, true)? {
-                sources.push(json!({"memory_id":id,"source":result.sources.get(index).unwrap_or(&memory.source),"content":memory.content,"layer":memory.layer,"confidence":memory.confidence,"match_reason":method,"trace_path":result.trace}));
+                let mut source = json!({"memory_id":id,"source":result.sources.get(index).unwrap_or(&memory.source),"content":memory.content,"layer":memory.layer,"confidence":memory.confidence,"match_reason":method,"trace_path":result.trace});
+                if let Some(why) = result.why.get(index) {
+                    source["why"] = json!(why);
+                }
+                sources.push(source);
             }
         }
         self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;

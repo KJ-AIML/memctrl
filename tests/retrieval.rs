@@ -32,17 +32,23 @@ fn captured_python_queries_match_native_facts_and_confidence() {
     let mut store = MemoryStore::open(path).unwrap();
     for query in oracle["queries"].as_array().unwrap() {
         let query_text = query["query"].as_str().unwrap();
-        for result in [
-            retriever::keyword_retrieve(query_text, &tree, &memories, 5),
-            retriever::retrieve(&mut store, query_text, None, 5).unwrap(),
-        ] {
-            assert_eq!(json!(result.facts), query["facts"], "{query_text}");
-            assert_eq!(
-                json!(result.confidence),
-                query["confidence"],
-                "{query_text}"
-            );
-        }
+        // The legacy scorer reproduces Python 1.x exactly.
+        let legacy = retriever::keyword_retrieve(query_text, &tree, &memories, 5);
+        assert_eq!(json!(legacy.facts), query["facts"], "{query_text}");
+        assert_eq!(
+            json!(legacy.confidence),
+            query["confidence"],
+            "{query_text}"
+        );
+        // BM25 ranking scores differently (see MIGRATION.md) but must agree on the answer.
+        let ranked = retriever::retrieve(&mut store, query_text, None, 5).unwrap();
+        assert_eq!(
+            ranked.facts.first().map(|f| json!(f)),
+            query["facts"].as_array().unwrap().first().cloned(),
+            "{query_text}: {:?}",
+            ranked.facts
+        );
+        assert_eq!(ranked.why.len(), ranked.facts.len());
     }
 }
 

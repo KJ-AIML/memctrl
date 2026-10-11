@@ -111,11 +111,12 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             if let Some(l) = layer {
                 validate_identifier(l, "layer")?;
             }
-            serde_json::to_value(crate::retriever::retrieve(
+            serde_json::to_value(crate::retriever::retrieve_with(
                 store,
                 query,
                 layer,
                 limit(args)?,
+                &crate::retriever::SearchOptions::from_rules(rules),
             )?)?
         }
         "memctrl_context" => {

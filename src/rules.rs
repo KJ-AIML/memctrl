@@ -24,7 +24,27 @@ never = ["passwords", "keys", "PII", "secrets", "api_key", "token", "secret", "p
 after_days = { session = 7, user = 90 }
 [extract]
 confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
+[retrieval]
+# Words that should find each other. Built-ins cover db/database, prod/production, k8s/kubernetes...
+builtin_aliases = true
+aliases = []   # e.g. [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
 "#;
+
+/// Synonym groups developers use interchangeably. A query word in a group also matches the
+/// group's other members. Disable with `[retrieval] builtin_aliases = false`.
+pub const BUILTIN_ALIASES: &[&[&str]] = &[
+    &["db", "database"],
+    &["auth", "authentication"],
+    &["prod", "production"],
+    &["k8s", "kubernetes"],
+    &["repo", "repository"],
+    &["config", "configuration"],
+    &["env", "environment"],
+    &["deps", "dependencies"],
+    &["js", "javascript"],
+    &["ts", "typescript"],
+    &["pg", "postgres", "postgresql"],
+];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Rules {
@@ -34,6 +54,9 @@ pub struct Rules {
     pub forget_after_days: BTreeMap<String, i64>,
     pub confidence: BTreeMap<String, f64>,
     pub db_path: Option<String>,
+    /// Custom synonym groups from `[retrieval] aliases`.
+    pub aliases: Vec<Vec<String>>,
+    pub builtin_aliases: bool,
 }
 
 impl Default for Rules {
@@ -89,6 +112,8 @@ impl Default for Rules {
             .into_iter()
             .collect(),
             db_path: None,
+            aliases: Vec::new(),
+            builtin_aliases: true,
         }
     }
 }
@@ -192,10 +217,66 @@ impl Rules {
                 rules.confidence.insert(level.clone(), value);
             }
         }
+        if let Some(retrieval) = raw.get("retrieval") {
+            let retrieval = retrieval.as_table().context("retrieval must be a table")?;
+            if let Some(flag) = retrieval.get("builtin_aliases") {
+                rules.builtin_aliases = flag
+                    .as_bool()
+                    .context("retrieval.builtin_aliases must be true or false")?;
+            }
+            if let Some(groups) = retrieval.get("aliases") {
+                let groups = groups
+                    .as_array()
+                    .context("retrieval.aliases must be an array of arrays of strings")?;
+                if groups.len() > 500 {
+                    bail!("retrieval.aliases allows at most 500 groups");
+                }
+                for group in groups {
+                    let words = group
+                        .as_array()
+                        .context("each retrieval.aliases group must be an array of strings")?;
+                    let mut cleaned = Vec::new();
+                    for word in words {
+                        let word = word
+                            .as_str()
+                            .context("alias entries must be strings")?
+                            .trim()
+                            .to_lowercase();
+                        if word.is_empty() || word.chars().count() > 64 {
+                            bail!("alias entries must be 1 to 64 characters");
+                        }
+                        if has_secrets(&word) {
+                            bail!("alias entries must not contain credentials");
+                        }
+                        if !cleaned.contains(&word) {
+                            cleaned.push(word);
+                        }
+                    }
+                    if cleaned.len() < 2 {
+                        bail!("each retrieval.aliases group needs at least two distinct words");
+                    }
+                    rules.aliases.push(cleaned);
+                }
+            }
+        }
         if let Some(path) = raw.get("memctrl").and_then(|v| v.get("db_path")) {
             rules.db_path = Some(path.as_str().context("db_path must be a string")?.into());
         }
         Ok(rules)
+    }
+
+    /// Every active synonym group: built-ins (unless disabled) followed by custom groups.
+    pub fn alias_groups(&self) -> Vec<Vec<String>> {
+        let mut groups: Vec<Vec<String>> = if self.builtin_aliases {
+            BUILTIN_ALIASES
+                .iter()
+                .map(|g| g.iter().map(|w| w.to_string()).collect())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        groups.extend(self.aliases.iter().cloned());
+        groups
     }
 
     pub fn expiry(&self, layer: &str) -> Option<String> {

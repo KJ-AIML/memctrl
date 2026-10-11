@@ -104,22 +104,27 @@ pub struct Memory {
 }
 impl Memory {
     pub fn eligible(&self) -> bool {
-        let current = Utc::now();
         self.lifecycle_state == LifecycleState::Accepted
             && self.verification_state != VerificationState::Refuted
-            && self
-                .expires_at
-                .as_ref()
-                .is_none_or(|t| parse_time(t).is_ok_and(|t| t >= current))
-            && self
-                .valid_from
-                .as_ref()
-                .is_none_or(|t| parse_time(t).is_ok_and(|t| t <= current))
-            && self
-                .valid_until
-                .as_ref()
-                .is_none_or(|t| parse_time(t).is_ok_and(|t| t > current))
+            && temporally_valid(
+                self.expires_at.as_deref(),
+                self.valid_from.as_deref(),
+                self.valid_until.as_deref(),
+                Utc::now(),
+            )
     }
+}
+/// True when `at` falls inside the validity window and before expiry. Unparseable timestamps
+/// fail closed.
+pub fn temporally_valid(
+    expires_at: Option<&str>,
+    valid_from: Option<&str>,
+    valid_until: Option<&str>,
+    at: DateTime<Utc>,
+) -> bool {
+    expires_at.is_none_or(|t| parse_time(t).is_ok_and(|t| t >= at))
+        && valid_from.is_none_or(|t| parse_time(t).is_ok_and(|t| t <= at))
+        && valid_until.is_none_or(|t| parse_time(t).is_ok_and(|t| t > at))
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -139,6 +144,24 @@ pub struct RetrievalResult {
     pub memory_ids: Vec<String>,
     pub trace: Vec<String>,
     pub confidence: f64,
+    /// One explanation per fact, in the same order. Empty for strategies that can't explain.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub why: Vec<Why>,
+}
+/// Why a fact was returned: which query terms matched it and how strongly.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Why {
+    pub memory_id: String,
+    pub score: f64,
+    /// Fraction of the query's terms this memory matched (0–1).
+    pub coverage: f64,
+    /// Matched query terms. "a → b (alias)" means the query word a matched through its alias b;
+    /// "(substring)" means a partial-word match; "(k/n)" counts matched character trigrams.
+    pub matched: Vec<String>,
+    /// For memories with citations: fresh, stale or uncited.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub freshness: Option<String>,
 }
 pub fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true)

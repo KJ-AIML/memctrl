@@ -175,7 +175,8 @@ fn run_memory_node(
     }
     let query = state["memory_query"].as_str().unwrap_or("");
     if !query.trim().is_empty() {
-        let result = crate::retriever::retrieve(store, query, None, 5)?;
+        let options = crate::retriever::SearchOptions::from_rules(rules);
+        let result = crate::retriever::retrieve_with(store, query, None, 5, &options)?;
         state["memory_facts"] = json!(result.facts);
         state["memory_trace"] = json!(result.trace);
         state["memory_confidence"] = json!(result.confidence);
