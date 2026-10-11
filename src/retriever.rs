@@ -171,19 +171,8 @@ pub fn retrieve(
     if let Some(layer) = layer {
         validate_identifier(layer, "layer")?;
     }
-    // An immediate transaction prevents another connection from changing a snapshot
-    // between scoring and publication. A cache entry can never acquire a newer revision.
     let store: &MemoryStore = store;
-    let transaction = if store.conn.is_autocommit() {
-        Some(rusqlite::Transaction::new_unchecked(
-            &store.conn,
-            rusqlite::TransactionBehavior::Immediate,
-        )?)
-    } else {
-        None
-    };
-    let guard = AtomicWrite::new(&store.conn)?;
-    let operation = (|| -> Result<RetrievalResult> {
+    under_writer_lock(store, || {
         let memories = store.list_memories(layer, false)?;
         let revision = store.revision()?;
         let mut eligible: Vec<_> = memories
@@ -194,7 +183,15 @@ pub fn retrieve(
         eligible.sort_unstable();
         // Eligibility may change with time alone. Binding the eligible set prevents
         // both stale inclusion and stale omission at validity/expiration boundaries.
-        let key = serde_json::to_string(&(sanitize_text(query), layer, top_k, eligible))?;
+        // A fingerprint keeps the key small however large the store grows.
+        let key = serde_json::to_string(&(
+            RETRIEVAL_VERSION,
+            sanitize_text(query),
+            layer,
+            top_k,
+            eligible.len(),
+            fingerprint(&eligible),
+        ))?;
         let timestamp = Utc::now().timestamp_millis() as f64 / 1000.0;
         let cached: Option<String> = store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?;
         let result = if let Some(cached) = cached {
@@ -206,9 +203,9 @@ pub fn retrieve(
         for id in &result.memory_ids {
             store.record_access(id)?;
         }
-        store.save_provenance(query, &result, memories.len())?;
-        // Access writes may bump the revision, but the writer lock proves that no
-        // content changed. Tagging that revision here is therefore snapshot safe.
+        store.save_provenance(query, &result, memories.len(), "keyword_tree")?;
+        // Access columns are excluded from the revision triggers, and the writer lock
+        // proves no content changed, so tagging this revision is snapshot safe.
         let after_access = store.revision()?;
         store.conn.execute("INSERT INTO rust_query_cache(key,result_json,revision,cached_at) VALUES(?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET result_json=excluded.result_json,revision=excluded.revision,cached_at=excluded.cached_at", params![key, serde_json::to_string(&result)?, after_access, timestamp])?;
         store.conn.execute(
@@ -217,8 +214,75 @@ pub fn retrieve(
         )?;
         store.conn.execute("DELETE FROM rust_query_cache WHERE key NOT IN (SELECT key FROM rust_query_cache ORDER BY cached_at DESC,key LIMIT 256)", [])?;
         Ok(result)
-    })();
-    let result = operation?;
+    })
+}
+
+/// Publishes memories chosen by an LLM. The model ran on an earlier snapshot, so eligibility is
+/// re-checked under the writer lock: anything refuted, expired or superseded while the request
+/// was in flight is dropped, and access plus provenance are recorded atomically.
+pub fn publish_selection(
+    store: &mut MemoryStore,
+    query: &str,
+    layer: Option<&str>,
+    selected: &[String],
+    top_k: usize,
+) -> Result<RetrievalResult> {
+    if let Some(layer) = layer {
+        validate_identifier(layer, "layer")?;
+    }
+    let store: &MemoryStore = store;
+    under_writer_lock(store, || {
+        let memories = store.list_memories(layer, false)?;
+        let mut result = RetrievalResult::default();
+        for m in memories
+            .iter()
+            .filter(|m| m.eligible() && selected.contains(&m.id))
+            .take(top_k)
+        {
+            result.memory_ids.push(m.id.clone());
+            result.facts.push(m.content.clone());
+            result.sources.push(m.source.clone());
+            result.confidence += m.confidence;
+            store.record_access(&m.id)?;
+        }
+        if !result.facts.is_empty() {
+            result.confidence /= result.facts.len() as f64;
+        }
+        result.trace.push("explicit_llm_selection".into());
+        store.save_provenance(query, &result, memories.len(), "llm_selection")?;
+        Ok(result)
+    })
+}
+
+/// Part of every cache key: bump when scoring changes so upgrades never serve old results.
+const RETRIEVAL_VERSION: &str = "keyword-v1";
+
+/// Stable 64-bit FNV-1a over sorted ids. Not a security boundary: entries are also bound to
+/// the store revision and a 300s TTL, and ids are random v4 UUIDs.
+fn fingerprint(ids: &[&str]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for id in ids {
+        for byte in id.bytes().chain(std::iter::once(b'\n')) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{hash:016x}")
+}
+
+/// Runs `operation` under an immediate transaction (when none is open) plus a savepoint, so no
+/// other connection can change the snapshot between reading and publishing.
+fn under_writer_lock<T>(store: &MemoryStore, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+    let transaction = if store.conn.is_autocommit() {
+        Some(rusqlite::Transaction::new_unchecked(
+            &store.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?)
+    } else {
+        None
+    };
+    let guard = AtomicWrite::new(&store.conn)?;
+    let result = operation()?;
     guard.commit()?;
     if let Some(transaction) = transaction {
         transaction.commit()?;

@@ -138,6 +138,9 @@ fn mock_response(message: Value) -> (LlmClient, mpsc::Receiver<Value>, thread::J
                 Err(e) => panic!("{e}"),
             }
         };
+        // macOS/BSD sockets inherit O_NONBLOCK from the listener (Linux does not); without
+        // this, reads race the client and fail with WouldBlock under load.
+        stream.set_nonblocking(false).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();

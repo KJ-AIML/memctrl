@@ -110,6 +110,9 @@ fn validate_state(state: &Value) -> Result<()> {
     Ok(())
 }
 /// Extract the latest message, recall with provenance, and optionally consolidate.
+///
+/// All three steps commit together: if consolidation fails, the extracted memories roll back
+/// instead of staying behind (a retry would otherwise store them twice).
 pub fn memory_node(
     store: &mut MemoryStore,
     state: Value,
@@ -117,6 +120,35 @@ pub fn memory_node(
     auto_extract: bool,
 ) -> Result<Value> {
     validate_state(&state)?;
+    let outer = store.conn.is_autocommit();
+    let (begin, commit, rollback) = if outer {
+        ("BEGIN IMMEDIATE", "COMMIT", "ROLLBACK")
+    } else {
+        (
+            "SAVEPOINT agent_memory_node",
+            "RELEASE agent_memory_node",
+            "ROLLBACK TO agent_memory_node; RELEASE agent_memory_node",
+        )
+    };
+    store.conn.execute_batch(begin)?;
+    match run_memory_node(store, state, rules, auto_extract) {
+        Ok(state) => {
+            store.conn.execute_batch(commit)?;
+            Ok(state)
+        }
+        Err(error) => {
+            let _ = store.conn.execute_batch(rollback);
+            Err(error)
+        }
+    }
+}
+
+fn run_memory_node(
+    store: &mut MemoryStore,
+    state: Value,
+    rules: &Rules,
+    auto_extract: bool,
+) -> Result<Value> {
     let mut state = sanitize_value(&state);
     if auto_extract {
         if let Some(last) = state["messages"].as_array().and_then(|v| v.last()) {

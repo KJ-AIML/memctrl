@@ -23,13 +23,44 @@ fn patterns() -> &'static Vec<(Regex, &'static str)> {
         (r"\b\d{10,12}\b","PHONE_INTL"),
     ].into_iter().map(|(p,label)|(Regex::new(p).expect("static redaction regex"),label)).collect())
 }
+fn uuid_pattern() -> &'static Regex {
+    static UUID: OnceLock<Regex> = OnceLock::new();
+    UUID.get_or_init(|| {
+        Regex::new(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+            .expect("static uuid regex")
+    })
+}
 fn redact_raw(input: &str) -> String {
-    patterns()
+    // Canonical UUIDs are identities, not PII: a v4 id whose last group happens to be all
+    // digits must not read as a phone number. Shield them from the patterns, then restore.
+    // A UUID used as a secret value (`api_key=<uuid>`) is consumed with that value.
+    let mut shielded = String::with_capacity(input.len());
+    let mut uuids = Vec::new();
+    let mut last = 0;
+    for found in uuid_pattern().find_iter(input) {
+        let before = input[..found.start()].chars().next_back();
+        let after = input[found.end()..].chars().next();
+        if before.is_some_and(|c| c.is_ascii_alphanumeric())
+            || after.is_some_and(|c| c.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        shielded.push_str(&input[last..found.start()]);
+        shielded.push_str(&format!("\u{E000}{}\u{E001}", uuids.len()));
+        uuids.push(found.as_str());
+        last = found.end();
+    }
+    shielded.push_str(&input[last..]);
+    let redacted = patterns().iter().fold(shielded, |text, (pattern, label)| {
+        pattern
+            .replace_all(&text, format!("[REDACTED_{label}]"))
+            .into_owned()
+    });
+    uuids
         .iter()
-        .fold(input.to_owned(), |text, (pattern, label)| {
-            pattern
-                .replace_all(&text, format!("[REDACTED_{label}]"))
-                .into_owned()
+        .enumerate()
+        .fold(redacted, |text, (index, uuid)| {
+            text.replace(&format!("\u{E000}{index}\u{E001}"), uuid)
         })
 }
 fn sensitive_label(key: &str) -> Option<&'static str> {
@@ -112,9 +143,7 @@ pub fn sanitize_revision(input: &str) -> String {
 pub fn has_secrets(input: &str) -> bool {
     match serde_json::from_str::<Value>(input) {
         Ok(value) if value.is_object() || value.is_array() => sanitize_value(&value) != value,
-        _ => patterns()
-            .iter()
-            .any(|(pattern, _)| pattern.is_match(input)),
+        _ => redact_raw(input) != input,
     }
 }
 pub fn validate_identifier(input: &str, label: &str) -> Result<()> {

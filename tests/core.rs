@@ -144,9 +144,11 @@ fn provenance_stores_source_memory_details() -> anyhow::Result<()> {
         trace: vec!["root -> architecture".into()],
         confidence: 1.0,
     };
-    store.save_provenance("architecture", &result, 1)?;
+    store.save_provenance("architecture", &result, 1, "keyword_tree")?;
     let provenance = store.provenance(1)?;
+    assert_eq!(provenance[0]["method"], "keyword_tree");
     let source = &provenance[0]["sources"][0];
+    assert_eq!(source["match_reason"], "keyword_tree");
     assert_eq!(source["memory_id"], id);
     assert_eq!(source["source"], "manual");
     assert_eq!(source["content"], "specific architecture fact");

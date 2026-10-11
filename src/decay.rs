@@ -39,7 +39,8 @@ fn apply_decay(store: &MemoryStore, days: f64) -> Result<usize> {
             "user" => (0.01, 0.5),
             _ => continue,
         };
-        if memory.confidence >= 1.0 {
+        // Explicit facts never decay, and decay never raises a memory already below its floor.
+        if memory.confidence >= 1.0 || memory.confidence <= floor {
             continue;
         }
         let confidence = (memory.confidence * (1.0 - rate).powf(days)).max(floor);

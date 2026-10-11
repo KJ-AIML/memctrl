@@ -149,7 +149,10 @@ CREATE INDEX IF NOT EXISTS idx_evidence_mem ON memory_evidence(memory_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_src ON memory_evidence(source_system,source_id);
 CREATE INDEX IF NOT EXISTS idx_tree_parent ON tree_nodes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_provenance_ts ON provenance(timestamp);
-CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);")?;
+CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);
+CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
+CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
+CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);")?;
         for table in ["memories","tree_nodes","memory_relations","memory_evidence"]{
             for event in ["INSERT","DELETE","UPDATE"]{
                 let clause=if table=="memories" && event=="UPDATE" {"UPDATE OF layer,content,source,confidence,created_at,expires_at,tags,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until"}else{event};
@@ -256,7 +259,17 @@ CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);")?;
         })
     }
     pub fn update_verification(&self, id: &str, state: VerificationState) -> Result<bool> {
-        Ok(self.conn.execute("UPDATE memories SET verification_state=?,lifecycle_state=CASE WHEN ?='refuted' THEN 'rejected' ELSE lifecycle_state END,updated_at=? WHERE id=?",params![state.to_string(),state.to_string(),now(),id])?>0)
+        self.atomic(|| {
+            // Refutation is terminal; otherwise refute → dispute → accept reopens the claim.
+            if state != VerificationState::Refuted {
+                if let Some(m) = self.get_memory(id, true)? {
+                    if m.verification_state == VerificationState::Refuted {
+                        bail!("refuted memory cannot be re-verified; supersede it with a new memory instead")
+                    }
+                }
+            }
+            Ok(self.conn.execute("UPDATE memories SET verification_state=?,lifecycle_state=CASE WHEN ?='refuted' THEN 'rejected' ELSE lifecycle_state END,updated_at=? WHERE id=?",params![state.to_string(),state.to_string(),now(),id])?>0)
+        })
     }
     pub fn supersede_memory(&self, old: &str, new: &str, metadata: Value) -> Result<()> {
         if old == new {
@@ -460,19 +473,21 @@ CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);")?;
         let values=stmt.query_map([limit as i64],|r|Ok(sanitize_value(&json!({"id":r.get::<_,String>("id")?,"query":r.get::<_,String>("query")?,"timestamp":r.get::<_,String>("timestamp")?,"method":r.get::<_,String>("method")?,"tree_version":r.get::<_,i64>("tree_version")?,"total_memories_searched":r.get::<_,i64>("total_memories_searched")?,"avg_confidence":r.get::<_,f64>("avg_confidence")?,"sources":json_column(r,"sources_json")?}))))?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
+    /// `method` names the strategy that produced `result` (e.g. `keyword_tree`, `llm_selection`).
     pub fn save_provenance(
         &self,
         query: &str,
         result: &RetrievalResult,
         searched: usize,
+        method: &str,
     ) -> Result<()> {
         let mut sources = Vec::new();
         for (index, id) in result.memory_ids.iter().enumerate() {
             if let Some(memory) = self.get_memory(id, true)? {
-                sources.push(json!({"memory_id":id,"source":result.sources.get(index).unwrap_or(&memory.source),"content":memory.content,"layer":memory.layer,"confidence":memory.confidence,"match_reason":"keyword_tree","trace_path":result.trace}));
+                sources.push(json!({"memory_id":id,"source":result.sources.get(index).unwrap_or(&memory.source),"content":memory.content,"layer":memory.layer,"confidence":memory.confidence,"match_reason":method,"trace_path":result.trace}));
             }
         }
-        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),"keyword_tree",self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;
+        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;
         Ok(())
     }
     pub fn maintenance(&self, key: &str, details: Value) -> Result<()> {

@@ -435,20 +435,13 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 let node_ids = client.select(query_text, &root).await?;
                 let mut ids = Vec::new();
                 selected_memory_ids(&root, &node_ids, false, &mut ids);
-                let mut result = memctrl::model::RetrievalResult::default();
-                for m in memories.iter().filter(|m| ids.contains(&m.id)).take(*limit) {
-                    result.memory_ids.push(m.id.clone());
-                    result.facts.push(m.content.clone());
-                    result.sources.push(m.source.clone());
-                    result.confidence += m.confidence;
-                    store.record_access(&m.id)?;
-                }
-                if !result.facts.is_empty() {
-                    result.confidence /= result.facts.len() as f64;
-                }
-                result.trace.push("explicit_llm_selection".into());
-                store.save_provenance(query_text, &result, memories.len())?;
-                serde_json::to_value(result)?
+                serde_json::to_value(retriever::publish_selection(
+                    store,
+                    query_text,
+                    layer.as_deref(),
+                    &ids,
+                    *limit,
+                )?)?
             } else {
                 serde_json::to_value(retriever::retrieve(
                     store,
