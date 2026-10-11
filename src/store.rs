@@ -15,7 +15,8 @@ pub struct MemoryStore {
     pub conn: Connection,
 }
 /// Full-text indexes over `memories`, kept in sync by triggers so every writer (including 2.0
-/// binaries and the Python 1.x store) maintains them. Both are external-content tables: they
+/// binaries) maintains them. Writers therefore need SQLite with FTS5; `initialize` re-indexes if
+/// the triggers were removed or the index drifted. Both are external-content tables: they
 /// store only the index, never a second copy of memory text.
 /// - `memory_fts`: Porter-stemmed words (content and tags) for space-delimited scripts.
 /// - `memory_fts_tri`: character trigrams, for scripts written without spaces and substrings.
@@ -191,9 +192,12 @@ CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
 CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
 CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);")?;
-        let indexed:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='memory_fts')",[],|r|r.get(0))?;
+        // Rebuild when the indexes are new, when a sync trigger was missing (for example dropped
+        // so a SQLite without FTS5 could write), or when row counts show the index drifted.
+        let healthy:bool=self.conn.query_row("SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_fts','memory_fts_tri'))=2 AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('memory_fts_insert','memory_fts_delete','memory_fts_update'))=3",[],|r|r.get(0))?;
         self.conn.execute_batch(SEARCH_SCHEMA)?;
-        if !indexed { self.rebuild_search_index()?; }
+        let drifted:bool=healthy && self.conn.query_row("SELECT (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_docsize) OR (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_tri_docsize)",[],|r|r.get(0))?;
+        if !healthy || drifted { self.rebuild_search_index()?; }
         for table in ["memories","tree_nodes","memory_relations","memory_evidence"]{
             for event in ["INSERT","DELETE","UPDATE"]{
                 let clause=if table=="memories" && event=="UPDATE" {"UPDATE OF layer,content,source,confidence,created_at,expires_at,tags,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until"}else{event};

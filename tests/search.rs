@@ -243,3 +243,45 @@ fn databases_created_before_the_index_are_backfilled_on_open() {
     store.rebuild_search_index().unwrap();
     assert!(top(&mut store, "legacy").is_some());
 }
+
+#[test]
+fn indexes_self_heal_after_writes_by_a_sqlite_without_fts5() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("healed.db");
+    {
+        let store = MemoryStore::open(&path).unwrap();
+        add(&store, "project", "Kept fact about Redis");
+        // What someone does to write with a SQLite that lacks FTS5: drop the sync triggers.
+        store
+            .conn
+            .execute_batch(
+                "DROP TRIGGER memory_fts_insert; DROP TRIGGER memory_fts_delete; DROP TRIGGER memory_fts_update;
+                 INSERT INTO memories(id,layer,content,source) VALUES('ext-1','project','Written without FTS5 support','sqlite3');
+                 DELETE FROM memories WHERE content='Kept fact about Redis';",
+            )
+            .unwrap();
+    }
+    let mut store = MemoryStore::open(&path).unwrap();
+    assert!(
+        top(&mut store, "fts5 support").is_some(),
+        "missing triggers force a rebuild"
+    );
+    assert!(
+        top(&mut store, "redis").is_none(),
+        "deleted rows leave the index"
+    );
+    // Drift with triggers intact (rows removed behind the index's back) is caught by counts.
+    store
+        .conn
+        .execute_batch(
+            "DROP TRIGGER memory_fts_delete; DELETE FROM memories WHERE id='ext-1';
+             CREATE TRIGGER memory_fts_delete AFTER DELETE ON memories BEGIN
+               INSERT INTO memory_fts(memory_fts,rowid,content,tags) VALUES('delete',old.rowid,old.content,old.tags);
+               INSERT INTO memory_fts_tri(memory_fts_tri,rowid,content) VALUES('delete',old.rowid,old.content);
+             END;",
+        )
+        .unwrap();
+    drop(store);
+    let mut store = MemoryStore::open(&path).unwrap();
+    assert!(top(&mut store, "fts5 support").is_none());
+}

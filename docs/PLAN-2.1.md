@@ -17,7 +17,7 @@ Then make memory reviewable and shareable through git, defend the write path aga
 
 - No required LLM or embedding model. No model downloads.
 - No hosted service.
-- No change to `schema_version`. All new tables are additive, so 2.0 binaries and the Python 1.x store keep working on a 2.1 database.
+- No change to `schema_version`. All new tables are additive, so 2.0 binaries keep working on a 2.1 database. Any writer needs SQLite with FTS5, because the index triggers fire on every write; see MIGRATION.
 - No crates.io publication, tag or release. Those stay maintainer actions per DISTRIBUTION.md.
 
 ## Phase 1: get loaded every session
