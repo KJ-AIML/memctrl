@@ -366,7 +366,7 @@ pub fn persist_proposals(
                     proposal.counterexamples.join("\n- ")
                 ));
             }
-            let id = store.insert_memory(NewMemory {
+            let mut lesson = NewMemory {
                 layer: "project".into(),
                 content: sanitize_text(&content),
                 source: "heli-distillation".into(),
@@ -384,7 +384,10 @@ pub fn persist_proposals(
                     VerificationState::Unverified
                 },
                 ..NewMemory::default()
-            })?;
+            };
+            // Task history can carry injected text; flagged lessons are tagged for the reviewer.
+            crate::guard::apply(&mut lesson, &crate::guard::Policy::default());
+            let id = store.insert_memory(lesson)?;
             for (index, task) in proposal.source_tasks.iter().enumerate() {
                 validate_identifier(task, "Heli task ID")?;
                 let revision = proposal

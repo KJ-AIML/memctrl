@@ -120,7 +120,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             };
             let tags = strings(args, "tags")?;
             let specs = strings(args, "cite")?;
-            let memory = NewMemory {
+            let mut memory = NewMemory {
                 content: content.into(),
                 layer: layer.into(),
                 source: source.into(),
@@ -130,7 +130,8 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 ..Default::default()
             };
             memory.validate()?;
-            if specs.is_empty() {
+            let verdict = crate::guard::apply(&mut memory, &rules.guard);
+            let mut output = if specs.is_empty() {
                 json!({"id": store.insert_memory(memory)?, "status": "stored"})
             } else {
                 // Resolve and hash every citation before writing anything.
@@ -145,7 +146,13 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 let commit = crate::citations::current_commit(&root);
                 let id = store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?;
                 json!({"id": id, "status": "stored", "citations": anchors.len()})
+            };
+            if verdict.quarantined() {
+                output["status"] = json!("quarantined");
+                output["lifecycle_state"] = json!("candidate");
+                output["guard"] = json!(verdict);
             }
+            output
         }
         "memctrl_query" => {
             let query = string(args, "query")?;

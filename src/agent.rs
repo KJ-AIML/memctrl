@@ -169,6 +169,7 @@ fn run_memory_node(
             }
             for mut memory in extracted {
                 memory.source = "langgraph_conversation".into();
+                crate::guard::apply(&mut memory, &rules.guard);
                 store.insert_memory(memory)?;
             }
         }

@@ -255,7 +255,19 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         }
         Ok(found)
     }
-    pub fn insert_memory(&self, mut memory: NewMemory) -> Result<String> {
+    pub fn insert_memory(&self, memory: NewMemory) -> Result<String> {
+        let id = Uuid::new_v4().to_string();
+        self.insert_memory_as(memory, &id, None)?;
+        Ok(id)
+    }
+    /// Inserts with a caller-chosen UUID and creation time, for imports that keep identity.
+    pub fn insert_memory_as(
+        &self,
+        mut memory: NewMemory,
+        id: &str,
+        created_at: Option<&str>,
+    ) -> Result<()> {
+        Uuid::parse_str(id).context("memory id must be a UUID")?;
         memory.validate()?;
         memory.content = sanitize_text(&memory.content);
         memory.source = sanitize_text(&memory.source);
@@ -271,10 +283,13 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         {
             *timestamp = parse_time(timestamp)?.to_rfc3339();
         }
-        let id = Uuid::new_v4().to_string();
-        let timestamp = now();
-        self.conn.execute("INSERT INTO memories(id,layer,content,source,confidence,created_at,expires_at,tags,updated_at,access_count,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)",params![id,memory.layer,memory.content,memory.source,memory.confidence,timestamp,memory.expires_at,serde_json::to_string(&memory.tags)?,timestamp,memory.claim_type.to_string(),memory.lifecycle_state.to_string(),memory.verification_state.to_string(),memory.observed_at,memory.valid_from,memory.valid_until])?;
-        Ok(id)
+        let updated = now();
+        let created = match created_at {
+            Some(t) => parse_time(t)?.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            None => updated.clone(),
+        };
+        self.conn.execute("INSERT INTO memories(id,layer,content,source,confidence,created_at,expires_at,tags,updated_at,access_count,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?)",params![id,memory.layer,memory.content,memory.source,memory.confidence,created,memory.expires_at,serde_json::to_string(&memory.tags)?,updated,memory.claim_type.to_string(),memory.lifecycle_state.to_string(),memory.verification_state.to_string(),memory.observed_at,memory.valid_from,memory.valid_until])?;
+        Ok(())
     }
     pub fn get_memory(&self, id: &str, include_history: bool) -> Result<Option<Memory>> {
         let memory = self

@@ -1,9 +1,9 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use memctrl::{
-    agent, citations, context, decay, doctor, heli, installer,
+    agent, citations, context, decay, doctor, guard, heli, installer,
     llm::{LlmClient, LlmConfig, LlmSettings},
-    mcp,
+    mcp, mirror,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     reflection, retriever,
     rules::{Rules, DEFAULT_RULES},
@@ -185,6 +185,33 @@ enum Command {
     },
     /// Re-anchor a memory's citations to the current code after re-checking the memory.
     Refresh { memory_id: String },
+    /// Write shared memory to a Markdown file for review in pull requests.
+    Export {
+        #[arg(long, default_value = mirror::DEFAULT_PATH)]
+        out: PathBuf,
+        #[arg(
+            long = "layer",
+            help = "Layer to export (repeatable; default: project)"
+        )]
+        layers: Vec<String>,
+        #[arg(
+            long,
+            help = "Fail if the file is not up to date instead of writing it"
+        )]
+        check: bool,
+    },
+    /// Import a memctrl export; never overwrites local memories.
+    Import {
+        file: PathBuf,
+        #[arg(
+            long,
+            default_value = "project",
+            help = "Layer for hand-written entries"
+        )]
+        layer: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Retrieve relevant active memories with provenance.
     Query {
         query_text: String,
@@ -431,7 +458,9 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&cli.rc, DEFAULT_RULES)?;
-            json!({"status":"initialized","rules":cli.rc,"database":find_db(cli)?})
+            let database = find_db(cli)?;
+            mirror::ensure_gitignore(&database)?;
+            json!({"status":"initialized","rules":cli.rc,"database":database})
         }
         Command::Install {
             tool,
@@ -544,7 +573,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 }
                 root = Some(base);
             }
-            let memory = NewMemory {
+            let mut memory = NewMemory {
                 content: content.clone(),
                 layer: layer.clone(),
                 source: source.clone(),
@@ -559,19 +588,37 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             memory.validate()?;
             if let Some(client) = llm.client()? {
                 let mut memories = client.extract(content, layer).await?;
+                let mut quarantined = 0;
                 for m in &mut memories {
                     m.source = source.clone();
                     m.expires_at = rules.expiry(&m.layer);
                     m.validate()?;
+                    if guard::apply(m, &rules.guard).quarantined() {
+                        quarantined += 1;
+                    }
                 }
                 let ids = store.insert_memories(memories)?;
-                json!({"memory_ids":ids,"status":"stored"})
-            } else if let Some(root) = root {
-                let commit = citations::current_commit(&root);
-                let id = store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?;
-                json!({"id":id,"status":"stored","citations":anchors.len()})
+                json!({"memory_ids":ids,"status":"stored","quarantined":quarantined})
             } else {
-                json!({"id":store.insert_memory(memory)?,"status":"stored"})
+                let verdict = guard::apply(&mut memory, &rules.guard);
+                let id = match root {
+                    Some(root) => {
+                        let commit = citations::current_commit(&root);
+                        store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?
+                    }
+                    None => store.insert_memory(memory)?,
+                };
+                let mut output = json!({"id":id,"status":"stored"});
+                if !anchors.is_empty() {
+                    output["citations"] = json!(anchors.len());
+                }
+                if verdict.quarantined() {
+                    output["status"] = json!("quarantined");
+                    output["lifecycle_state"] = json!("candidate");
+                    output["guard"] = json!(verdict);
+                    output["note"] = json!("held for review: `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>`");
+                }
+                output
             }
         }
         Command::Cite { memory_id, specs } => {
@@ -598,6 +645,45 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         Command::Refresh { memory_id } => {
             require_memory(store, memory_id)?;
             citations::refresh(store, &project_root(rules)?, memory_id)?
+        }
+        Command::Export { out, layers, check } => {
+            let layers: Vec<String> = if layers.is_empty() {
+                mirror::DEFAULT_LAYERS
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect()
+            } else {
+                layers.clone()
+            };
+            let (text, count) = mirror::render(store, &layers)?;
+            let current = std::fs::read_to_string(out).ok();
+            let up_to_date = current.as_deref() == Some(text.as_str());
+            if *check {
+                ensure!(
+                    up_to_date,
+                    "{} is out of date; run `memctrl export`",
+                    out.display()
+                );
+                json!({"output":out,"memories":count,"up_to_date":true})
+            } else {
+                if !up_to_date {
+                    memctrl::fsutil::write_atomic(out, text.as_bytes())?;
+                }
+                mirror::ensure_gitignore(out)?;
+                json!({"output":out,"memories":count,"changed":!up_to_date})
+            }
+        }
+        Command::Import {
+            file,
+            layer,
+            dry_run,
+        } => {
+            validate_layer(Some(layer))?;
+            let text = std::fs::read_to_string(file)
+                .with_context(|| format!("cannot read {}", file.display()))?;
+            let mut report = mirror::import(store, &text, layer, &rules.guard, *dry_run)?;
+            report["file"] = json!(file);
+            report
         }
         Command::Query {
             query_text,
@@ -971,6 +1057,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::Cite { .. } => "cite",
         Command::Stale { .. } => "stale",
         Command::Refresh { .. } => "refresh",
+        Command::Export { .. } => "export",
+        Command::Import { .. } => "import",
         Command::Add { .. } => "store",
         Command::Query { .. } => "retrieve",
         Command::List(_) => "list",

@@ -28,6 +28,11 @@ confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
 # Words that should find each other. Built-ins cover db/database, prod/production, k8s/kubernetes...
 builtin_aliases = true
 aliases = []   # e.g. [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
+[guard]
+# Hidden characters or instruction-like text make a new memory a candidate for review.
+# "strict" also holds everything from sources not listed below; "off" disables the guard.
+mode = "flag"
+trusted_sources = ["manual", "user", "cli"]
 "#;
 
 /// Synonym groups developers use interchangeably. A query word in a group also matches the
@@ -59,6 +64,8 @@ pub struct Rules {
     pub builtin_aliases: bool,
     /// `[citations] root`, resolved against the rules file's directory.
     pub citations_root: Option<std::path::PathBuf>,
+    /// `[guard]`: how suspicious writes are held for review.
+    pub guard: crate::guard::Policy,
 }
 
 impl Default for Rules {
@@ -117,6 +124,7 @@ impl Default for Rules {
             aliases: Vec::new(),
             builtin_aliases: true,
             citations_root: None,
+            guard: crate::guard::Policy::default(),
         }
     }
 }
@@ -260,6 +268,31 @@ impl Rules {
                     }
                     rules.aliases.push(cleaned);
                 }
+            }
+        }
+        if let Some(guard) = raw.get("guard") {
+            let guard = guard.as_table().context("guard must be a table")?;
+            if let Some(mode) = guard.get("mode") {
+                rules.guard.mode = match mode.as_str().context("guard.mode must be a string")? {
+                    "off" => crate::guard::Mode::Off,
+                    "flag" => crate::guard::Mode::Flag,
+                    "strict" => crate::guard::Mode::Strict,
+                    _ => bail!("guard.mode must be \"off\", \"flag\" or \"strict\""),
+                };
+            }
+            if let Some(sources) = guard.get("trusted_sources") {
+                rules.guard.trusted_sources = sources
+                    .as_array()
+                    .context("guard.trusted_sources must be an array of strings")?
+                    .iter()
+                    .map(|v| {
+                        let source = v
+                            .as_str()
+                            .context("guard.trusted_sources entries must be strings")?;
+                        validate_identifier(source, "trusted source")?;
+                        Ok(source.to_string())
+                    })
+                    .collect::<Result<_>>()?;
             }
         }
         if let Some(root) = raw.get("citations").and_then(|v| v.get("root")) {
@@ -470,7 +503,8 @@ impl Rules {
                         .or_else(|| context.get("content"))
                         .and_then(Value::as_str)
                         .unwrap_or("");
-                    for memory in self.extract(text, &to) {
+                    for mut memory in self.extract(text, &to) {
+                        crate::guard::apply(&mut memory, &self.guard);
                         ids.push(store.insert_memory(memory)?);
                     }
                     store.maintenance(
