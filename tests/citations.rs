@@ -211,7 +211,9 @@ fn mcp_add_cites_atomically_and_stale_tool_reports_changes() {
     let rc = dir.path().join(".memoryrc");
     std::fs::write(
         &rc,
-        format!("[citations]\nroot = \"{}\"\n", dir.path().display()),
+        // A TOML literal string: Windows paths are full of backslashes, which basic strings
+        // would read as escapes.
+        format!("[citations]\nroot = '{}'\n", dir.path().display()),
     )
     .unwrap();
     let rules = Rules::load(&rc).unwrap();
