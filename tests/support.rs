@@ -267,7 +267,7 @@ fn scoped_tracker_recovers_outer_scope_after_inner_panic() {
 fn installer_rejects_tool_directory_symlink_outside_scope() {
     let scope = tempfile::tempdir().unwrap();
     let outside = tempfile::tempdir().unwrap();
-    std::os::unix::fs::symlink(outside.path(), scope.path().join(".codex")).unwrap();
+    std::os::unix::fs::symlink(outside.path(), scope.path().join(".agents")).unwrap();
     assert!(installer::install("codex", true, scope.path()).is_err());
     assert!(!outside.path().join("skills").exists());
 }

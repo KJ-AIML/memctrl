@@ -338,6 +338,15 @@ pub fn persist_proposals(
     store: &mut MemoryStore,
     proposals: &[LessonProposal],
 ) -> Result<Vec<String>> {
+    persist_proposals_with(store, proposals, &crate::guard::Policy::default())
+}
+
+/// `persist_proposals` with an explicit write-guard policy (from `.memoryrc`).
+pub fn persist_proposals_with(
+    store: &mut MemoryStore,
+    proposals: &[LessonProposal],
+    policy: &crate::guard::Policy,
+) -> Result<Vec<String>> {
     store.conn.execute_batch("SAVEPOINT heli_review")?;
     let result: Result<Vec<String>> = (|| {
         let mut ids = Vec::new();
@@ -366,7 +375,7 @@ pub fn persist_proposals(
                     proposal.counterexamples.join("\n- ")
                 ));
             }
-            let id = store.insert_memory(NewMemory {
+            let mut lesson = NewMemory {
                 layer: "project".into(),
                 content: sanitize_text(&content),
                 source: "heli-distillation".into(),
@@ -384,7 +393,10 @@ pub fn persist_proposals(
                     VerificationState::Unverified
                 },
                 ..NewMemory::default()
-            })?;
+            };
+            // Task history can carry injected text; flagged lessons are tagged for the reviewer.
+            crate::guard::apply(&mut lesson, policy);
+            let id = store.insert_memory(lesson)?;
             for (index, task) in proposal.source_tasks.iter().enumerate() {
                 validate_identifier(task, "Heli task ID")?;
                 let revision = proposal
@@ -426,6 +438,25 @@ pub fn review_filtered(
     limit: usize,
     repo_filter: Option<&str>,
 ) -> Result<Value> {
+    review_with_policy(
+        store,
+        path,
+        persist,
+        limit,
+        repo_filter,
+        &crate::guard::Policy::default(),
+    )
+}
+
+/// `review_filtered` with an explicit write-guard policy (from `.memoryrc`).
+pub fn review_with_policy(
+    store: &mut MemoryStore,
+    path: &Path,
+    persist: bool,
+    limit: usize,
+    repo_filter: Option<&str>,
+    policy: &crate::guard::Policy,
+) -> Result<Value> {
     let tasks: Vec<_> = load_tasks(path)?
         .into_iter()
         .filter(|task| repo_filter.is_none_or(|repo| task.target_repo.eq_ignore_ascii_case(repo)))
@@ -433,7 +464,7 @@ pub fn review_filtered(
         .collect();
     let proposals = distill(&tasks);
     let ids = if persist {
-        persist_proposals(store, &proposals)?
+        persist_proposals_with(store, &proposals, policy)?
     } else {
         vec![]
     };

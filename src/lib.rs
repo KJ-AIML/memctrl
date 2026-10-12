@@ -1,16 +1,23 @@
 #![forbid(unsafe_code)]
 pub mod agent;
+pub mod citations;
+pub mod context;
 pub mod decay;
 pub mod doctor;
+pub mod eval;
+pub mod fsutil;
+pub mod guard;
 pub mod heli;
 pub mod installer;
 pub mod llm;
 pub mod mcp;
+pub mod mirror;
 pub mod model;
 pub mod reflection;
 pub mod retriever;
 pub mod rules;
 pub mod sanitize;
+pub mod search;
 pub mod span;
 pub mod store;
 pub mod telemetry;

@@ -2,7 +2,7 @@
 build:
 	cargo build --locked --release
 test:
-	cargo test --locked --all-targets
+	cargo test --locked --all-targets --no-fail-fast
 lint:
 	cargo clippy --locked --all-targets -- -D warnings
 fmt:
@@ -13,7 +13,7 @@ install:
 ci:
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
-	cargo test --locked --all-targets
+	cargo test --locked --all-targets --no-fail-fast
 	cargo build --locked --release --bin memctrl --examples
 	@if git ls-files '*.py' '*.pyc' 'pyproject.toml' 'requirements*.txt' 'uv.lock' | grep -q .; then \
 		echo "Python source or packaging found"; exit 1; \

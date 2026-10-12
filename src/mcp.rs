@@ -1,6 +1,6 @@
 //! MCP stdio server using the official SDK; schemas are descriptive, so dispatch validates inputs.
 use crate::{
-    model::{LifecycleState, NewMemory, VerificationState},
+    model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     rules::Rules,
     sanitize::{sanitize_text, sanitize_value, validate_identifier},
     store::MemoryStore,
@@ -31,6 +31,61 @@ fn optional_string<'a>(args: &'a Value, key: &str) -> Result<Option<&'a str>> {
             .ok_or_else(|| anyhow::anyhow!("{key} must be a string")),
     }
 }
+fn layers(args: &Value) -> Result<Vec<String>> {
+    match args.get("layers") {
+        None => Ok(crate::context::DEFAULT_LAYERS
+            .iter()
+            .map(|l| l.to_string())
+            .collect()),
+        Some(v) => {
+            let items = v
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("layers must be an array of strings"))?;
+            ensure!(!items.is_empty(), "layers must not be empty");
+            items
+                .iter()
+                .map(|item| {
+                    let layer = item
+                        .as_str()
+                        .ok_or_else(|| anyhow::anyhow!("layers must be an array of strings"))?;
+                    validate_identifier(layer, "layer")?;
+                    Ok(layer.to_string())
+                })
+                .collect()
+        }
+    }
+}
+fn budget(args: &Value) -> Result<usize> {
+    match args.get("budget") {
+        None => Ok(crate::context::DEFAULT_BUDGET),
+        Some(v) => {
+            let n = v
+                .as_u64()
+                .ok_or_else(|| anyhow::anyhow!("budget must be a nonnegative integer"))?;
+            ensure!(n <= 100_000, "budget must be at most 100000");
+            Ok(n as usize)
+        }
+    }
+}
+fn strings(args: &Value, key: &str) -> Result<Vec<String>> {
+    match args.get(key) {
+        None => Ok(Vec::new()),
+        Some(v) => {
+            let items = v
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("{key} must be an array of strings"))?;
+            ensure!(items.len() <= 64, "{key} accepts at most 64 entries");
+            items
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(String::from)
+                        .ok_or_else(|| anyhow::anyhow!("{key} must be an array of strings"))
+                })
+                .collect()
+        }
+    }
+}
 fn limit(args: &Value) -> Result<usize> {
     match args.get("limit") {
         None => Ok(50),
@@ -59,15 +114,45 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             let source = optional_string(args, "source")?.unwrap_or("mcp");
             validate_identifier(layer, "layer")?;
             validate_identifier(source, "source")?;
-            let memory = NewMemory {
+            let claim_type = match optional_string(args, "claim_type")? {
+                Some(text) => text.parse::<ClaimType>()?,
+                None => ClaimType::default(),
+            };
+            let tags = strings(args, "tags")?;
+            let specs = strings(args, "cite")?;
+            let mut memory = NewMemory {
                 content: content.into(),
                 layer: layer.into(),
                 source: source.into(),
+                claim_type,
+                tags,
                 expires_at: rules.expiry(layer),
                 ..Default::default()
             };
             memory.validate()?;
-            json!({"id": store.insert_memory(memory)?, "status": "stored"})
+            let verdict = crate::guard::apply(&mut memory, &rules.guard);
+            let mut output = if specs.is_empty() {
+                json!({"id": store.insert_memory(memory)?, "status": "stored"})
+            } else {
+                // Resolve and hash every citation before writing anything.
+                let root = crate::citations::project_root(rules.citations_root.as_deref())?;
+                let cwd = std::env::current_dir()?;
+                let anchors = specs
+                    .iter()
+                    .map(|spec| {
+                        crate::citations::anchor(&root, &cwd, &crate::citations::parse_spec(spec)?)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let commit = crate::citations::current_commit(&root);
+                let id = store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?;
+                json!({"id": id, "status": "stored", "citations": anchors.len()})
+            };
+            if verdict.quarantined() {
+                output["status"] = json!("quarantined");
+                output["lifecycle_state"] = json!("candidate");
+                output["guard"] = json!(verdict);
+            }
+            output
         }
         "memctrl_query" => {
             let query = string(args, "query")?;
@@ -75,12 +160,36 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             if let Some(l) = layer {
                 validate_identifier(l, "layer")?;
             }
-            serde_json::to_value(crate::retriever::retrieve(
+            let mut result = crate::retriever::retrieve_with(
                 store,
                 query,
                 layer,
                 limit(args)?,
+                &crate::retriever::SearchOptions::from_rules(rules),
+            )?;
+            if let Ok(root) = crate::citations::project_root(rules.citations_root.as_deref()) {
+                crate::citations::annotate(store, &root, &mut result)?;
+            }
+            serde_json::to_value(result)?
+        }
+        "memctrl_context" => {
+            let layers = layers(args)?;
+            let budget = budget(args)?;
+            let notes = crate::citations::stale_notes(store, rules);
+            serde_json::to_value(crate::context::session_brief(
+                store,
+                &layers,
+                budget,
+                &|m| notes.get(&m.id).cloned(),
             )?)?
+        }
+        "memctrl_stale" => {
+            let layer = optional_string(args, "layer")?;
+            if let Some(l) = layer {
+                validate_identifier(l, "layer")?;
+            }
+            let root = crate::citations::project_root(rules.citations_root.as_deref())?;
+            crate::citations::stale_report(store, &root, layer, false)?
         }
         "memctrl_trigger" => {
             let event = string(args, "event")?;
@@ -158,8 +267,20 @@ fn tools() -> Vec<Tool> {
         (
             "memctrl_add",
             "Store a memory",
-            json!({"content":{"type":"string"},"layer":{"type":"string"},"source":{"type":"string","default":"mcp"}}),
+            json!({"content":{"type":"string"},"layer":{"type":"string"},"source":{"type":"string","default":"mcp"},"claim_type":{"type":"string","enum":["assertion","decision","observation","hypothesis"]},"tags":{"type":"array","items":{"type":"string"}},"cite":{"type":"array","items":{"type":"string"},"description":"Code the memory describes: path, path:LINE or path:START-END, relative to the project root"}}),
             vec!["content", "layer"],
+        ),
+        (
+            "memctrl_stale",
+            "List memories whose cited code changed or disappeared since they were saved",
+            json!({"layer":{"type":"string"}}),
+            vec![],
+        ),
+        (
+            "memctrl_context",
+            "Brief of the highest-trust project memories within a token budget; call at session start",
+            json!({"layers":{"type":"array","items":{"type":"string"},"default":["project","user"]},"budget":{"type":"integer","minimum":0,"maximum":100000,"default":1500}}),
+            vec![],
         ),
         (
             "memctrl_trigger",
@@ -295,6 +416,41 @@ mod tests {
             store.get_memory(&id, true)?.unwrap().lifecycle_state,
             LifecycleState::Accepted
         );
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    #[test]
+    fn context_tool_validates_before_writing_provenance() -> Result<()> {
+        let mut store = MemoryStore::open(":memory:")?;
+        let rules = Rules::default();
+        store.insert_memory(NewMemory {
+            layer: "project".into(),
+            content: "Releases are cut from main".into(),
+            ..Default::default()
+        })?;
+        for args in [
+            json!({"layers":"project"}),
+            json!({"layers":[]}),
+            json!({"layers":[7]}),
+            json!({"budget":-1}),
+            json!({"budget":1_000_000}),
+        ] {
+            assert!(dispatch(&mut store, &rules, "memctrl_context", &args).is_err());
+        }
+        assert!(
+            store.provenance(10)?.is_empty(),
+            "invalid input must not record anything"
+        );
+        let brief = dispatch(&mut store, &rules, "memctrl_context", &json!({}))?;
+        assert_eq!(brief["entries"][0]["content"], "Releases are cut from main");
+        assert!(brief["markdown"]
+            .as_str()
+            .unwrap()
+            .contains("## Facts and conventions"));
         Ok(())
     }
 }

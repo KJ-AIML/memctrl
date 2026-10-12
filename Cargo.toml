@@ -1,6 +1,6 @@
 [package]
 name = "memctrl"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 description = "Local explainable memory infrastructure for AI agents"
 license = "MIT"
@@ -10,7 +10,7 @@ readme = "README.md"
 keywords = ["ai", "agents", "memory", "mcp", "sqlite"]
 categories = ["command-line-utilities", "database"]
 # Ship only what the binary and library need; schema.sql and assets/SKILL.md are embedded.
-include = ["src/**/*", "assets/SKILL.md", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "MIGRATION.md"]
+include = ["src/**/*", "assets/**/*", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "MIGRATION.md"]
 
 [dependencies]
 anyhow = "1"
@@ -19,12 +19,13 @@ clap = { version = "4", features = ["derive", "env"] }
 regex = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 toml = "1.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "time"] }
 rmcp = { version = "3.5", features = ["server", "transport-io"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

@@ -143,6 +143,7 @@ fn provenance_stores_source_memory_details() -> anyhow::Result<()> {
         facts: vec!["specific architecture fact".into()],
         trace: vec!["root -> architecture".into()],
         confidence: 1.0,
+        ..Default::default()
     };
     store.save_provenance("architecture", &result, 1, "keyword_tree")?;
     let provenance = store.provenance(1)?;

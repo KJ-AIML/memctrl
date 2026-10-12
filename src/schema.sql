@@ -21,3 +21,5 @@ CREATE TABLE IF NOT EXISTS query_cache(query TEXT PRIMARY KEY,result_json TEXT N
 CREATE TABLE IF NOT EXISTS cache_meta(key TEXT PRIMARY KEY,value INTEGER);
 
 CREATE TABLE IF NOT EXISTS agent_checkpoints(thread_id TEXT PRIMARY KEY,state_json TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS memory_tombstones(id TEXT PRIMARY KEY,content_digest TEXT NOT NULL,deleted_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS memory_citations(id TEXT PRIMARY KEY,memory_id TEXT NOT NULL,path TEXT NOT NULL,line_start INTEGER,line_end INTEGER,file_hash TEXT NOT NULL,span_hash TEXT,head_hash TEXT,head_offset INTEGER,commit_sha TEXT,created_at TEXT NOT NULL,refreshed_at TEXT);

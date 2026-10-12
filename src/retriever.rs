@@ -1,4 +1,7 @@
 //! Explainable local retrieval. Cache publication and scoring share one writer snapshot.
+//!
+//! `retrieve` ranks with SQLite FTS5 (see `search`). `keyword_retrieve` is the 1.x keyword
+//! scorer, kept as the Python-parity oracle and as the baseline for `memctrl eval`.
 use crate::model::{Memory, RetrievalResult, TreeNode};
 use crate::sanitize::{sanitize_text, validate_identifier};
 use crate::store::{AtomicWrite, MemoryStore};
@@ -97,6 +100,7 @@ fn score_node<'a>(
     }
 }
 
+/// Legacy 1.x scorer: counts stemmed words shared with the query over the memory tree.
 pub fn keyword_retrieve(
     query: &str,
     tree: &TreeNode,
@@ -159,28 +163,107 @@ pub fn keyword_retrieve(
             "keyword_search".into(),
             selected[0].1.layer.clone(),
         ],
+        ..Default::default()
     }
 }
 
+/// Retrieval settings derived from `.memoryrc`.
+#[derive(Debug, Clone, Default)]
+pub struct SearchOptions {
+    pub alias_groups: Vec<Vec<String>>,
+}
+impl SearchOptions {
+    pub fn from_rules(rules: &crate::rules::Rules) -> Self {
+        Self {
+            alias_groups: rules.alias_groups(),
+        }
+    }
+    fn fingerprint(&self) -> String {
+        let joined: Vec<String> = self.alias_groups.iter().map(|g| g.join("\u{1f}")).collect();
+        let refs: Vec<&str> = joined.iter().map(String::as_str).collect();
+        fingerprint(&refs)
+    }
+}
+
+/// Ranks eligible memories for `query` with FTS5 (BM25 words plus trigrams for spaceless
+/// scripts) without touching access counts, caches or provenance.
+pub fn lexical_retrieve(
+    store: &MemoryStore,
+    query: &str,
+    layer: Option<&str>,
+    top_k: usize,
+    options: &SearchOptions,
+) -> Result<RetrievalResult> {
+    let parsed = crate::search::parse_query(query, &options.alias_groups);
+    if parsed.is_empty() {
+        return Ok(RetrievalResult {
+            trace: vec!["no_keywords".into()],
+            ..Default::default()
+        });
+    }
+    let (hits, candidates) = crate::search::search(store, &parsed, layer, top_k)?;
+    let mut trace = vec![
+        METHOD.to_string(),
+        format!("terms:{}", parsed.terms.len()),
+        format!("runs:{}", parsed.runs.len()),
+        format!("candidates:{candidates}"),
+    ];
+    if hits.is_empty() {
+        trace.push("no_match".into());
+        return Ok(RetrievalResult {
+            trace,
+            ..Default::default()
+        });
+    }
+    let confidence = hits
+        .iter()
+        .map(|h| h.memory.confidence * h.why.coverage)
+        .sum::<f64>()
+        / hits.len() as f64;
+    Ok(RetrievalResult {
+        facts: hits
+            .iter()
+            .map(|h| sanitize_text(&h.memory.content))
+            .collect(),
+        sources: hits
+            .iter()
+            .map(|h| sanitize_text(&h.memory.source))
+            .collect(),
+        memory_ids: hits.iter().map(|h| h.memory.id.clone()).collect(),
+        confidence: (confidence * 100.0).round() / 100.0,
+        trace,
+        why: hits.into_iter().map(|h| h.why).collect(),
+    })
+}
+
+/// Retrieval with built-in aliases. Prefer `retrieve_with` when `.memoryrc` is available.
 pub fn retrieve(
     store: &mut MemoryStore,
     query: &str,
     layer: Option<&str>,
     top_k: usize,
 ) -> Result<RetrievalResult> {
+    let options = SearchOptions::from_rules(&crate::rules::Rules::default());
+    retrieve_with(store, query, layer, top_k, &options)
+}
+
+/// Cached, writer-locked retrieval that records access and provenance.
+pub fn retrieve_with(
+    store: &mut MemoryStore,
+    query: &str,
+    layer: Option<&str>,
+    top_k: usize,
+    options: &SearchOptions,
+) -> Result<RetrievalResult> {
     if let Some(layer) = layer {
         validate_identifier(layer, "layer")?;
     }
     let store: &MemoryStore = store;
     under_writer_lock(store, || {
-        let memories = store.list_memories(layer, false)?;
         let revision = store.revision()?;
-        let mut eligible: Vec<_> = memories
-            .iter()
-            .filter(|m| m.eligible())
-            .map(|m| m.id.as_str())
-            .collect();
+        let mut eligible = store.eligible_ids(layer)?;
         eligible.sort_unstable();
+        let eligible: Vec<&str> = eligible.iter().map(String::as_str).collect();
         // Eligibility may change with time alone. Binding the eligible set prevents
         // both stale inclusion and stale omission at validity/expiration boundaries.
         // A fingerprint keeps the key small however large the store grows.
@@ -191,19 +274,24 @@ pub fn retrieve(
             top_k,
             eligible.len(),
             fingerprint(&eligible),
+            options.fingerprint(),
         ))?;
         let timestamp = Utc::now().timestamp_millis() as f64 / 1000.0;
         let cached: Option<String> = store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?;
         let result = if let Some(cached) = cached {
             serde_json::from_str(&cached)?
+        } else if eligible.is_empty() {
+            RetrievalResult {
+                trace: vec!["no_eligible_memories".into()],
+                ..Default::default()
+            }
         } else {
-            let tree = crate::tree::build_tree(&memories);
-            keyword_retrieve(&sanitize_text(query), &tree, &memories, top_k)
+            lexical_retrieve(store, &sanitize_text(query), layer, top_k, options)?
         };
         for id in &result.memory_ids {
             store.record_access(id)?;
         }
-        store.save_provenance(query, &result, memories.len(), "keyword_tree")?;
+        store.save_provenance(query, &result, eligible.len(), METHOD)?;
         // Access columns are excluded from the revision triggers, and the writer lock
         // proves no content changed, so tagging this revision is snapshot safe.
         let after_access = store.revision()?;
@@ -255,7 +343,9 @@ pub fn publish_selection(
 }
 
 /// Part of every cache key: bump when scoring changes so upgrades never serve old results.
-const RETRIEVAL_VERSION: &str = "keyword-v1";
+const RETRIEVAL_VERSION: &str = "lexical-v1";
+/// Provenance method recorded for `retrieve`.
+pub const METHOD: &str = "lexical_bm25";
 
 /// Stable 64-bit FNV-1a over sorted ids. Not a security boundary: entries are also bound to
 /// the store revision and a 300s TTL, and ids are random v4 UUIDs.

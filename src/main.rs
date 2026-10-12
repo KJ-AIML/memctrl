@@ -1,9 +1,9 @@
 use anyhow::{bail, ensure, Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use memctrl::{
-    agent, decay, doctor, heli, installer,
+    agent, citations, context, decay, doctor, guard, heli, installer,
     llm::{LlmClient, LlmConfig, LlmSettings},
-    mcp,
+    mcp, mirror,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     reflection, retriever,
     rules::{Rules, DEFAULT_RULES},
@@ -97,6 +97,21 @@ struct Listing {
     #[arg(long, help = "Include expired and inactive lifecycle records")]
     include_history: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ContextFormat {
+    /// Markdown for people and AGENTS.md.
+    Markdown,
+    /// Machine-readable entries plus the Markdown.
+    Json,
+    /// Claude Code SessionStart hook output (additionalContext).
+    Hook,
+}
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum EvalRetriever {
+    Lexical,
+    Legacy,
+    Both,
+}
 #[derive(Subcommand)]
 enum Command {
     /// Create rules and initialize the database.
@@ -104,12 +119,34 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Install SKILL.md for a coding tool.
+    /// Install SKILL.md for a coding tool (and optionally a Claude Code session-start hook).
     Install {
         #[arg(long)]
         tool: Option<String>,
         #[arg(long)]
         project: bool,
+        #[arg(
+            long,
+            help = "Claude Code only: add a SessionStart hook that injects `memctrl context`"
+        )]
+        hook: bool,
+    },
+    /// Print a budgeted brief of the highest-trust memories for a session start.
+    Context {
+        #[arg(long, default_value_t = context::DEFAULT_BUDGET, help = "Approximate token budget")]
+        budget: usize,
+        #[arg(
+            long = "layer",
+            help = "Layer to include (repeatable; default: project and user)"
+        )]
+        layers: Vec<String>,
+        #[arg(long, value_enum, default_value_t = ContextFormat::Markdown)]
+        format: ContextFormat,
+        #[arg(
+            long,
+            help = "Write the brief between memctrl markers in this file (e.g. AGENTS.md) instead of printing it"
+        )]
+        write: Option<PathBuf>,
     },
     /// Store a memory (or explicitly request LLM extraction).
     Add {
@@ -130,8 +167,78 @@ enum Command {
         tags: Vec<String>,
         #[arg(long)]
         expires_at: Option<String>,
+        #[arg(
+            long = "cite",
+            value_name = "PATH[:LINE[-LINE]]",
+            help = "Code this memory describes (repeatable); memctrl flags the memory when it changes"
+        )]
+        cite: Vec<String>,
         #[command(flatten)]
         llm: LlmOptions,
+    },
+    /// Link an existing memory to the code it describes.
+    Cite {
+        memory_id: String,
+        #[arg(required = true, value_name = "PATH[:LINE[-LINE]]")]
+        specs: Vec<String>,
+    },
+    /// List memories whose cited code changed or disappeared.
+    Stale {
+        #[arg(long)]
+        layer: Option<String>,
+        #[arg(long, help = "Include memories whose citations are still fresh")]
+        all: bool,
+    },
+    /// Re-anchor a memory's citations to the current code after re-checking the memory.
+    Refresh { memory_id: String },
+    /// Write shared memory to a Markdown file for review in pull requests.
+    Export {
+        #[arg(long, default_value = mirror::DEFAULT_PATH)]
+        out: PathBuf,
+        #[arg(
+            long = "layer",
+            help = "Layer to export (repeatable; default: project)"
+        )]
+        layers: Vec<String>,
+        #[arg(
+            long,
+            help = "Fail if the file is not up to date instead of writing it"
+        )]
+        check: bool,
+    },
+    /// Measure retrieval quality on a suite (built in, or --file) without touching your database.
+    Eval {
+        #[arg(
+            long,
+            help = "JSON suite: {name, memories:[{key,content,...}], cases:[{query,expect,kind}]}"
+        )]
+        file: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = EvalRetriever::Both)]
+        retriever: EvalRetriever,
+        #[arg(long, default_value_t = 5)]
+        top_k: usize,
+        #[arg(
+            long,
+            help = "Fail unless lexical hit@k on answerable cases reaches this rate (0-1)"
+        )]
+        min_hit_rate: Option<f64>,
+    },
+    /// Import a memctrl export; never overwrites local memories.
+    Import {
+        file: PathBuf,
+        #[arg(
+            long,
+            default_value = "project",
+            help = "Layer for hand-written entries"
+        )]
+        layer: String,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(
+            long,
+            help = "Keep `supported` verification from the file (by default imported claims arrive unverified)"
+        )]
+        trust_verification: bool,
     },
     /// Retrieve relevant active memories with provenance.
     Query {
@@ -360,6 +467,18 @@ fn selected_memory_ids(
         selected_memory_ids(child, selected, include, output);
     }
 }
+fn project_root(rules: &Rules) -> Result<PathBuf> {
+    citations::project_root(rules.citations_root.as_deref())
+}
+/// Relative output paths must resolve inside the project, so a committed symlink can't redirect
+/// a write. Absolute paths are the caller's explicit choice.
+fn confinement(path: &Path, rules: &Rules) -> Result<Option<PathBuf>> {
+    Ok(if path.is_relative() {
+        Some(project_root(rules)?)
+    } else {
+        None
+    })
+}
 fn require_memory(store: &MemoryStore, id: &str) -> Result<()> {
     validate_identifier(id, "memory_id")?;
     ensure!(store.get_memory(id, true)?.is_some(), "memory not found");
@@ -376,12 +495,22 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&cli.rc, DEFAULT_RULES)?;
-            json!({"status":"initialized","rules":cli.rc,"database":find_db(cli)?})
+            let database = find_db(cli)?;
+            mirror::ensure_gitignore(&database)?;
+            json!({"status":"initialized","rules":cli.rc,"database":database})
         }
-        Command::Install { tool, project } => {
+        Command::Install {
+            tool,
+            project,
+            hook,
+        } => {
             let tool = tool
                 .as_deref()
                 .context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
+            ensure!(
+                !*hook || matches!(tool, "claude" | "claude_code"),
+                "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
+            );
             let root = if *project {
                 std::env::current_dir()?
             } else {
@@ -391,7 +520,67 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                         .context("home directory is not configured; use --project")?,
                 )
             };
-            json!({"path":installer::install(tool,*project,&root)?})
+            let path = installer::install(tool, *project, &root)?;
+            let mut output = json!({"path": path});
+            if let Some(legacy) = installer::legacy_skill_path(tool)
+                .map(|relative| root.join(relative))
+                .filter(|p| p.exists())
+            {
+                output["legacy_skill"] = json!(legacy);
+                output["note"] =
+                    json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
+            }
+            if *hook {
+                let executable = std::env::current_exe()?;
+                let (settings, changed) = installer::install_hook(
+                    &root,
+                    installer::settings_file(*project),
+                    &installer::hook_command(&executable),
+                )?;
+                output["hook"] = json!(settings);
+                output["hook_changed"] = json!(changed);
+            }
+            output
+        }
+        Command::Context {
+            budget,
+            layers,
+            format,
+            write,
+        } => {
+            let layers: Vec<String> = if layers.is_empty() {
+                context::DEFAULT_LAYERS
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect()
+            } else {
+                layers.clone()
+            };
+            let notes = citations::stale_notes(store, rules);
+            let brief =
+                context::session_brief(store, &layers, *budget, &|m| notes.get(&m.id).cloned())?;
+            if let Some(path) = write {
+                let existing = match std::fs::read_to_string(path) {
+                    Ok(text) => text,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(error) => return Err(error.into()),
+                };
+                let updated = memctrl::fsutil::upsert_block(
+                    &existing,
+                    context::BEGIN_MARKER,
+                    context::END_MARKER,
+                    &context::marked_block(&brief),
+                )
+                .with_context(|| format!("cannot update {}", path.display()))?;
+                let confine = confinement(path, rules)?;
+                let written =
+                    memctrl::fsutil::write_atomic(path, updated.as_bytes(), confine.as_deref())?;
+                json!({"written":written,"shown":brief.entries.len(),"eligible":brief.eligible,"approx_tokens":brief.approx_tokens})
+            } else if *format == ContextFormat::Json {
+                serde_json::to_value(&brief)?
+            } else {
+                Value::String(brief.markdown)
+            }
         }
         Command::Add {
             content,
@@ -403,11 +592,31 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             verification_state,
             tags,
             expires_at,
+            cite,
             llm,
         } => {
             validate_layer(Some(layer))?;
             validate_identifier(source, "source")?;
-            let memory = NewMemory {
+            ensure!(
+                cite.is_empty() || !llm.llm,
+                "--cite applies to one memory; add cited memories without --llm"
+            );
+            // Resolve and hash every citation before writing anything.
+            let mut anchors = Vec::new();
+            let mut root = None;
+            if !cite.is_empty() {
+                let base = project_root(rules)?;
+                let cwd = std::env::current_dir()?;
+                for spec in cite {
+                    anchors.push(citations::anchor(
+                        &base,
+                        &cwd,
+                        &citations::parse_spec(spec)?,
+                    )?);
+                }
+                root = Some(base);
+            }
+            let mut memory = NewMemory {
                 content: content.clone(),
                 layer: layer.clone(),
                 source: source.clone(),
@@ -422,16 +631,112 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             memory.validate()?;
             if let Some(client) = llm.client()? {
                 let mut memories = client.extract(content, layer).await?;
+                let mut quarantined = 0;
                 for m in &mut memories {
                     m.source = source.clone();
                     m.expires_at = rules.expiry(&m.layer);
                     m.validate()?;
+                    if guard::apply(m, &rules.guard).quarantined() {
+                        quarantined += 1;
+                    }
                 }
                 let ids = store.insert_memories(memories)?;
-                json!({"memory_ids":ids,"status":"stored"})
+                json!({"memory_ids":ids,"status":"stored","quarantined":quarantined})
             } else {
-                json!({"id":store.insert_memory(memory)?,"status":"stored"})
+                let verdict = guard::apply(&mut memory, &rules.guard);
+                let id = match root {
+                    Some(root) => {
+                        let commit = citations::current_commit(&root);
+                        store.insert_memory_with_citations(memory, &anchors, commit.as_deref())?
+                    }
+                    None => store.insert_memory(memory)?,
+                };
+                let mut output = json!({"id":id,"status":"stored"});
+                if !anchors.is_empty() {
+                    output["citations"] = json!(anchors.len());
+                }
+                if verdict.quarantined() {
+                    output["status"] = json!("quarantined");
+                    output["lifecycle_state"] = json!("candidate");
+                    output["guard"] = json!(verdict);
+                    output["note"] = json!("held for review: `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>`");
+                }
+                output
             }
+        }
+        Command::Cite { memory_id, specs } => {
+            require_memory(store, memory_id)?;
+            let root = project_root(rules)?;
+            let cwd = std::env::current_dir()?;
+            let anchors = specs
+                .iter()
+                .map(|spec| citations::anchor(&root, &cwd, &citations::parse_spec(spec)?))
+                .collect::<Result<Vec<_>>>()?;
+            let commit = citations::current_commit(&root);
+            let mut added = 0;
+            for anchor in &anchors {
+                if store.add_citation(memory_id, anchor, commit.as_deref())?.1 {
+                    added += 1;
+                }
+            }
+            json!({"id":memory_id,"added":added,"citations":citations::describe(store,&root,memory_id)?})
+        }
+        Command::Stale { layer, all } => {
+            validate_layer(layer.as_deref())?;
+            citations::stale_report(store, &project_root(rules)?, layer.as_deref(), *all)?
+        }
+        Command::Refresh { memory_id } => {
+            require_memory(store, memory_id)?;
+            citations::refresh(store, &project_root(rules)?, memory_id)?
+        }
+        Command::Export { out, layers, check } => {
+            let layers: Vec<String> = if layers.is_empty() {
+                mirror::DEFAULT_LAYERS
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect()
+            } else {
+                layers.clone()
+            };
+            let (text, count) = mirror::render(store, &layers)?;
+            // Compare as text: a CRLF checkout or a BOM is not a content change.
+            let current = std::fs::read_to_string(out)
+                .ok()
+                .map(|t| mirror::normalize(&t));
+            let up_to_date = current.as_deref() == Some(text.as_str());
+            if *check {
+                ensure!(
+                    up_to_date,
+                    "{} is out of date; run `memctrl export`",
+                    out.display()
+                );
+                json!({"output":out,"memories":count,"up_to_date":true})
+            } else {
+                if !up_to_date {
+                    let confine = confinement(out, rules)?;
+                    memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
+                }
+                mirror::ensure_gitignore(out)?;
+                json!({"output":out,"memories":count,"changed":!up_to_date})
+            }
+        }
+        Command::Import {
+            file,
+            layer,
+            dry_run,
+            trust_verification,
+        } => {
+            validate_layer(Some(layer))?;
+            let text = std::fs::read_to_string(file)
+                .with_context(|| format!("cannot read {}", file.display()))?;
+            let options = mirror::ImportOptions {
+                default_layer: layer.clone(),
+                dry_run: *dry_run,
+                trust_verification: *trust_verification,
+            };
+            let mut report = mirror::import(store, &text, &options, &rules.guard)?;
+            report["file"] = json!(file);
+            report
         }
         Command::Query {
             query_text,
@@ -454,12 +759,17 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     *limit,
                 )?)?
             } else {
-                serde_json::to_value(retriever::retrieve(
+                let mut result = retriever::retrieve_with(
                     store,
                     query_text,
                     layer.as_deref(),
                     *limit,
-                )?)?
+                    &retriever::SearchOptions::from_rules(rules),
+                )?;
+                if let Ok(root) = project_root(rules) {
+                    citations::annotate(store, &root, &mut result)?;
+                }
+                serde_json::to_value(result)?
             }
         }
         Command::List(options) | Command::Candidates(options) => {
@@ -482,7 +792,11 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::Show { memory_id } | Command::History { memory_id } => {
             require_memory(store, memory_id)?;
-            json!({"memory":store.get_memory(memory_id,true)?,"relations":store.relations(memory_id)?,"evidence":store.evidence(memory_id)?})
+            let cited = match project_root(rules) {
+                Ok(root) => citations::describe(store, &root, memory_id)?,
+                Err(_) => json!(store.citations(memory_id)?),
+            };
+            json!({"memory":store.get_memory(memory_id,true)?,"relations":store.relations(memory_id)?,"evidence":store.evidence(memory_id)?,"citations":cited})
         }
         Command::Accept { memory_id } => mcp::dispatch(
             store,
@@ -531,7 +845,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::Forget { memory_id } => {
             require_memory(store, memory_id)?;
-            ensure!(store.delete_memory(memory_id)?, "memory not found");
+            ensure!(store.forget_memory(memory_id)?, "memory not found");
             json!({"id":memory_id,"status":"deleted"})
         }
         Command::Clear { layer, yes } => {
@@ -596,6 +910,12 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 .map(|m| m.id)
                 .collect();
             report["weak_memory_ids"] = json!(weak);
+            report["stale_memories"] = match project_root(rules) {
+                Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
+                    .as_array()
+                    .map_or(0, Vec::len)),
+                Err(_) => Value::Null,
+            };
             report
         }
         Command::Provenance {
@@ -666,6 +986,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         }
         Command::OtelStats => telemetry::stats(store)?,
         Command::Maintenance => {
+            store.rebuild_search_index()?;
             store.checkpoint()?;
             json!({"status":"checkpointed","stats":store.stats()?})
         }
@@ -679,7 +1000,14 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                     dry_run: _,
                     repo,
                 },
-        } => heli::review_filtered(store, workspace, *persist, *completed, repo.as_deref())?,
+        } => heli::review_with_policy(
+            store,
+            workspace,
+            *persist,
+            *completed,
+            repo.as_deref(),
+            &rules.guard,
+        )?,
         Command::Agent { command } => match command {
             AgentCommand::Put { thread_id, state } => {
                 validate_identifier(thread_id, "thread_id")?;
@@ -701,6 +1029,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             }
         },
         Command::Serve => bail!("serve is handled separately"),
+        Command::Eval { .. } => bail!("eval is handled separately"),
     };
     Ok(sanitize_value(&result))
 }
@@ -716,6 +1045,63 @@ async fn run(cli: Cli) -> Result<()> {
     } else {
         find_db(&cli)?
     };
+    // Evaluation runs on an in-memory store and never opens or creates the real database.
+    if let Command::Eval {
+        file,
+        retriever,
+        top_k,
+        min_hit_rate,
+    } = &cli.command
+    {
+        let text = match file {
+            Some(path) => std::fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?,
+            None => memctrl::eval::BUILTIN_SUITE.to_string(),
+        };
+        let suite = memctrl::eval::parse_suite(&text)?;
+        let retrievers = match retriever {
+            EvalRetriever::Lexical => vec![memctrl::eval::Retriever::Lexical],
+            EvalRetriever::Legacy => vec![memctrl::eval::Retriever::Legacy],
+            EvalRetriever::Both => vec![
+                memctrl::eval::Retriever::Lexical,
+                memctrl::eval::Retriever::Legacy,
+            ],
+        };
+        let options = retriever::SearchOptions::from_rules(&rules);
+        let report = memctrl::eval::run(&suite, &retrievers, *top_k, &options)?;
+        if let Some(floor) = min_hit_rate {
+            memctrl::model::validate_confidence(*floor)?;
+            let rate = report["results"]["lexical"]["hit_at_k"]
+                .as_f64()
+                .context("--min-hit-rate needs the lexical retriever and answerable cases")?;
+            ensure!(
+                rate >= *floor,
+                "lexical hit@{top_k} is {rate}, below --min-hit-rate {floor}"
+            );
+        }
+        let encoded = serde_json::to_string(&sanitize_value(&report))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
+    // A session-start hook runs in every repository; where memctrl was never set up it must
+    // print nothing and create nothing.
+    if let Command::Context { format, write, .. } = &cli.command {
+        if !db.exists() {
+            if write.is_some() {
+                bail!(
+                    "no memctrl database at {}; run `memctrl init` first",
+                    db.display()
+                );
+            }
+            if *format == ContextFormat::Json {
+                let empty = json!({"entries":[],"eligible":0,"store":"missing"});
+                std::io::stdout()
+                    .lock()
+                    .write_all((empty.to_string() + "\n").as_bytes())?;
+            }
+            return Ok(());
+        }
+    }
     if let Some(parent) = db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
@@ -748,7 +1134,17 @@ async fn run(cli: Cli) -> Result<()> {
             json!({"interface":"cli"}),
         )?;
     }
-    let encoded = serde_json::to_string(&sanitize_value(&result))? + "\n";
+    let encoded = match (&cli.command, &result) {
+        (Command::Context { format, .. }, Value::String(markdown)) => match format {
+            ContextFormat::Hook => {
+                json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
+                    .to_string()
+                    + "\n"
+            }
+            _ => markdown.clone(),
+        },
+        _ => serde_json::to_string(&sanitize_value(&result))? + "\n",
+    };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
     Ok(())
 }
@@ -756,6 +1152,13 @@ fn command_name(command: &Command) -> &'static str {
     match command {
         Command::Init { .. } => "init",
         Command::Install { .. } => "install",
+        Command::Context { .. } => "context",
+        Command::Cite { .. } => "cite",
+        Command::Stale { .. } => "stale",
+        Command::Refresh { .. } => "refresh",
+        Command::Export { .. } => "export",
+        Command::Eval { .. } => "eval",
+        Command::Import { .. } => "import",
         Command::Add { .. } => "store",
         Command::Query { .. } => "retrieve",
         Command::List(_) => "list",

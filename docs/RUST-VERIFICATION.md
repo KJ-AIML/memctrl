@@ -1,5 +1,38 @@
 # Rust migration verification
 
+## 2.1 verification (branch `feat/memory-2.1`, 2026-10-12)
+
+`make ci` passes locally on macOS arm64: fmt, strict all-target Clippy, 137 passing tests (66 test functions on 2.0 main, 129 now), release build and the Rust-only check. New regression contracts:
+- `tests/search.rs`: multilingual matching, BM25 ranking, aliases and the cache key, explanations in provenance, index maintenance by raw writers, backfill on open.
+- `tests/citations.rs`: edit, move and delete freshness; atomic invalid citations; audited refresh; MCP.
+- `tests/mirror.rs`: byte-identical export → import → export, edited and new entries become candidates once, local state wins, atomic failures, guard on every write path.
+- `tests/eval.rs`: retrieval floors on the built-in suite.
+- `cli.rs`: session brief and hook install.
+
+An independent adversarial review of the branch found 1 high, 6 medium and 7 low issues. Every finding is fixed and carries a regression test:
+- import brought back forgotten memories and re-accepted refuted text
+- symlinked output paths escaped the repository
+- forged verification on import
+- expired memories crowded out valid ones
+- orphan markers deleted user text
+- guard bypasses: lookalike letters, invisible splitters, broader phrasings
+- committed hook paths
+- forged markers made AGENTS.md grow
+- the moved-span search took 1.97 s on a 100k-line file; it now takes 0.05 s
+- strict escaping, BOM and CRLF handling, and citation hash validation
+- citing secret files
+- Heli honors the guard policy
+
+Measured with the release binary: queries take about 10 ms on a 3,000-memory store (2.0.0: about 120 ms). A 2.0-created database is indexed automatically on first open. The built-in eval results are in README "Measuring retrieval".
+
+Limits:
+- The eval suite was written by the same author as the retriever; it is a regression gate, not an independent benchmark.
+- Lexical retrieval does not answer paraphrases with no shared words.
+- Prompt-injection detection is heuristic. It lowers trust for review and never blocks, so false positives cost a review click and false negatives remain possible.
+- Citation freshness compares the working tree, not a specific commit.
+
+## 2.0 migration verification
+
 Fresh local verification:52 Rust tests passed, formatting and strict all-target Clippy passed. Optimized executable and four Cargo examples also built successfully. Independent final review and GitHub CI remain in progress. Original version1.3.0 baseline:520 tests passed,3 skipped during recovery. Native coverage is a separate Rust suite with captured SQL/query results and the preserved20-task Heli corpus.
 
 ## Review regressions carried forward
