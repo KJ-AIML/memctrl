@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380" role="img" aria-labelledby="t d" xml:space="preserve">
+  <title id="t">memctrl session brief</title>
+  <desc id="d">The brief Claude Code receives at session start: one decision, one convention, and one memory under "Check before trusting" because the line it cites in src/db.rs changed.</desc>
+  <style>
+    text { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace; }
+    .h1 { font-size: 15px; font-weight: 700; fill: #f3f0ff; }
+    .meta { font-size: 14px; fill: #8a83a3; }
+    .h2 { font-size: 15px; font-weight: 700; fill: #b9a3ff; }
+    .warn { font-size: 15px; font-weight: 700; fill: #f5b54a; }
+    .item { font-size: 15px; fill: #e6e1f7; }
+    .id { fill: #5f587a; }
+    .stale { fill: #f5b54a; }
+    .bar { font-size: 13px; fill: #cfc7ea; }
+    .cmd { font-size: 13px; fill: #8a83a3; }
+    .pulse { animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+    @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  </style>
+  <defs>
+    <clipPath id="card"><rect x="0.5" y="0.5" width="959" height="379" rx="14"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="960" height="380" fill="#0c0a14"/>
+    <rect width="960" height="46" fill="#120f1e"/>
+    <rect y="46" width="960" height="1" fill="#241d38"/>
+  </g>
+  <rect x="0.5" y="0.5" width="959" height="379" rx="14" fill="none" stroke="#2a2340"/>
+
+  <circle cx="26" cy="23" r="4" fill="#8b5cf6"/>
+  <text class="bar" x="40" y="27.5">Claude Code · SessionStart hook</text>
+  <text class="cmd" x="936" y="27.5" text-anchor="end">$ memctrl context</text>
+
+  <text class="h1" x="40" y="86"># Project memory (memctrl)</text>
+  <text class="meta" x="40" y="112">3 of 3 memories from project, user · ≈161 tokens · highest trust first.</text>
+
+  <text class="h2" x="40" y="158">## Decisions</text>
+  <text class="item" x="40" y="186">- We chose SQLx over Diesel: compile-time query checks caught 3 prod bugs<tspan class="id"> · 98afb738</tspan></text>
+
+  <text class="h2" x="40" y="232">## Facts and conventions</text>
+  <text class="item" x="40" y="260">- Run make ci before every push; it mirrors GitHub CI<tspan class="id"> · d5fd72be</tspan></text>
+
+  <rect x="14" y="284" width="932" height="76" rx="9" fill="#f5b54a" fill-opacity="0.07" stroke="#f5b54a" stroke-opacity="0.24"/>
+  <circle class="pulse" cx="24" cy="335" r="7" fill="#f5b54a" fill-opacity="0.22"/>
+  <circle cx="24" cy="335" r="3.5" fill="#f5b54a"/>
+  <text class="warn" x="40" y="312">## Check before trusting</text>
+  <text class="item" x="40" y="340">- DB pool size is 16; raising it starves Postgres<tspan class="id"> · 26aec6f9 · </tspan><tspan class="stale">stale: src/db.rs changed</tspan></text>
+</svg>
