@@ -827,6 +827,21 @@ impl MemoryStore {
             Ok(disputed)
         })
     }
+    /// Adds a tag to a memory, if it isn't there already.
+    pub fn add_tag(&self, id: &str, tag: &str) -> Result<bool> {
+        self.atomic(|| {
+            let memory = self.get_memory(id, true)?.context("memory not found")?;
+            if memory.tags.iter().any(|t| t == tag) {
+                return Ok(false);
+            }
+            let mut tags = memory.tags;
+            tags.push(tag.to_string());
+            Ok(self.conn.execute(
+                "UPDATE memories SET tags=?,updated_at=? WHERE id=?",
+                params![serde_json::to_string(&tags)?, now(), id],
+            )? > 0)
+        })
+    }
     /// Accepts a candidate that an import created from an entry the person has now reviewed,
     /// dropping its `import:new` tag so the next export renders the entry exactly as before.
     pub fn accept_imported(&self, id: &str) -> Result<bool> {

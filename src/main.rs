@@ -805,8 +805,13 @@ async fn execute(
                 layers.clone()
             };
             let notes = citations::stale_notes(store, rules);
-            let brief =
-                context::session_brief(store, &layers, *budget, &|m| notes.get(&m.id).cloned())?;
+            let brief = context::session_brief_with(
+                store,
+                &layers,
+                *budget,
+                &|m| notes.get(&m.id).cloned(),
+                &rules.guard,
+            )?;
             if let Some(path) = write {
                 let existing = match std::fs::read_to_string(path) {
                     Ok(text) => text,
@@ -1067,10 +1072,13 @@ async fn execute(
         Command::Accept { memory_id } => {
             let id = require_memory(store, memory_id)?;
             let memory = store.get_memory(&id, true)?.context("memory not found")?;
-            let release = if review::held_for_review(&memory).is_empty() {
+            // Held by the guard or an import, or left out of the brief because the guard flags
+            // it now: only a person at a terminal releases it.
+            let mut reasons = review::held_for_review(&memory);
+            reasons.extend(review::withheld(&memory, &rules.guard));
+            let release = if reasons.is_empty() {
                 Release::Refuse
             } else {
-                // Held by the guard or an import: only a person at a terminal releases it.
                 ensure!(
                     at_terminal(),
                     "{} is held for review; only a person can release it: run `memctrl accept {}` yourself in a terminal",
@@ -1078,16 +1086,17 @@ async fn execute(
                     &id[..8.min(id.len())]
                 );
                 ensure!(
-                    review::confirm(
+                    review::confirm_because(
                         &memory,
+                        &reasons,
                         &mut std::io::stdin().lock(),
                         &mut std::io::stderr()
                     )?,
-                    "cancelled; it is still a candidate"
+                    "cancelled; nothing changed"
                 );
                 Release::Confirmed
             };
-            review::accept(store, &id, release)?
+            review::accept_with(store, &id, release, &rules.guard)?
         }
         Command::Reject { memory_id, reason } => {
             let mut args = json!({"id":memory_id,"action":"reject"});
@@ -1210,6 +1219,16 @@ async fn execute(
             }
             report["stray_stores"] = json!(stray);
             report["config_warnings"] = json!(rules.warnings);
+            let withheld: Vec<String> = store
+                .list_memories(None, false)?
+                .iter()
+                .filter(|m| !review::withheld(m, &rules.guard).is_empty())
+                .map(|m| m.id.chars().take(8).collect())
+                .collect();
+            if !withheld.is_empty() {
+                report["withheld_note"] = json!("accepted memories the guard flags now, left out of the brief: read each with `memctrl show <id>`, then `memctrl accept <id>` in a terminal to release it, or `memctrl forget <id>`");
+            }
+            report["withheld_from_brief"] = json!(withheld);
             report["oversized_memories"] = json!(store.count_oversized()?);
             report["reclaimable_bytes"] = json!(store.reclaimable_bytes()?);
             report["committed_database"] = json!(project::tracked_by_git(db));

@@ -382,5 +382,5 @@ fn stale_memory_survives_a_crowded_brief() {
     let brief = String::from_utf8(run(&dir, &["context"]).stdout).unwrap();
     assert!(brief.contains("## Check before trusting"), "{brief}");
     assert!(brief.contains(&id[..8]), "{brief}");
-    assert!(brief.contains("Not shown for space:"), "{brief}");
+    assert!(brief.contains("Not shown for space"), "{brief}");
 }

@@ -188,11 +188,12 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             let layers = layers(args)?;
             let budget = budget(args)?;
             let notes = crate::citations::stale_notes(store, rules);
-            serde_json::to_value(crate::context::session_brief(
+            serde_json::to_value(crate::context::session_brief_with(
                 store,
                 &layers,
                 budget,
                 &|m| notes.get(&m.id).cloned(),
+                &rules.guard,
             )?)?
         }
         "memctrl_stale" => {
@@ -261,10 +262,11 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                         "cannot accept refuted memory"
                     );
                     // An agent never releases what the guard or an import held for review.
-                    return Ok(sanitize_value(&crate::review::accept(
+                    return Ok(sanitize_value(&crate::review::accept_with(
                         store,
                         id,
                         crate::review::Release::Refuse,
+                        &rules.guard,
                     )?));
                 }
                 "reject" => {
