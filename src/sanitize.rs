@@ -6,22 +6,235 @@ use std::sync::OnceLock;
 fn patterns() -> &'static Vec<(Regex, &'static str)> {
     static PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
     PATTERNS.get_or_init(|| [
-        (r"(?is)-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----.*?(?:-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----|\z)","PRIVATE_KEY"),
+        (r"(?is)-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\z)","PRIVATE_KEY"),
         (r"(?i)\bsk-[a-z0-9_-]{20,}\b","API_KEY"),
         (r"(?i)\bgh[pousr]_[a-z0-9]{36,}\b","GITHUB_TOKEN"),
         (r"(?i)\bgithub_pat_[a-z0-9_]{20,}\b","GITHUB_TOKEN"),
-        (r"(?i)\bAKIA[0-9A-Z]{16}\b","AWS_KEY"),
-        (r#"(?i)\b(api[_\-\s]?key["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+))"#,"API_KEY"),
-        (r#"(?i)\b(?:bearer\s+\S+|(?:auth|access|refresh)[_-]?token["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+))"#,"TOKEN"),
-        (r#"(?i)\b(?:password|passwd|passphrase)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+)"#,"PASSWORD"),
-        (r#"(?i)\b(?:secret|client[_-]?secret)["']?\s*[=:]\s*(?:\"[^\"]*\"|'[^']*'|\S+)"#,"SECRET"),
-        (r"(?i)\b[a-z][a-z0-9+.-]*://[^\s/@:]+:[^\s/@]+@","CREDENTIAL"),
+        (r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b","AWS_KEY"),
+        (r"\bgl(?:pat|dt|rt|ptt|cbt|oas)-[A-Za-z0-9_-]{20,}","GITLAB_TOKEN"),
+        (r"\bxox[abposr]-[A-Za-z0-9-]{10,}","SLACK_TOKEN"),
+        (r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}|\bwhsec_[A-Za-z0-9]{24,}","STRIPE_KEY"),
+        (r"\bnpm_[A-Za-z0-9]{30,}","NPM_TOKEN"),
+        (r"\bAIza[0-9A-Za-z_-]{30,}","GOOGLE_API_KEY"),
+        (r"\beyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*","JWT"),
         (r"\b[A-Za-z0-9/+=]{40,}\b","TOKEN"),
         (r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}\b","EMAIL"),
         (r"\b\d{3}-\d{2}-\d{4}\b","SSN"),
         (r"\b\d{3}-\d{3}-\d{4}\b","PHONE"),
         (r"\b\d{10,12}\b","PHONE_INTL"),
     ].into_iter().map(|(p,label)|(Regex::new(p).expect("static redaction regex"),label)).collect())
+}
+/// A secret-looking key followed by `=` or `:` and a value: `password=…`, `DB_PASSWORD=…`,
+/// `stripe.api_key: …`, `"pwd": …`. The whole key is matched, so a prefix like `DB_` no longer
+/// hides it (`\b` never fires between `_` and a letter).
+fn key_value() -> &'static Regex {
+    static KEY_VALUE: OnceLock<Regex> = OnceLock::new();
+    KEY_VALUE.get_or_init(|| {
+        Regex::new(r#"(?i)(^|[^a-z0-9_.-])((?:[a-z0-9_.-]*(?:password|passwd|passphrase|secret|token|api[_.\s-]?key|access[_.-]?key|private[_.-]?key|credentials?)|(?:[a-z0-9_.-]*[_.-])?(?:pass|pwd)))(["']?\s*[:=]\s*)("[^"]*"|'[^']*'|<[^>\n]{1,40}>|\S+)"#)
+            .expect("static key-value regex")
+    })
+}
+/// An `Authorization` header (any scheme) or a standalone bearer token.
+fn authorization() -> &'static [Regex; 2] {
+    static AUTHORIZATION: OnceLock<[Regex; 2]> = OnceLock::new();
+    AUTHORIZATION.get_or_init(|| {
+        [
+            Regex::new(r#"(?i)\b((?:proxy-)?authorization["']?\s*[:=]\s*)(?:(?:bearer|basic|token|digest|bot)\s+)?("[^"]*"|'[^']*'|\S+)"#),
+            Regex::new(r"(?i)\b(bearer\s+)([A-Za-z0-9._~+/-]+=*)"),
+        ]
+        .map(|r| r.expect("static authorization regex"))
+    })
+}
+fn url_pattern() -> &'static Regex {
+    static URL: OnceLock<Regex> = OnceLock::new();
+    URL.get_or_init(|| Regex::new(r"(?i)\b([a-z][a-z0-9+.-]*://)(\S+)").expect("static url regex"))
+}
+/// Values that only stand in for a secret: `${DB_PASSWORD}`, `<your key>`, `true`, `***`, `4096`.
+fn placeholder(value: &str) -> bool {
+    let v = value.trim_matches(|c| c == '"' || c == '\'');
+    let lower = v.to_ascii_lowercase();
+    v.is_empty()
+        || matches!(
+            lower.as_str(),
+            "true" | "false" | "null" | "none" | "nil" | "empty"
+        )
+        || v.starts_with("${")
+        || (v.len() > 1
+            && v.starts_with('$')
+            && v[1..]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        || (v.starts_with('<') && v.ends_with('>'))
+        || v.starts_with("[REDACTED_")
+        || v.chars().all(|c| c == '*')
+        || (v.len() <= 4 && v.chars().all(|c| c.is_ascii_digit()))
+}
+/// `user:password@` in a URL. The password may contain `@` or `/`, so the host starts after the
+/// last `@` that is followed by something host-like; `host:8080/path` is a port, not a password.
+fn redact_url_credentials(scheme: &str, rest: &str) -> Option<String> {
+    let colon = rest.find(':')?;
+    let user = &rest[..colon];
+    if user.is_empty() || user.contains(['/', '@']) {
+        return None;
+    }
+    let after = &rest[colon + 1..];
+    if after
+        .split('/')
+        .next()
+        .is_some_and(|port| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
+        && after.contains('/')
+    {
+        return None;
+    }
+    let at = rest
+        .char_indices()
+        .rev()
+        .filter(|(_, c)| *c == '@')
+        .map(|(i, _)| i)
+        .find(|&i| {
+            i > colon
+                && rest[i + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || c == '[')
+        })?;
+    Some(format!("{scheme}[REDACTED_CREDENTIAL]@{}", &rest[at + 1..]))
+}
+fn redact_contextual(text: &str) -> String {
+    // Every read re-sanitizes stored text, so skip each rule cheaply when the text can't
+    // contain what it looks for.
+    let has_separator = text.contains([':', '=']);
+    let text: std::borrow::Cow<'_, str> = if !has_separator {
+        text.into()
+    } else {
+        key_value().replace_all(text, |c: &regex::Captures<'_>| {
+            let (before, key, separator, value) = (&c[1], &c[2], &c[3], &c[4]);
+            let quoted = value.starts_with(['"', '\'']);
+            // "Session token: rotate weekly" is prose. A plain word, a colon and an ordinary word
+            // need a digit, a symbol or some length before they read as a credential.
+            let prose = separator.contains(':')
+                && !key.contains(['_', '.', '-'])
+                && key.chars().any(|ch| ch.is_ascii_lowercase())
+                && !quoted
+                && value.chars().count() < 12
+                && value.chars().all(|ch| ch.is_alphabetic());
+            if placeholder(value) || prose {
+                return c[0].to_string();
+            }
+            let label = sensitive_label(key).unwrap_or(
+                if key.to_ascii_lowercase().contains("pass")
+                    || key.to_ascii_lowercase().ends_with("pwd")
+                {
+                    "PASSWORD"
+                } else {
+                    "SECRET"
+                },
+            );
+            format!("{before}{key}{separator}[REDACTED_{label}]")
+        })
+    };
+    let [header, bearer] = authorization();
+    let text: std::borrow::Cow<'_, str> =
+        if has_separator && (text.contains("uthorization") || text.contains("UTHORIZATION")) {
+            header
+                .replace_all(&text, |c: &regex::Captures<'_>| {
+                    if placeholder(&c[2]) {
+                        c[0].to_string()
+                    } else {
+                        format!("{}[REDACTED_TOKEN]", &c[1])
+                    }
+                })
+                .into_owned()
+                .into()
+        } else {
+            text
+        };
+    if !(text.contains("earer") || text.contains("EARER") || text.contains("://")) {
+        return text.into_owned();
+    }
+    let text = bearer.replace_all(&text, |c: &regex::Captures<'_>| {
+        let value = &c[2];
+        let long =
+            value.len() >= 16 || (value.len() >= 8 && value.chars().any(|ch| ch.is_ascii_digit()));
+        if long && !placeholder(value) {
+            format!("{}[REDACTED_TOKEN]", &c[1])
+        } else {
+            c[0].to_string()
+        }
+    });
+    url_pattern()
+        .replace_all(&text, |c: &regex::Captures<'_>| {
+            redact_url_credentials(&c[1], &c[2]).unwrap_or_else(|| c[0].to_string())
+        })
+        .into_owned()
+}
+/// Payment cards (Visa, Mastercard, Amex, Discover prefixes, Luhn-checked, spaces or dashes
+/// allowed), phone numbers in `(555) 123-4567` and `+66 81 234 5678` form, and Thai national ids.
+fn personal_data() -> &'static [Regex; 4] {
+    static PERSONAL: OnceLock<[Regex; 4]> = OnceLock::new();
+    PERSONAL.get_or_init(|| {
+        [
+            Regex::new(r"\b(?:4|5[1-5]|3[47]|6011)(?:[ -]?\d){11,15}\b"),
+            Regex::new(r"\(\d{3}\)\s?\d{3}[-.\s]\d{4}\b"),
+            Regex::new(r"\+\d{1,3}(?:[\s.-]?\(?\d{1,4}\)?){2,5}\b"),
+            Regex::new(r"\b\d-\d{4}-\d{5}-\d{2}-\d\b"),
+        ]
+        .map(|r| r.expect("static personal-data regex"))
+    })
+}
+fn luhn(digits: &[u32]) -> bool {
+    let sum: u32 = digits
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(i, &d)| {
+            if i % 2 == 1 {
+                if d * 2 > 9 {
+                    d * 2 - 9
+                } else {
+                    d * 2
+                }
+            } else {
+                d
+            }
+        })
+        .sum();
+    sum.is_multiple_of(10)
+}
+fn redact_personal(text: &str) -> String {
+    let [card, phone, international, national_id] = personal_data();
+    if text.bytes().filter(u8::is_ascii_digit).count() < 8 {
+        return text.to_string();
+    }
+    let text = card.replace_all(text, |c: &regex::Captures<'_>| {
+        let digits: Vec<u32> = c[0].chars().filter_map(|ch| ch.to_digit(10)).collect();
+        if (15..=16).contains(&digits.len()) && luhn(&digits) {
+            "[REDACTED_CARD]".to_string()
+        } else {
+            c[0].to_string()
+        }
+    });
+    let text = phone.replace_all(&text, "[REDACTED_PHONE]");
+    let text = international.replace_all(&text, |c: &regex::Captures<'_>| {
+        let digits = c[0].chars().filter(char::is_ascii_digit).count();
+        if (8..=15).contains(&digits) {
+            "[REDACTED_PHONE_INTL]".to_string()
+        } else {
+            c[0].to_string()
+        }
+    });
+    national_id
+        .replace_all(&text, "[REDACTED_NATIONAL_ID]")
+        .into_owned()
+}
+/// All fixed patterns at once: one scan finds which ones can match, so the rest are skipped.
+/// Every read re-sanitizes stored text, which made a pass per pattern the cost of a brief.
+fn pattern_set() -> &'static regex::RegexSet {
+    static SET: OnceLock<regex::RegexSet> = OnceLock::new();
+    SET.get_or_init(|| {
+        regex::RegexSet::new(patterns().iter().map(|(pattern, _)| pattern.as_str()))
+            .expect("static redaction regex set")
+    })
 }
 fn uuid_pattern() -> &'static Regex {
     static UUID: OnceLock<Regex> = OnceLock::new();
@@ -51,11 +264,18 @@ fn redact_raw(input: &str) -> String {
         last = found.end();
     }
     shielded.push_str(&input[last..]);
-    let redacted = patterns().iter().fold(shielded, |text, (pattern, label)| {
-        pattern
-            .replace_all(&text, format!("[REDACTED_{label}]"))
-            .into_owned()
-    });
+    let shielded = redact_personal(&redact_contextual(&shielded));
+    let candidates = pattern_set().matches(&shielded);
+    let redacted = patterns()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| candidates.matched(*index))
+        .map(|(_, rule)| rule)
+        .fold(shielded, |text, (pattern, label)| {
+            pattern
+                .replace_all(&text, format!("[REDACTED_{label}]"))
+                .into_owned()
+        });
     uuids
         .iter()
         .enumerate()
@@ -69,7 +289,12 @@ fn sensitive_label(key: &str) -> Option<&'static str> {
         .filter(|c| c.is_ascii_alphanumeric())
         .flat_map(char::to_lowercase)
         .collect();
-    if key.ends_with("password") || key.ends_with("passwd") || key.ends_with("passphrase") {
+    if key.ends_with("password")
+        || key.ends_with("passwd")
+        || key.ends_with("passphrase")
+        || key == "pass"
+        || key.ends_with("pwd")
+    {
         Some("PASSWORD")
     } else if key.ends_with("apikey") {
         Some("API_KEY")
@@ -84,7 +309,11 @@ fn sensitive_label(key: &str) -> Option<&'static str> {
         Some("TOKEN")
     } else if key.ends_with("privatekey") {
         Some("PRIVATE_KEY")
-    } else if key.ends_with("secret") || key == "secrets" || key == "awssecretaccesskey" {
+    } else if key.ends_with("secret")
+        || key == "secrets"
+        || key == "awssecretaccesskey"
+        || key == "secretkeybase"
+    {
         Some("SECRET")
     } else {
         None
@@ -159,6 +388,25 @@ pub fn sanitize_revision(input: &str) -> String {
     } else {
         sanitize_text(input)
     }
+}
+/// The kinds of secret or PII `sanitize_text` removes from `input`, e.g. `["PASSWORD"]`, so a
+/// write can tell the user what it changed.
+pub fn redactions(input: &str) -> Vec<String> {
+    static LABEL: OnceLock<Regex> = OnceLock::new();
+    let label = LABEL.get_or_init(|| Regex::new(r"\[REDACTED_([A-Z_]+)\]").expect("static regex"));
+    let count = |text: &str| {
+        let mut counts = std::collections::BTreeMap::<String, usize>::new();
+        for c in label.captures_iter(text) {
+            *counts.entry(c[1].to_string()).or_default() += 1;
+        }
+        counts
+    };
+    let before = count(input);
+    count(&sanitize_text(input))
+        .into_iter()
+        .filter(|(kind, n)| before.get(kind).is_none_or(|b| n > b))
+        .map(|(kind, _)| kind)
+        .collect()
 }
 pub fn has_secrets(input: &str) -> bool {
     match serde_json::from_str::<Value>(input) {

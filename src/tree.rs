@@ -1,6 +1,7 @@
 //! Deterministic hierarchical keyword clustering, with Unicode-safe summaries.
 use crate::model::{Memory, TreeNode};
 use crate::sanitize::sanitize_text;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 const GROUPS: &[(&str, &[&str])] = &[
@@ -202,4 +203,43 @@ pub fn incremental_tree(previous: &TreeNode, memories: &[Memory]) -> TreeNode {
         },
         children,
     }
+}
+
+/// The tree as it is stored: root, layer and cluster nodes, with ids only on clusters. Leaves
+/// (one per memory, carrying its full text) made rebuilding a large store write tens of
+/// megabytes and invalidate every cache.
+pub fn compact(mut tree: TreeNode) -> TreeNode {
+    for layer in &mut tree.children {
+        layer.memory_ids.clear();
+        for cluster in &mut layer.children {
+            cluster.children.clear();
+        }
+    }
+    tree
+}
+
+/// A bounded view of a tree for tools: per layer and cluster, the count and the first `limit`
+/// ids, never memory text.
+pub fn overview(tree: &TreeNode, layer: Option<&str>, limit: usize) -> Value {
+    let layers: Vec<Value> = tree
+        .children
+        .iter()
+        .filter(|node| layer.is_none_or(|l| node.layer.as_deref() == Some(l)))
+        .map(|node| {
+            let clusters: Vec<Value> = node
+                .children
+                .iter()
+                .map(|cluster| {
+                    json!({
+                        "title": cluster.title,
+                        "memories": cluster.memory_ids.len(),
+                        "memory_ids": cluster.memory_ids.iter().take(limit).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            let total: usize = node.children.iter().map(|c| c.memory_ids.len()).sum();
+            json!({"layer": node.layer, "memories": total, "clusters": clusters})
+        })
+        .collect();
+    json!({"layers": layers})
 }

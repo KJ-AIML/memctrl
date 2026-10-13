@@ -2,7 +2,7 @@
 //! imports hold teammates' unreviewed entries. If the agent that was tricked into writing one
 //! could also accept it, review would protect nothing, so only a person at a terminal can
 //! release them: MCP refuses, and the CLI shows the text and asks for the id typed back.
-use crate::guard;
+use crate::guard::{self, Policy};
 use crate::model::{LifecycleState, Memory};
 use crate::store::MemoryStore;
 use anyhow::{anyhow, bail, Result};
@@ -34,6 +34,32 @@ pub fn held_for_review(memory: &Memory) -> Vec<String> {
         .collect()
 }
 
+/// Tag that records a person released a memory the guard flags, so the brief shows it (under
+/// "Check before trusting") instead of leaving it out.
+pub const RELEASED_TAG: &str = "guard:released";
+
+/// What the guard finds today in an accepted memory that no person released: memories accepted
+/// before the checks they would now fail (for example by an agent under 2.1.0, or through an old
+/// import). The brief leaves these out until a person releases them. Empty when the guard is off.
+pub fn withheld(memory: &Memory, policy: &Policy) -> Vec<String> {
+    if policy.mode == guard::Mode::Off
+        || memory.lifecycle_state != LifecycleState::Accepted
+        || memory.tags.iter().any(|t| t.starts_with("guard:"))
+    {
+        return Vec::new();
+    }
+    // Content only: the source check of strict mode applies when a memory is written.
+    let content_checks = Policy {
+        mode: guard::Mode::Flag,
+        ..policy.clone()
+    };
+    guard::inspect(&memory.content, "brief", &content_checks)
+        .flags
+        .iter()
+        .map(|f| f.tag().to_string())
+        .collect()
+}
+
 /// Rejects tags a caller may not set: they would mark a memory as held, or fake a release.
 pub fn check_tags(tags: &[String]) -> Result<()> {
     if let Some(tag) = tags
@@ -49,12 +75,25 @@ fn short(id: &str) -> &str {
     id.get(..8).unwrap_or(id)
 }
 
-/// Accepts a memory. One that is held for review needs `Release::Confirmed`.
+/// Accepts a memory with the default guard policy; see `accept_with`.
 pub fn accept(store: &MemoryStore, id: &str, release: Release) -> Result<Value> {
+    accept_with(store, id, release, &Policy::default())
+}
+
+/// Accepts a memory. One that is held for review, or that the brief withholds because the guard
+/// flags it now, needs `Release::Confirmed`; releasing a withheld memory tags it `guard:released`.
+pub fn accept_with(
+    store: &MemoryStore,
+    id: &str,
+    release: Release,
+    policy: &Policy,
+) -> Result<Value> {
     let memory = store
         .get_memory(id, true)?
         .ok_or_else(|| anyhow!("memory not found"))?;
-    let held = held_for_review(&memory);
+    let flagged = withheld(&memory, policy);
+    let mut held = held_for_review(&memory);
+    held.extend(flagged.iter().cloned());
     if !held.is_empty() && release == Release::Refuse {
         bail!(
             "{} is held for review ({}); only a person can release it: tell the user to run `memctrl accept {}` in a terminal",
@@ -64,6 +103,9 @@ pub fn accept(store: &MemoryStore, id: &str, release: Release) -> Result<Value> 
         );
     }
     let cleared = store.accept_memory(id)?;
+    if !flagged.is_empty() {
+        store.add_tag(id, RELEASED_TAG)?;
+    }
     let mut output = json!({"id": id, "action": "accept", "status": "updated"});
     if !held.is_empty() {
         store.log_event("release", &held.join(", "), &[id.to_string()])?;
@@ -78,11 +120,21 @@ pub fn accept(store: &MemoryStore, id: &str, release: Release) -> Result<Value> 
 /// Asks the person at the terminal to release `memory`: shows why it was held and its text with
 /// invisible characters spelled out, then reads the id's first 8 characters back.
 pub fn confirm(memory: &Memory, input: &mut impl BufRead, output: &mut impl Write) -> Result<bool> {
+    confirm_because(memory, &held_for_review(memory), input, output)
+}
+
+/// `confirm`, naming the reasons it is held.
+pub fn confirm_because(
+    memory: &Memory,
+    reasons: &[String],
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<bool> {
     let id = short(&memory.id);
     writeln!(
         output,
         "memctrl: {id} is held for review ({})",
-        held_for_review(memory).join(", ")
+        reasons.join(", ")
     )?;
     writeln!(
         output,

@@ -175,7 +175,7 @@ pub fn parse_spec(spec: &str) -> Result<CitationSpec> {
 
 /// Files that hold credentials. Their line hashes would be shared through `memctrl export`, and a
 /// short secret can be recovered from an unsalted hash by guessing.
-fn secret_file(path: &str) -> bool {
+pub fn secret_file(path: &str) -> bool {
     let lower = path.to_lowercase();
     if lower
         .split('/')
@@ -302,6 +302,14 @@ fn read_scoped(root: &Path, path: &str) -> std::result::Result<String, Status> {
     if !resolved.starts_with(&root) {
         return Err(Status::Unresolved);
     }
+    // Never hash a secrets file, even for a citation stored before this check existed.
+    let inside = resolved
+        .strip_prefix(&root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    if secret_file(&inside) {
+        return Err(Status::Unchecked);
+    }
     let meta = std::fs::metadata(&resolved).map_err(|_| Status::Missing)?;
     if !meta.is_file() || meta.len() > MAX_FILE_BYTES {
         return Err(Status::Unchecked);
@@ -335,6 +343,12 @@ pub fn anchor(root: &Path, cwd: &Path, spec: &CitationSpec) -> Result<Anchor> {
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/");
+    // The typed path was checked in parse_spec; a symlink can still lead to a secrets file.
+    ensure!(
+        !secret_file(&relative),
+        "refusing to cite {}: it resolves to {relative}, which looks like a secrets file, and citation hashes are shared through exports",
+        spec.path
+    );
     let text = match read_scoped(&root, &relative) {
         Ok(text) => text,
         Err(Status::Unchecked) => bail!(
@@ -420,6 +434,30 @@ pub fn check(root: &Path, citation: &Citation) -> Status {
         }
     }
     Status::Changed
+}
+
+/// Where a changed block starts now, judged by its first non-blank line: `Some` only when that
+/// line occurs exactly once in the file, so the block can be followed without guessing.
+fn unique_head(root: &Path, citation: &Citation) -> Option<u32> {
+    let head = citation.head_hash.as_ref()?;
+    let offset = citation.head_offset.unwrap_or(0) as usize;
+    let lines = normalize(&read_scoped(root, &citation.path).ok()?);
+    let mut found = lines
+        .iter()
+        .enumerate()
+        .filter(|(index, line)| {
+            *index >= offset && !line.trim().is_empty() && &digest(line) == head
+        })
+        .map(|(index, _)| index - offset);
+    let begin = found.next()?;
+    found.next().is_none().then_some(begin as u32 + 1)
+}
+
+fn range_label(start: Option<u32>, end: Option<u32>) -> Option<String> {
+    start.map(|s| match end {
+        Some(e) if e != s => format!("{s}-{e}"),
+        _ => s.to_string(),
+    })
 }
 
 /// The commit checked out in `root`, when git is available. Optional context only.
@@ -595,34 +633,64 @@ pub fn stale_report(
     Ok(serde_json::json!({"stale": entries, "checked": checked, "root": root}))
 }
 
-/// Re-anchors every citation of a memory to the code as it is now, after a human confirmed the
-/// memory still holds. Moved spans follow their new location. Missing files are an error: such
-/// a memory should be superseded or forgotten instead.
+/// Re-anchors a memory's citations after a person re-checked the memory. A block that moved is
+/// followed: exactly, or by its first line when that line now occurs once. When the block can't
+/// be found unambiguously, nothing changes and the caller is asked for the range with `--cite`;
+/// refresh never re-hashes the old line numbers onto unrelated code. `overrides` give explicit
+/// ranges for paths the memory already cites.
 pub fn refresh(
     store: &crate::store::MemoryStore,
     root: &Path,
     memory_id: &str,
+    overrides: &[CitationSpec],
 ) -> Result<serde_json::Value> {
     let citations = store.citations(memory_id)?;
     ensure!(!citations.is_empty(), "memory has no citations to refresh");
+    let short: String = memory_id.chars().take(8).collect();
+    for spec in overrides {
+        match citations.iter().filter(|c| c.path == spec.path).count() {
+            0 => bail!(
+                "this memory doesn't cite {}; add it with `memctrl cite {short} {}`",
+                spec.path,
+                spec.path
+            ),
+            1 => {}
+            _ => bail!(
+                "this memory cites {} more than once; re-cite it with `memctrl cite`",
+                spec.path
+            ),
+        }
+    }
     let mut plans = Vec::new();
     for citation in &citations {
         let status = check(root, citation);
-        let (line_start, line_end) = match (status, citation.line_start, citation.line_end) {
-            (Status::Missing, ..) => bail!(
+        let explicit = overrides.iter().find(|s| s.path == citation.path);
+        let (line_start, line_end) = match (explicit, status, citation.line_start, citation.line_end)
+        {
+            (Some(spec), ..) => (spec.line_start, spec.line_end),
+            (_, Status::Missing, ..) => bail!(
                 "{} no longer exists; supersede or forget this memory instead of refreshing it",
                 citation.path
             ),
-            (Status::Unresolved | Status::Unchecked, ..) => {
+            (_, Status::Unresolved | Status::Unchecked, ..) => {
                 bail!(
                     "{} cannot be checked inside the project root",
                     citation.path
                 )
             }
-            (Status::Moved { line_start }, Some(start), Some(end)) => {
+            (_, Status::Moved { line_start }, Some(start), Some(end)) => {
                 (Some(line_start), Some(line_start + (end - start)))
             }
-            (_, start, end) => (start, end),
+            (_, Status::Changed, Some(start), Some(end)) => match unique_head(root, citation) {
+                Some(begin) => (Some(begin), Some(begin + (end - start))),
+                None => bail!(
+                    "{}:{} changed and the cited block can't be found unambiguously, so refreshing could anchor this memory to unrelated code. Check the code, then run `memctrl refresh {short} --cite {}:<start>-<end>`",
+                    citation.path,
+                    range_label(Some(start), Some(end)).unwrap_or_default(),
+                    citation.path
+                ),
+            },
+            (_, _, start, end) => (start, end),
         };
         let spec = CitationSpec {
             path: citation.path.clone(),
@@ -635,18 +703,52 @@ pub fn refresh(
                 citation.path
             )
         })?;
-        plans.push((citation.id.clone(), status, anchor));
+        let from = range_label(citation.line_start, citation.line_end);
+        plans.push((
+            citation.id.clone(),
+            status,
+            from,
+            explicit.is_some(),
+            anchor,
+        ));
     }
     let commit = current_commit(root);
     let guard = crate::store::AtomicWrite::new(&store.conn)?;
     let mut refreshed = Vec::new();
-    for (id, before, anchor) in &plans {
+    for (id, before, from, explicit, anchor) in &plans {
         store.reanchor_citation(id, anchor, commit.as_deref())?;
-        refreshed.push(serde_json::json!({"path": anchor.path, "was": before.label(), "lines": anchor.line_start.map(|s| match anchor.line_end { Some(e) if e != s => format!("{s}-{e}"), _ => s.to_string() })}));
+        let lines = range_label(anchor.line_start, anchor.line_end);
+        let mut entry =
+            serde_json::json!({"path": anchor.path, "was": before.label(), "lines": lines});
+        if lines != *from {
+            entry["from"] = serde_json::json!(from);
+            entry["followed"] = serde_json::json!(!explicit);
+        }
+        refreshed.push(entry);
     }
+    let moves: Vec<String> = plans
+        .iter()
+        .filter(|(_, _, from, _, a)| *from != range_label(a.line_start, a.line_end))
+        .map(|(_, _, from, _, a)| {
+            format!(
+                "{} {} → {}",
+                a.path,
+                from.clone().unwrap_or_default(),
+                range_label(a.line_start, a.line_end).unwrap_or_default()
+            )
+        })
+        .collect();
     store.log_event(
         "citation_refresh",
-        &format!("re-anchored {} citation(s) after review", plans.len()),
+        &if moves.is_empty() {
+            format!("re-anchored {} citation(s) after review", plans.len())
+        } else {
+            format!(
+                "re-anchored {} citation(s) after review: {}",
+                plans.len(),
+                moves.join(", ")
+            )
+        },
         &[memory_id.to_string()],
     )?;
     guard.commit()?;

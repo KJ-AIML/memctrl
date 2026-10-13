@@ -37,6 +37,106 @@ fn stop_words() -> &'static HashSet<&'static str> {
     WORDS.get_or_init(|| STOP_WORDS.split_whitespace().collect())
 }
 
+/// Words that point at "the project" or "everything" rather than a topic. They still count
+/// toward ranking, but a memory must match something else to be returned, so "summarize the
+/// project" answers nothing instead of every memory that mentions a project.
+const GENERIC_WORDS: &str = "project projects information info overview summary summaries \
+summarize summarise everything anything something thing things stuff details detail system \
+systems use uses using";
+
+/// Function words in scripts written without spaces. A run made only of these says nothing, like
+/// an English stop word, and is dropped.
+const SPACELESS_STOP: &str = "\
+มี อะไร บ้าง ไหม มั้ย ไหน ยังไง อย่างไร ทำไม เมื่อไร เมื่อไหร่ ใคร ของ ที่ ใน และ หรือ กับ จาก \
+เกี่ยวกับ เรื่อง นี้ นั้น นี่ ทุก ทุกอย่าง ทั้งหมด ทั้ง หมด อยู่ คือ เป็น ได้ บอก ช่วย หน่อย ขอ \
+ครับ ค่ะ คะ นะ ให้ แล้ว ว่า ก็ จะ \
+什么 哪些 有 的 吗 呢 是 这个 关于 所有 全部 一切 \
+何 について の は を が に です か 全て すべて \
+무엇 뭐 의 은 는 이 가 을 를 에 대한 모든 전체";
+
+/// Topic-free words in those scripts (project, information, summary, overview, system, use).
+const SPACELESS_GENERIC: &str = "\
+ข้อมูล โปรเจกต์ โปรเจค โปรเจ็กต์ โปรเจ็ค โครงการ ระบบ สรุป ภาพรวม รายละเอียด บันทึก ความจำ ใช้ \
+信息 资料 项目 概况 概要 总结 系统 \
+プロジェクト 情報 まとめ 一覧 メモ システム \
+정보 프로젝트 요약 개요 시스템";
+
+fn word_set(words: &'static str) -> (HashSet<&'static str>, usize) {
+    let set: HashSet<&'static str> = words.split_whitespace().collect();
+    let longest = set.iter().map(|w| w.chars().count()).max().unwrap_or(0);
+    (set, longest)
+}
+
+/// How a spaceless run reads once split into known words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunKind {
+    /// Only function words: dropped.
+    Stop,
+    /// Function words and generic words: kept for ranking, but can't qualify a memory.
+    Generic,
+    /// Contains something else: a topic.
+    Topic,
+}
+
+/// True when the whole run splits into words from `words`. A one-character word (a particle
+/// like の or 가) may only follow a longer word, so a short topic word such as かに is never
+/// mistaken for two particles.
+fn splits_into(run: &[char], words: &[&(HashSet<&'static str>, usize)]) -> bool {
+    let longest = words.iter().map(|(_, l)| *l).max().unwrap_or(0);
+    // reachable[i]: the prefix of length i splits; Some(true) when its last word was longer
+    // than one character.
+    let mut reachable: Vec<Option<bool>> = vec![None; run.len() + 1];
+    reachable[0] = Some(false);
+    for start in 0..run.len() {
+        let Some(after_long) = reachable[start] else {
+            continue;
+        };
+        for end in start + 1..=(start + longest).min(run.len()) {
+            let short = end - start == 1;
+            if short && !after_long {
+                continue;
+            }
+            let piece: String = run[start..end].iter().collect();
+            if words.iter().any(|(set, _)| set.contains(piece.as_str())) {
+                let long = !short;
+                reachable[end] = Some(reachable[end].unwrap_or(false) || long);
+            }
+        }
+    }
+    reachable[run.len()].is_some()
+}
+
+fn run_kind(run: &str) -> RunKind {
+    static STOP: OnceLock<(HashSet<&'static str>, usize)> = OnceLock::new();
+    static GENERIC: OnceLock<(HashSet<&'static str>, usize)> = OnceLock::new();
+    let stop = STOP.get_or_init(|| word_set(SPACELESS_STOP));
+    let generic = GENERIC.get_or_init(|| word_set(SPACELESS_GENERIC));
+    let chars: Vec<char> = run.chars().collect();
+    if stop.0.contains(run) || splits_into(&chars, &[stop]) {
+        RunKind::Stop
+    } else if generic.0.contains(run) || splits_into(&chars, &[stop, generic]) {
+        RunKind::Generic
+    } else {
+        RunKind::Topic
+    }
+}
+
+/// Words written as part of a compound in the query (`project_id`, `project.info`,
+/// `GOOGLE_CLOUD_PROJECT`, `project-wide`): identifiers, never generic.
+fn compound_words(query: &str) -> HashSet<String> {
+    let mut found = HashSet::new();
+    for chunk in query.split_whitespace() {
+        let joined = chunk
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .chars()
+            .any(|c| matches!(c, '_' | '.' | '/' | ':' | '-'));
+        if joined {
+            found.extend(tokens(chunk).0);
+        }
+    }
+    found
+}
+
 /// Scripts usually written without spaces between words. Thai and Lao tone marks fall inside
 /// their blocks, so they stay attached to the run instead of splitting it.
 fn spaceless(c: char) -> bool {
@@ -54,6 +154,35 @@ fn spaceless(c: char) -> bool {
         | 0xFF66..=0xFF9F    // Halfwidth katakana
         | 0x20000..=0x2FA1F  // CJK extensions B–F and compatibility supplement
     )
+}
+
+/// Thai, Lao, Myanmar and Khmer letters. A lone one is a whole word only when it stands apart
+/// (ณ in หัก ณ ที่จ่าย); inside a word (สาธารณะ) it means nothing.
+fn abugida(c: char) -> bool {
+    matches!(c as u32, 0x0E00..=0x0EFF | 0x1000..=0x109F | 0x1780..=0x17FF)
+}
+
+/// True when `letter` occurs in `content` with no letter of its script (or combining mark)
+/// directly before or after it.
+fn standalone(content: &str, letter: &str) -> bool {
+    content.match_indices(letter).any(|(at, _)| {
+        let apart = |c: Option<char>| c.is_none_or(|c| !(abugida(c) || combining(c)));
+        apart(content[..at].chars().next_back())
+            && apart(content[at + letter.len()..].chars().next())
+    })
+}
+
+/// True when `word` occurs in `content` glued to text written without spaces (ใช้Redisเป็น,
+/// 订单服务使用PostgreSQL) and is a whole word on its other side, so `redis` matches inside Thai but
+/// not inside `Redisson`. `content` and `word` are lower-case.
+fn glued(content: &str, word: &str) -> bool {
+    content.match_indices(word).any(|(at, _)| {
+        let before = content[..at].chars().next_back();
+        let after = content[at + word.len()..].chars().next();
+        let script = |c: Option<char>| c.is_some_and(|c| spaceless(c) || combining(c));
+        let edge = |c: Option<char>| script(c) || c.is_none_or(|c| !c.is_alphanumeric());
+        (script(before) && edge(after)) || (script(after) && edge(before))
+    })
 }
 
 /// Combining marks belong to the word they modify, as in FTS5's unicode61 tokenizer.
@@ -107,6 +236,8 @@ pub fn tokens(text: &str) -> (Vec<String>, Vec<String>) {
 pub struct Term {
     pub word: String,
     pub aliases: Vec<String>,
+    /// A topic-free word ("project", "summary"): it ranks, but can't qualify a memory alone.
+    pub generic: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,6 +246,8 @@ pub struct Run {
     /// Character trigrams of the run. Empty for runs shorter than three characters, which are
     /// matched as plain substrings.
     pub grams: Vec<String>,
+    /// Made only of function and topic-free words (โปรเจกต์นี้, 项目概况).
+    pub generic: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -129,7 +262,32 @@ impl ParsedQuery {
     fn units(&self) -> usize {
         self.terms.len() + self.runs.len()
     }
+    /// True when every unit is generic: the query names no topic, so nothing is returned.
+    pub fn only_generic(&self) -> bool {
+        !self.is_empty()
+            && self.terms.iter().all(|t| t.generic)
+            && self.runs.iter().all(|r| r.generic)
+    }
+    fn generic_unit(&self, unit: usize) -> bool {
+        match self.terms.get(unit) {
+            Some(term) => term.generic,
+            None => self.runs[unit - self.terms.len()].generic,
+        }
+    }
+    /// Units as the coverage gate counts them: a long spaceless run holds several words, so it
+    /// counts as one unit per four trigrams, as English already counts each word.
+    fn gate_units(&self) -> usize {
+        self.terms.len()
+            + self
+                .runs
+                .iter()
+                .map(|r| (r.grams.len() / GRAMS_PER_WORD).max(1))
+                .sum::<usize>()
+    }
 }
+
+/// Trigrams in a typical spaceless-script word, for the coverage gate.
+const GRAMS_PER_WORD: usize = 4;
 
 fn trigrams(run: &str) -> Vec<String> {
     let chars: Vec<char> = run.chars().collect();
@@ -153,8 +311,28 @@ fn trigrams(run: &str) -> Vec<String> {
         .collect()
 }
 
-/// Turns a query into deduplicated search terms with their aliases, plus spaceless runs.
+/// Turns a query into deduplicated search terms with their aliases, plus spaceless runs, using
+/// the built-in generic words.
 pub fn parse_query(query: &str, alias_groups: &[Vec<String>]) -> ParsedQuery {
+    parse_query_with(query, alias_groups, &[], true)
+}
+
+/// `parse_query` with your own generic words (`[retrieval] generic_words`) added to, or
+/// replacing, the built-in ones.
+pub fn parse_query_with(
+    query: &str,
+    alias_groups: &[Vec<String>],
+    extra_generic: &[String],
+    builtin_generic: bool,
+) -> ParsedQuery {
+    static GENERIC: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    let builtin = GENERIC.get_or_init(|| GENERIC_WORDS.split_whitespace().collect());
+    let compound = compound_words(query);
+    let is_generic = |word: &str| {
+        !compound.contains(word)
+            && ((builtin_generic && builtin.contains(word))
+                || extra_generic.iter().any(|w| w == word))
+    };
     let (words, runs) = tokens(query);
     let stop = stop_words();
     let mut parsed = ParsedQuery::default();
@@ -175,7 +353,12 @@ pub fn parse_query(query: &str, alias_groups: &[Vec<String>]) -> ParsedQuery {
                 }
             }
         }
-        parsed.terms.push(Term { word, aliases });
+        let generic = is_generic(&word);
+        parsed.terms.push(Term {
+            word,
+            aliases,
+            generic,
+        });
         if parsed.terms.len() == MAX_TERMS {
             break;
         }
@@ -185,8 +368,30 @@ pub fn parse_query(query: &str, alias_groups: &[Vec<String>]) -> ParsedQuery {
         if run.chars().count() > 256 || !seen.insert(run.clone()) {
             continue;
         }
+        let kind = if builtin_generic {
+            run_kind(&run)
+        } else {
+            RunKind::Topic
+        };
+        if kind == RunKind::Stop {
+            continue;
+        }
+        // A lone kana, or only marks and repetition signs (ๆ, ฯ), names nothing.
+        let chars: Vec<char> = run.chars().collect();
+        let kana =
+            |c: &char| matches!(*c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0xFF66..=0xFF9F);
+        if (chars.len() == 1 && chars.iter().all(kana))
+            || chars.iter().all(|c| {
+                combining(*c)
+                    || matches!(*c, 'ๆ' | 'ฯ')
+                    || matches!(*c as u32, 0x0E31 | 0x0E34..=0x0E3A | 0x0E47..=0x0E4E)
+            })
+        {
+            continue;
+        }
         parsed.runs.push(Run {
             grams: trigrams(&run),
+            generic: kind == RunKind::Generic || extra_generic.contains(&run),
             text: run,
         });
         if parsed.runs.len() == MAX_TERMS {
@@ -283,6 +488,16 @@ pub struct Hit {
     pub why: Why,
 }
 
+/// Trigram hits of a word that also matched as a token, kept until memory text shows whether
+/// the word is glued to a spaceless script there. They score on the word scale (`word_score`):
+/// trigram BM25 runs smaller, which let the relative gate drop confirmed whole-word matches.
+struct GluedHits<'a> {
+    unit: usize,
+    word: &'a str,
+    word_score: f64,
+    hits: Vec<(i64, f64)>,
+}
+
 /// BM25 hits of one trigram run, kept until memory text is available to measure coverage.
 struct RunHits<'a> {
     unit: usize,
@@ -310,19 +525,31 @@ pub fn search(
         return Ok((Vec::new(), 0));
     }
     let mut evidence: HashMap<i64, Evidence> = HashMap::new();
+    // Candidates that can only be confirmed against memory text: words glued to spaceless
+    // scripts, and lone Thai-script letters.
+    let mut glued_hits: Vec<GluedHits> = Vec::new();
+    let mut standalone_hits: Vec<(usize, &str, Vec<i64>)> = Vec::new();
     for (unit, term) in parsed.terms.iter().enumerate() {
         let mut direct = HashSet::new();
+        let mut best_word_score: f64 = 0.0;
+        let label = if term.generic {
+            format!("{} (generic)", term.word)
+        } else {
+            term.word.clone()
+        };
         for (rowid, score) in porter(store, &quoted(&term.word), layer)? {
             direct.insert(rowid);
+            best_word_score = best_word_score.max(score);
             evidence
                 .entry(rowid)
                 .or_default()
-                .add(unit, 1.0, score, term.word.clone());
+                .add(unit, 1.0, score, label.clone());
         }
         let mut via_alias = false;
         for alias in &term.aliases {
             for (rowid, score) in porter(store, &quoted(alias), layer)? {
                 via_alias = true;
+                best_word_score = best_word_score.max(score * ALIAS_WEIGHT);
                 if !direct.contains(&rowid) {
                     evidence.entry(rowid).or_default().add(
                         unit,
@@ -344,6 +571,21 @@ pub fn search(
                     format!("{} (substring)", term.word),
                 );
             }
+        } else if term.word.chars().count() >= 3 {
+            // The word also matched as a token, which used to skip the substring search and
+            // miss memories where it is glued to Thai or CJK text. Confirmed below.
+            let extra: Vec<(i64, f64)> = trigram(store, &quoted(&term.word), layer)?
+                .into_iter()
+                .filter(|(rowid, _)| !direct.contains(rowid))
+                .collect();
+            if !extra.is_empty() {
+                glued_hits.push(GluedHits {
+                    unit,
+                    word: &term.word,
+                    word_score: best_word_score,
+                    hits: extra,
+                });
+            }
         }
     }
     // Trigram run hits need memory content to measure coverage, so collect them first.
@@ -351,6 +593,11 @@ pub fn search(
     for (index, run) in parsed.runs.iter().enumerate() {
         let unit = parsed.terms.len() + index;
         if run.grams.is_empty() {
+            let lone_letter = run.text.chars().count() == 1 && run.text.chars().all(abugida);
+            if lone_letter {
+                standalone_hits.push((unit, &run.text, substring(store, &run.text, layer)?));
+                continue;
+            }
             for rowid in substring(store, &run.text, layer)? {
                 evidence.entry(rowid).or_default().add(
                     unit,
@@ -383,12 +630,61 @@ pub fn search(
             *preliminary.entry(*rowid).or_insert(0.0) += score;
         }
     }
+    for GluedHits {
+        word_score, hits, ..
+    } in &glued_hits
+    {
+        for (rowid, _) in hits {
+            *preliminary.entry(*rowid).or_insert(0.0) += word_score * SUBSTRING_WEIGHT;
+        }
+    }
+    for (_, _, rowids) in &standalone_hits {
+        for rowid in rowids {
+            *preliminary.entry(*rowid).or_insert(0.0) += SHORT_RUN_SCORE;
+        }
+    }
     let mut shortlist: Vec<(i64, f64)> = preliminary.into_iter().collect();
     shortlist.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
     shortlist.truncate(CANDIDATES);
     let rowids: Vec<i64> = shortlist.iter().map(|(rowid, _)| *rowid).collect();
     let mut memories = store.memories_by_rowid(&rowids)?;
     memories.retain(|_, m| m.eligible());
+    for GluedHits {
+        unit,
+        word,
+        word_score,
+        hits,
+    } in &glued_hits
+    {
+        for (rowid, _) in hits {
+            if memories
+                .get(rowid)
+                .is_some_and(|m| glued(&m.content.to_lowercase(), word))
+            {
+                evidence.entry(*rowid).or_default().add(
+                    *unit,
+                    1.0,
+                    word_score * SUBSTRING_WEIGHT,
+                    format!("{word} (glued)"),
+                );
+            }
+        }
+    }
+    for (unit, letter, rowids) in &standalone_hits {
+        for rowid in rowids {
+            if memories
+                .get(rowid)
+                .is_some_and(|m| standalone(&m.content, letter))
+            {
+                evidence.entry(*rowid).or_default().add(
+                    *unit,
+                    1.0,
+                    SHORT_RUN_SCORE,
+                    format!("{letter} (standalone)"),
+                );
+            }
+        }
+    }
     for RunHits { unit, run, hits } in &run_hits {
         let total = run.grams.len();
         for (rowid, score) in hits {
@@ -418,6 +714,10 @@ pub fn search(
         let Some(e) = evidence.get(rowid) else {
             continue;
         };
+        // Generic words rank, but a memory must match at least one topic word to be returned.
+        if !e.units.keys().any(|unit| !parsed.generic_unit(*unit)) {
+            continue;
+        }
         let coverage = e.units.values().sum::<f64>() / units;
         if coverage <= 0.0 {
             continue;
@@ -433,7 +733,7 @@ pub fn search(
     let Some(&(best, _, _)) = scored.first() else {
         return Ok((Vec::new(), 0));
     };
-    let min_coverage = if parsed.units() >= 3 { 0.3 } else { 0.0 };
+    let min_coverage = if parsed.gate_units() >= 3 { 0.3 } else { 0.0 };
     let mut seen = HashSet::new();
     let mut hits = Vec::new();
     for (score, coverage, rowid) in scored {

@@ -51,11 +51,34 @@ impl Default for NewMemory {
         }
     }
 }
+/// The largest memory text accepted, in UTF-8 bytes. Memories are short facts; a longer text
+/// belongs in a file the memory cites. Larger texts also bloated every log that copied them.
+pub const MAX_MEMORY_BYTES: usize = 64 * 1024;
+
+/// `text` cut to fit `MAX_MEMORY_BYTES` at a character boundary, saying that it was cut.
+pub fn clip_to_limit(text: &str) -> String {
+    if text.len() <= MAX_MEMORY_BYTES {
+        return text.to_string();
+    }
+    const NOTE: &str = " … (cut to fit the 64 KiB memory limit)";
+    let mut end = MAX_MEMORY_BYTES - NOTE.len();
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{NOTE}", &text[..end])
+}
+
 impl NewMemory {
     pub fn validate(&self) -> Result<()> {
         validate_identifier(&self.layer, "layer")?;
         if self.content.trim().is_empty() {
             bail!("memory content cannot be empty")
+        }
+        if self.content.len() > MAX_MEMORY_BYTES {
+            bail!(
+                "memory is {} bytes; the limit is 64 KiB. Split it into several memories, or save the text in a file and cite it with --cite",
+                self.content.len()
+            )
         }
         validate_confidence(self.confidence)?;
         for t in [
@@ -157,7 +180,9 @@ pub struct Why {
     /// Fraction of the query's terms this memory matched (0–1).
     pub coverage: f64,
     /// Matched query terms. "a → b (alias)" means the query word a matched through its alias b;
-    /// "(substring)" means a partial-word match; "(k/n)" counts matched character trigrams.
+    /// "(substring)" means a partial-word match; "(glued)" a whole word written against Thai or
+    /// CJK text; "(standalone)" a lone Thai-script letter standing apart; "(generic)" a topic-free
+    /// word that ranks but can't qualify a memory alone; "(k/n)" counts matched trigrams.
     pub matched: Vec<String>,
     /// For memories with citations: fresh, stale or uncited.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -103,6 +103,9 @@ fn cited_memories_turn_stale_when_code_changes_and_refresh_is_audited() {
     // A human re-checks the code and confirms the memory: refresh re-anchors and is audited.
     let refreshed = ok(&dir, &["refresh", &id]);
     assert_eq!(refreshed["refreshed"][0]["was"], "changed");
+    // The function moved down a line and changed: refresh follows it, never the old numbers.
+    assert_eq!(refreshed["refreshed"][0]["from"], "3-5");
+    assert_eq!(refreshed["refreshed"][0]["lines"], "4-6");
     assert!(ok(&dir, &["stale"])["stale"].as_array().unwrap().is_empty());
     let audit = ok(&dir, &["audit"]);
     assert_eq!(audit["logs"][0]["event"], "citation_refresh");
@@ -257,4 +260,127 @@ fn mcp_add_cites_atomically_and_stale_tool_reports_changes() {
     )
     .unwrap();
     assert_eq!(found["why"][0]["freshness"], "stale");
+}
+
+/// The secrets-file check ran on the typed path, so a symlink to config/secrets.yml was cited
+/// and its line hashes exported.
+#[cfg(unix)]
+#[test]
+fn secret_files_are_refused_through_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(root.join("config/secrets.yml"), "token: hunter2\n").unwrap();
+    std::fs::write(root.join(".env"), "KEY=1\n").unwrap();
+    std::os::unix::fs::symlink(root.join("config/secrets.yml"), root.join("notes.txt")).unwrap();
+    std::os::unix::fs::symlink(root.join(".env"), root.join("config/app.toml")).unwrap();
+    for typed in ["notes.txt:1", "config/app.toml"] {
+        let spec = memctrl::citations::parse_spec(typed).unwrap();
+        let error = memctrl::citations::anchor(&root, &root, &spec).unwrap_err();
+        assert!(
+            error.to_string().contains("secrets file"),
+            "{typed}: {error}"
+        );
+    }
+}
+
+/// The review found `refresh` re-hashing the old line numbers after a move plus an edit, so the
+/// citation covered unrelated lines and read fresh while the memory was false.
+#[test]
+fn refresh_follows_an_edited_moved_block_or_asks_for_cite() {
+    let dir = project();
+    ok(&dir, &["init"]);
+    let file = dir.path().join("src/db.ts");
+    std::fs::write(
+        &file,
+        "const pool = createPool({\n  max: 16,\n});\nexport default pool;\n",
+    )
+    .unwrap();
+    let id = ok(
+        &dir,
+        &[
+            "add",
+            "DB pool size is 16",
+            "--layer",
+            "project",
+            "--cite",
+            "src/db.ts:1-3",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // Three lines above it, and the pool size changes: moved and edited.
+    std::fs::write(
+        &file,
+        "// a\n// b\n// c\nconst pool = createPool({\n  max: 32,\n});\nexport default pool;\n",
+    )
+    .unwrap();
+    let refreshed = ok(&dir, &["refresh", &id[..8]]);
+    assert_eq!(refreshed["refreshed"][0]["lines"], "4-6", "{refreshed}");
+    assert_eq!(refreshed["refreshed"][0]["followed"], true);
+    assert_eq!(ok(&dir, &["show", &id])["citations"][0]["status"], "fresh");
+
+    // The block's first line now appears twice: refresh can't tell which, so it changes nothing.
+    std::fs::write(
+        &file,
+        "const pool = createPool({\n  max: 8,\n});\nconst pool = createPool({\n  max: 64,\n});\n",
+    )
+    .unwrap();
+    let refused = err(&dir, &["refresh", &id]);
+    assert!(
+        refused.contains("--cite src/db.ts:<start>-<end>"),
+        "{refused}"
+    );
+    assert_eq!(
+        ok(&dir, &["show", &id])["citations"][0]["status"],
+        "changed"
+    );
+    let chosen = ok(&dir, &["refresh", &id, "--cite", "src/db.ts:1-3"]);
+    assert_eq!(chosen["refreshed"][0]["from"], "4-6");
+    assert_eq!(chosen["refreshed"][0]["lines"], "1-3");
+    assert_eq!(chosen["refreshed"][0]["followed"], false);
+    assert_eq!(ok(&dir, &["show", &id])["citations"][0]["status"], "fresh");
+    assert!(err(&dir, &["refresh", &id, "--cite", "src/other.ts:1"]).contains("doesn't cite"));
+}
+
+/// The review found that with 62 memories the brief dropped every "Check before trusting"
+/// entry: ranking kept the newest decisions and the budget cut the stale ones.
+#[test]
+fn stale_memory_survives_a_crowded_brief() {
+    let dir = project();
+    ok(&dir, &["init"]);
+    let id = ok(
+        &dir,
+        &[
+            "add",
+            "get_by_id filters out soft-deleted users",
+            "--layer",
+            "project",
+            "--cite",
+            "src/user.rs:3-5",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for n in 0..60 {
+        ok(
+            &dir,
+            &[
+                "add",
+                &format!("Decision {n}: service {n} talks to the queue through the shared client library"),
+                "--layer",
+                "project",
+                "--claim-type",
+                "decision",
+            ],
+        );
+    }
+    std::fs::write(dir.path().join("src/user.rs"), "pub fn get_by_id() {}\n").unwrap();
+    let brief = String::from_utf8(run(&dir, &["context"]).stdout).unwrap();
+    assert!(brief.contains("## Check before trusting"), "{brief}");
+    assert!(brief.contains(&id[..8]), "{brief}");
+    assert!(brief.contains("Not shown for space"), "{brief}");
 }

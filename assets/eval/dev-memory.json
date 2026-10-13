@@ -1,86 +1,516 @@
 {
-  "name": "dev-memory-v1",
-  "description": "Developer project memory: conventions, decisions, quirks and errors, with queries in the forms agents and people actually use. Paraphrase cases have no word overlap on purpose; lexical retrieval is expected to miss many of them.",
-  "memories": [
-    {"key": "pnpm", "content": "Use pnpm for every package install; npm and yarn lockfiles are rejected in CI"},
-    {"key": "sqlx", "content": "We chose SQLx over Diesel because compile-time checked queries caught 3 production bugs", "claim_type": "decision", "verification_state": "supported"},
-    {"key": "pg-tests", "content": "Integration tests need Postgres running: start it with docker compose up -d db before cargo test"},
-    {"key": "flaky-webhook", "content": "The payments webhook test is flaky on CI because the Stripe sandbox rate-limits; it retries once"},
-    {"key": "deploy-approval", "content": "Production deploys go through GitHub Actions and need a manual approval from the on-call engineer"},
-    {"key": "soft-delete", "content": "UserService.getById returns null for soft-deleted users; use getByIdIncludingDeleted in admin tools"},
-    {"key": "env-secrets", "content": "Never commit .env files; local secrets come from 1Password via op run"},
-    {"key": "k8s-namespace", "content": "Kubernetes workloads run in the payments-prod namespace; staging uses payments-stg"},
-    {"key": "redis-ttl", "content": "Session tokens live in Redis with a 24 hour TTL; logout deletes the key immediately"},
-    {"key": "migrations", "content": "Database migrations run automatically on deploy via sqlx migrate run; never edit an applied migration"},
-    {"key": "econnrefused", "content": "ECONNREFUSED 127.0.0.1:5432 in tests means the Postgres container is not running"},
-    {"key": "node-version", "content": "The frontend builds with Node 20; Node 18 breaks the Vite plugin for SVG imports"},
-    {"key": "feature-flags", "content": "Feature flags are read from LaunchDarkly at startup and cached for 60 seconds"},
-    {"key": "logging", "content": "Use structured logging with tracing; println! is blocked by a clippy lint in CI"},
-    {"key": "api-versioning", "content": "Public API routes are versioned under /v2; /v1 returns 410 Gone since March 2026", "claim_type": "decision"},
-    {"key": "pr-size", "content": "Keep pull requests under 400 changed lines; larger changes need a design note first"},
-    {"key": "timezone", "content": "All timestamps are stored in UTC; convert to the user's timezone only in the UI"},
-    {"key": "ci-cache", "content": "CI caches the cargo target directory keyed by Cargo.lock; clear it after toolchain upgrades"},
-    {"key": "thai-license", "content": "ห้ามใช้ไลบรารีที่ไม่มีไลเซนส์ในโปรเจกต์นี้"},
-    {"key": "thai-review", "content": "ทุกการเปลี่ยนแปลงฐานข้อมูลต้องผ่านการรีวิวจากทีมแบ็กเอนด์"},
-    {"key": "zh-transactions", "content": "订单服务使用PostgreSQL，因为需要事务支持", "claim_type": "decision"},
-    {"key": "zh-cache", "content": "缓存层使用Redis，键名以服务名开头"},
-    {"key": "ja-migration", "content": "デプロイの前に必ずマイグレーションを実行する"},
-    {"key": "ko-backup", "content": "배포 전에 데이터베이스를 백업한다"},
-    {"key": "auth-jwt", "content": "Authentication uses short-lived JWTs signed with RS256; refresh tokens rotate on every use"},
-    {"key": "rate-limit", "content": "The public API rate limit is 100 requests per minute per key; internal services are exempt"},
-    {"key": "monorepo", "content": "The monorepo uses Turborepo; run turbo run test --filter=web to test only the web app"},
-    {"key": "on-call", "content": "On-call rotates weekly on Mondays; the schedule lives in PagerDuty"},
-    {"key": "image-uploads", "content": "User image uploads go to S3 via presigned URLs and are resized by a Lambda"},
-    {"key": "bun", "content": "Switching the test runner to Bun might cut CI time by half", "claim_type": "hypothesis"}
-  ],
-  "cases": [
-    {"query": "which package manager do we use", "expect": ["pnpm"], "kind": "keyword"},
-    {"query": "Stripe webhook test", "expect": ["flaky-webhook"], "kind": "keyword"},
-    {"query": "LaunchDarkly feature flags", "expect": ["feature-flags"], "kind": "keyword"},
-    {"query": "PagerDuty schedule", "expect": ["on-call"], "kind": "keyword"},
-    {"query": "S3 image uploads", "expect": ["image-uploads"], "kind": "keyword"},
-    {"query": "Redis session tokens", "expect": ["redis-ttl"], "kind": "keyword"},
-    {"query": "how are deployments approved", "expect": ["deploy-approval"], "kind": "stemming"},
-    {"query": "flaky tests", "expect": ["flaky-webhook"], "kind": "stemming"},
-    {"query": "running integration tests locally", "expect": ["pg-tests"], "kind": "stemming"},
-    {"query": "storing timestamps", "expect": ["timezone"], "kind": "stemming"},
-    {"query": "rotating refresh tokens", "expect": ["auth-jwt"], "kind": "stemming"},
-    {"query": "UserService.getById", "expect": ["soft-delete"], "kind": "identifier"},
-    {"query": "getByIdIncludingDeleted", "expect": ["soft-delete"], "kind": "identifier"},
-    {"query": "ECONNREFUSED 5432", "expect": ["econnrefused"], "kind": "identifier"},
-    {"query": "sqlx migrate run", "expect": ["migrations"], "kind": "identifier"},
-    {"query": "turbo run test --filter=web", "expect": ["monorepo"], "kind": "identifier"},
-    {"query": "/v1 410 Gone", "expect": ["api-versioning"], "kind": "identifier"},
-    {"query": "println clippy lint", "expect": ["logging"], "kind": "identifier"},
-    {"query": ".env 1Password", "expect": ["env-secrets"], "kind": "identifier"},
-    {"query": "Cargo.lock cache", "expect": ["ci-cache"], "kind": "identifier"},
-    {"query": "k8s namespace", "expect": ["k8s-namespace"], "kind": "alias"},
-    {"query": "prod deploys", "expect": ["deploy-approval"], "kind": "alias"},
-    {"query": "auth tokens", "expect": ["auth-jwt"], "kind": "alias"},
-    {"query": "pg integration tests", "expect": ["pg-tests"], "kind": "alias"},
-    {"query": "db migrations", "expect": ["migrations"], "kind": "alias"},
-    {"query": "ไลเซนส์", "expect": ["thai-license"], "kind": "thai"},
-    {"query": "ไลบรารีที่ไม่มีไลเซนส์", "expect": ["thai-license"], "kind": "thai"},
-    {"query": "รีวิวฐานข้อมูล", "expect": ["thai-review"], "kind": "thai"},
-    {"query": "ทีมแบ็กเอนด์", "expect": ["thai-review"], "kind": "thai"},
-    {"query": "事务", "expect": ["zh-transactions"], "kind": "chinese"},
-    {"query": "订单服务", "expect": ["zh-transactions"], "kind": "chinese"},
-    {"query": "Redis 缓存", "expect": ["zh-cache"], "kind": "chinese"},
-    {"query": "マイグレーション", "expect": ["ja-migration"], "kind": "japanese"},
-    {"query": "デプロイ前", "expect": ["ja-migration"], "kind": "japanese"},
-    {"query": "데이터베이스 백업", "expect": ["ko-backup"], "kind": "korean"},
-    {"query": "which ORM did we pick", "expect": ["sqlx"], "kind": "paraphrase"},
-    {"query": "who gets paged this week", "expect": ["on-call"], "kind": "paraphrase"},
-    {"query": "how long do login sessions last", "expect": ["redis-ttl"], "kind": "paraphrase"},
-    {"query": "what JavaScript runtime does the UI need", "expect": ["node-version"], "kind": "paraphrase"},
-    {"query": "where do uploaded pictures go", "expect": ["image-uploads"], "kind": "paraphrase"},
-    {"query": "how big can a code change be", "expect": ["pr-size"], "kind": "paraphrase"},
-    {"query": "GraphQL schema federation", "expect": [], "kind": "negative"},
-    {"query": "Android push notifications", "expect": [], "kind": "negative"},
-    {"query": "billing invoice PDF template", "expect": [], "kind": "negative"},
-    {"query": "Terraform state locking", "expect": [], "kind": "negative"},
-    {"query": "current project context", "expect": [], "kind": "generic"},
-    {"query": "what decisions have been made", "expect": [], "kind": "generic"},
-    {"query": "what is the tech stack", "expect": [], "kind": "generic"}
-  ]
+ "name": "dev-memory-v2",
+ "description": "Developer project memory: conventions, decisions, quirks and errors, with queries in the forms agents and people actually use. Paraphrase cases have no word overlap on purpose; lexical retrieval is expected to miss many of them. v2 adds memories that use generic words (project, system, summary) in passing, and vague questions that share those words, so the suite can see when vague questions return noise.",
+ "memories": [
+  {
+   "key": "pnpm",
+   "content": "Use pnpm for every package install; npm and yarn lockfiles are rejected in CI"
+  },
+  {
+   "key": "sqlx",
+   "content": "We chose SQLx over Diesel because compile-time checked queries caught 3 production bugs",
+   "claim_type": "decision",
+   "verification_state": "supported"
+  },
+  {
+   "key": "pg-tests",
+   "content": "Integration tests need Postgres running: start it with docker compose up -d db before cargo test"
+  },
+  {
+   "key": "flaky-webhook",
+   "content": "The payments webhook test is flaky on CI because the Stripe sandbox rate-limits; it retries once"
+  },
+  {
+   "key": "deploy-approval",
+   "content": "Production deploys go through GitHub Actions and need a manual approval from the on-call engineer"
+  },
+  {
+   "key": "soft-delete",
+   "content": "UserService.getById returns null for soft-deleted users; use getByIdIncludingDeleted in admin tools"
+  },
+  {
+   "key": "env-secrets",
+   "content": "Never commit .env files; local secrets come from 1Password via op run"
+  },
+  {
+   "key": "k8s-namespace",
+   "content": "Kubernetes workloads run in the payments-prod namespace; staging uses payments-stg"
+  },
+  {
+   "key": "redis-ttl",
+   "content": "Session tokens live in Redis with a 24 hour TTL; logout deletes the key immediately"
+  },
+  {
+   "key": "migrations",
+   "content": "Database migrations run automatically on deploy via sqlx migrate run; never edit an applied migration"
+  },
+  {
+   "key": "econnrefused",
+   "content": "ECONNREFUSED 127.0.0.1:5432 in tests means the Postgres container is not running"
+  },
+  {
+   "key": "node-version",
+   "content": "The frontend builds with Node 20; Node 18 breaks the Vite plugin for SVG imports"
+  },
+  {
+   "key": "feature-flags",
+   "content": "Feature flags are read from LaunchDarkly at startup and cached for 60 seconds"
+  },
+  {
+   "key": "logging",
+   "content": "Use structured logging with tracing; println! is blocked by a clippy lint in CI"
+  },
+  {
+   "key": "api-versioning",
+   "content": "Public API routes are versioned under /v2; /v1 returns 410 Gone since March 2026",
+   "claim_type": "decision"
+  },
+  {
+   "key": "pr-size",
+   "content": "Keep pull requests under 400 changed lines; larger changes need a design note first"
+  },
+  {
+   "key": "timezone",
+   "content": "All timestamps are stored in UTC; convert to the user's timezone only in the UI"
+  },
+  {
+   "key": "ci-cache",
+   "content": "CI caches the cargo target directory keyed by Cargo.lock; clear it after toolchain upgrades"
+  },
+  {
+   "key": "thai-license",
+   "content": "ห้ามใช้ไลบรารีที่ไม่มีไลเซนส์ในโปรเจกต์นี้"
+  },
+  {
+   "key": "thai-review",
+   "content": "ทุกการเปลี่ยนแปลงฐานข้อมูลต้องผ่านการรีวิวจากทีมแบ็กเอนด์"
+  },
+  {
+   "key": "zh-transactions",
+   "content": "订单服务使用PostgreSQL，因为需要事务支持",
+   "claim_type": "decision"
+  },
+  {
+   "key": "zh-cache",
+   "content": "缓存层使用Redis，键名以服务名开头"
+  },
+  {
+   "key": "ja-migration",
+   "content": "デプロイの前に必ずマイグレーションを実行する"
+  },
+  {
+   "key": "ko-backup",
+   "content": "배포 전에 데이터베이스를 백업한다"
+  },
+  {
+   "key": "auth-jwt",
+   "content": "Authentication uses short-lived JWTs signed with RS256; refresh tokens rotate on every use"
+  },
+  {
+   "key": "rate-limit",
+   "content": "The public API rate limit is 100 requests per minute per key; internal services are exempt"
+  },
+  {
+   "key": "monorepo",
+   "content": "The monorepo uses Turborepo; run turbo run test --filter=web to test only the web app"
+  },
+  {
+   "key": "on-call",
+   "content": "On-call rotates weekly on Mondays; the schedule lives in PagerDuty"
+  },
+  {
+   "key": "image-uploads",
+   "content": "User image uploads go to S3 via presigned URLs and are resized by a Lambda"
+  },
+  {
+   "key": "bun",
+   "content": "Switching the test runner to Bun might cut CI time by half",
+   "claim_type": "hypothesis"
+  },
+  {
+   "key": "overview-doc",
+   "content": "Project information lives in docs/overview.md; update it when a service is added"
+  },
+  {
+   "key": "design-system",
+   "content": "The design system lives in packages/ui and ships with Storybook"
+  },
+  {
+   "key": "daily-summary",
+   "content": "The nightly summary job writes usage reports to the analytics bucket"
+  },
+  {
+   "key": "lockfile-rule",
+   "content": "In this project every dependency bump goes through Renovate, never by hand"
+  }
+ ],
+ "cases": [
+  {
+   "query": "which package manager do we use",
+   "expect": [
+    "pnpm"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "Stripe webhook test",
+   "expect": [
+    "flaky-webhook"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "LaunchDarkly feature flags",
+   "expect": [
+    "feature-flags"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "PagerDuty schedule",
+   "expect": [
+    "on-call"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "S3 image uploads",
+   "expect": [
+    "image-uploads"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "Redis session tokens",
+   "expect": [
+    "redis-ttl"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "how are deployments approved",
+   "expect": [
+    "deploy-approval"
+   ],
+   "kind": "stemming"
+  },
+  {
+   "query": "flaky tests",
+   "expect": [
+    "flaky-webhook"
+   ],
+   "kind": "stemming"
+  },
+  {
+   "query": "running integration tests locally",
+   "expect": [
+    "pg-tests"
+   ],
+   "kind": "stemming"
+  },
+  {
+   "query": "storing timestamps",
+   "expect": [
+    "timezone"
+   ],
+   "kind": "stemming"
+  },
+  {
+   "query": "rotating refresh tokens",
+   "expect": [
+    "auth-jwt"
+   ],
+   "kind": "stemming"
+  },
+  {
+   "query": "UserService.getById",
+   "expect": [
+    "soft-delete"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "getByIdIncludingDeleted",
+   "expect": [
+    "soft-delete"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "ECONNREFUSED 5432",
+   "expect": [
+    "econnrefused"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "sqlx migrate run",
+   "expect": [
+    "migrations"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "turbo run test --filter=web",
+   "expect": [
+    "monorepo"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "/v1 410 Gone",
+   "expect": [
+    "api-versioning"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "println clippy lint",
+   "expect": [
+    "logging"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": ".env 1Password",
+   "expect": [
+    "env-secrets"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "Cargo.lock cache",
+   "expect": [
+    "ci-cache"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "k8s namespace",
+   "expect": [
+    "k8s-namespace"
+   ],
+   "kind": "alias"
+  },
+  {
+   "query": "prod deploys",
+   "expect": [
+    "deploy-approval"
+   ],
+   "kind": "alias"
+  },
+  {
+   "query": "auth tokens",
+   "expect": [
+    "auth-jwt"
+   ],
+   "kind": "alias"
+  },
+  {
+   "query": "pg integration tests",
+   "expect": [
+    "pg-tests"
+   ],
+   "kind": "alias"
+  },
+  {
+   "query": "db migrations",
+   "expect": [
+    "migrations"
+   ],
+   "kind": "alias"
+  },
+  {
+   "query": "ไลเซนส์",
+   "expect": [
+    "thai-license"
+   ],
+   "kind": "thai"
+  },
+  {
+   "query": "ไลบรารีที่ไม่มีไลเซนส์",
+   "expect": [
+    "thai-license"
+   ],
+   "kind": "thai"
+  },
+  {
+   "query": "รีวิวฐานข้อมูล",
+   "expect": [
+    "thai-review"
+   ],
+   "kind": "thai"
+  },
+  {
+   "query": "ทีมแบ็กเอนด์",
+   "expect": [
+    "thai-review"
+   ],
+   "kind": "thai"
+  },
+  {
+   "query": "事务",
+   "expect": [
+    "zh-transactions"
+   ],
+   "kind": "chinese"
+  },
+  {
+   "query": "订单服务",
+   "expect": [
+    "zh-transactions"
+   ],
+   "kind": "chinese"
+  },
+  {
+   "query": "Redis 缓存",
+   "expect": [
+    "zh-cache"
+   ],
+   "kind": "chinese"
+  },
+  {
+   "query": "マイグレーション",
+   "expect": [
+    "ja-migration"
+   ],
+   "kind": "japanese"
+  },
+  {
+   "query": "デプロイ前",
+   "expect": [
+    "ja-migration"
+   ],
+   "kind": "japanese"
+  },
+  {
+   "query": "데이터베이스 백업",
+   "expect": [
+    "ko-backup"
+   ],
+   "kind": "korean"
+  },
+  {
+   "query": "which ORM did we pick",
+   "expect": [
+    "sqlx"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "who gets paged this week",
+   "expect": [
+    "on-call"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how long do login sessions last",
+   "expect": [
+    "redis-ttl"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "what JavaScript runtime does the UI need",
+   "expect": [
+    "node-version"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "where do uploaded pictures go",
+   "expect": [
+    "image-uploads"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "how big can a code change be",
+   "expect": [
+    "pr-size"
+   ],
+   "kind": "paraphrase"
+  },
+  {
+   "query": "GraphQL schema federation",
+   "expect": [],
+   "kind": "negative"
+  },
+  {
+   "query": "Android push notifications",
+   "expect": [],
+   "kind": "negative"
+  },
+  {
+   "query": "billing invoice PDF template",
+   "expect": [],
+   "kind": "negative"
+  },
+  {
+   "query": "Terraform state locking",
+   "expect": [],
+   "kind": "negative"
+  },
+  {
+   "query": "current project context",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "what decisions have been made",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "what is the tech stack",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "how do we do things in this project",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "summarize the project",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "tell me everything about the system",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "give me an overview of the project information",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "ภาพรวมของโปรเจกต์นี้",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "项目概况",
+   "expect": [],
+   "kind": "generic"
+  },
+  {
+   "query": "where does project information live",
+   "expect": [
+    "overview-doc"
+   ],
+   "kind": "keyword"
+  },
+  {
+   "query": "Redis",
+   "expect": [
+    "redis-ttl",
+    "zh-cache"
+   ],
+   "kind": "glued"
+  }
+ ]
 }

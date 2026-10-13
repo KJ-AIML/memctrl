@@ -15,6 +15,8 @@ project = "architecture decisions, tech stack, ADRs, why we chose X"
 session = "current task, WIP, what was done this session"
 user = "preferences, working style, patterns, personal rules"
 [triggers]
+# consolidate moves memories (taking the target layer's retention); summarize proposes them as
+# candidates for review and leaves the originals where they are.
 on_commit = "consolidate session -> project"
 on_session_end = "summarize session -> user"
 'on_file "docs/ADR-*.md"' = "extract -> project"
@@ -62,6 +64,11 @@ pub struct Rules {
     /// Custom synonym groups from `[retrieval] aliases`.
     pub aliases: Vec<Vec<String>>,
     pub builtin_aliases: bool,
+    /// `[retrieval] generic_words`: words that rank but can't make a memory match on their own.
+    #[serde(default)]
+    pub generic_words: Vec<String>,
+    #[serde(default = "default_true")]
+    pub builtin_generic: bool,
     /// `[citations] root`, resolved against the rules file's directory.
     pub citations_root: Option<std::path::PathBuf>,
     /// `[guard]`: how suspicious writes are held for review.
@@ -129,6 +136,8 @@ impl Default for Rules {
             db_path: None,
             aliases: Vec::new(),
             builtin_aliases: true,
+            generic_words: Vec::new(),
+            builtin_generic: true,
             citations_root: None,
             guard: crate::guard::Policy::default(),
             project_dir: None,
@@ -250,6 +259,10 @@ pub fn repository_root(path: &Path) -> PathBuf {
     dir.ancestors()
         .find(|d| d.join(".git").exists())
         .map_or(dir.clone(), Path::to_path_buf)
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn parse_mode(value: &toml::Value) -> Result<crate::guard::Mode> {
@@ -492,6 +505,34 @@ impl Rules {
         }
         if let Some(retrieval) = raw.get("retrieval") {
             let retrieval = retrieval.as_table().context("retrieval must be a table")?;
+            if let Some(flag) = retrieval.get("builtin_generic") {
+                rules.builtin_generic = flag
+                    .as_bool()
+                    .context("retrieval.builtin_generic must be true or false")?;
+            }
+            if let Some(words) = retrieval.get("generic_words") {
+                let words = words
+                    .as_array()
+                    .context("retrieval.generic_words must be an array of strings")?;
+                if words.len() > 500 {
+                    bail!("retrieval.generic_words allows at most 500 words");
+                }
+                for word in words {
+                    let word = word
+                        .as_str()
+                        .context("generic_words entries must be strings")?
+                        .trim()
+                        .to_lowercase();
+                    if word.is_empty() || word.chars().count() > 64 || has_secrets(&word) {
+                        bail!(
+                            "generic_words entries must be 1 to 64 characters without credentials"
+                        );
+                    }
+                    if !rules.generic_words.contains(&word) {
+                        rules.generic_words.push(word);
+                    }
+                }
+            }
             if let Some(flag) = retrieval.get("builtin_aliases") {
                 rules.builtin_aliases = flag
                     .as_bool()
@@ -553,6 +594,50 @@ impl Rules {
             rules.db_path = Some(path.as_str().context("db_path must be a string")?.into());
         }
         Ok(rules)
+    }
+
+    /// `summarize X -> Y` proposes each active X memory as a candidate in Y (through the guard,
+    /// with Y's retention, linked to its source) instead of moving the notes. Session notes are
+    /// work in progress; moved into `user` as-is, they read as preferences in every session.
+    /// Notes already proposed (same text in Y, in any state) are skipped.
+    fn propose(
+        &self,
+        store: &MemoryStore,
+        from: &str,
+        to: &str,
+        event: &str,
+        action: &str,
+    ) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        for source in store.list_memories(Some(from), false)? {
+            if store.find_same(to, &source.content)?.is_some() {
+                continue;
+            }
+            let mut memory = NewMemory {
+                layer: to.into(),
+                content: source.content.clone(),
+                source: "trigger".into(),
+                confidence: source.confidence,
+                claim_type: source.claim_type,
+                lifecycle_state: crate::model::LifecycleState::Candidate,
+                tags: vec![format!("proposed:{event}")],
+                expires_at: self.expiry(to),
+                ..Default::default()
+            };
+            crate::guard::apply(&mut memory, &self.guard);
+            let id = store.insert_memory(memory)?;
+            store.add_relation(
+                &id,
+                &source.id,
+                crate::model::RelationType::DerivedFrom,
+                serde_json::json!({"event": event}),
+            )?;
+            ids.push(id);
+        }
+        if !ids.is_empty() {
+            store.log_event(event, &format!("proposed: {action}"), &ids)?;
+        }
+        Ok(ids)
     }
 
     /// Every active synonym group: built-ins (unless disabled) followed by custom groups.
@@ -757,8 +842,17 @@ impl Rules {
                         "trigger",
                         serde_json::json!({"event":event,"action":action}),
                     )?;
+                } else if verb == "summarize" {
+                    ids.extend(self.propose(store, &from, &to, event, &action)?);
                 } else {
-                    ids.extend(store.consolidate_and_log(&from, &to, event, &action)?);
+                    let expires_at = self.expiry(&to);
+                    ids.extend(store.consolidate_and_log(
+                        &from,
+                        &to,
+                        event,
+                        &action,
+                        expires_at.as_deref(),
+                    )?);
                 }
             }
             ids.sort();

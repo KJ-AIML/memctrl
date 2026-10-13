@@ -164,7 +164,12 @@ fn stale_cache_publication_and_failed_access_cannot_poison_retrieval() {
         .query_row("SELECT count(*) FROM provenance", [], |r| r.get(0))
         .unwrap();
     store.conn.execute_batch("CREATE TRIGGER reject_access BEFORE UPDATE OF access_count ON memories BEGIN SELECT RAISE(ABORT,'access failed'); END;").unwrap();
-    assert!(retriever::retrieve(&mut store, "database", None, 5).is_err());
+    // Bookkeeping is best effort: the result still comes back, and nothing of the failed
+    // bookkeeping (provenance included) is kept.
+    assert!(!retriever::retrieve(&mut store, "database", None, 5)
+        .unwrap()
+        .facts
+        .is_empty());
     assert!(store.conn.is_autocommit());
     assert_eq!(
         store

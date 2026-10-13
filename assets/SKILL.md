@@ -21,6 +21,8 @@ memctrl context
 
 Entries under **Check before trusting** are disputed, or their cited code changed after they were saved. Confirm them against the code before relying on them.
 
+If the header says entries were not shown for space, run `memctrl stale` to see what needs checking. If it says memories wait for review, tell the user; only they can accept them.
+
 memctrl works from any folder inside the project. The ids in the brief are the first 8 characters of a memory's id; every command accepts them.
 
 ## Look things up
@@ -61,18 +63,21 @@ A memory containing hidden Unicode or instruction-like text ("ignore previous in
 
 ```bash
 memctrl supersede <old_id> <new_id>        # the new memory replaces the old one
-memctrl refute <id> -r "reason"            # wrong; refutation is permanent
+memctrl refute <id> -r "reason"            # wrong; refutation is permanent and the reason is kept
 memctrl dispute <id>                       # doubtful; shown under "Check before trusting"
 memctrl stale                              # memories whose cited code changed
 memctrl refresh <id>                       # after re-checking, re-anchor its citations
+memctrl refresh <id> --cite src/db.rs:40-52 # when memctrl can't tell where the code moved
 ```
 
 ## Share with the team
 
 ```bash
-memctrl import .memctrl/memory.md   # after pulling; new entries arrive as candidates
-memctrl export                      # writes .memctrl/memory.md for review in pull requests
+memctrl sync     # after pulling: imports .memctrl/memory.md, then exports your store merged with it
+memctrl export   # after saving or correcting memories: writes .memctrl/memory.md for review
 ```
+
+Corrections travel too: a memory you refute, supersede or forget is recorded in the file's Retracted section, and teammates' stores apply it when they sync.
 
 Anyone who can edit `.memctrl/memory.md` can add an entry, so imported entries wait as candidates. Accepting them is the user's review step: tell the user, who reads the file's changes and runs `memctrl import --accept .memctrl/memory.md` in a terminal. memctrl refuses `--accept` without one. If `export` refuses because the file has entries your store hasn't imported, import first; never use `--force` to get past it.
 
@@ -88,4 +93,4 @@ When memctrl runs as an MCP server (`memctrl serve`), the same operations are av
 - `memctrl_add(content, layer, source?, claim_type?, tags?, cite?)`
 - `memctrl_stale(layer?)`
 - `memctrl_candidates(layer?, limit?)` and `memctrl_review(id, action, reason?)`
-- `memctrl_trigger(event, context?)`, `memctrl_tree()` and `memctrl_audit(limit?)`
+- `memctrl_trigger(event, context?)`, `memctrl_tree(rebuild?, layer?, limit?)` (read-only unless `rebuild` is true) and `memctrl_audit(limit?)`

@@ -55,7 +55,12 @@ fn memories_whose_generated_id_ends_in_digits_stay_reviewable() -> anyhow::Resul
         .get_memory(DIGIT_TAIL_ID, false)?
         .expect("accepted memory");
     assert_eq!(accepted.lifecycle_state, LifecycleState::Accepted);
-    let tree = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    let tree = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_tree",
+        &json!({"rebuild": true}),
+    )?;
     assert!(tree.to_string().contains(DIGIT_TAIL_ID), "{tree}");
     Ok(())
 }
@@ -626,5 +631,380 @@ fn id_prefixes_resolve_uniquely_or_report_ambiguity() -> anyhow::Result<()> {
         store.get_memory(&unique, false)?.unwrap().lifecycle_state,
         LifecycleState::Accepted
     );
+    Ok(())
+}
+
+/// The review found 20 of 34 fake secret formats stored in plain text: `\b` never fires between
+/// `_` and a letter, so `DB_PASSWORD=` slipped through, and common vendor formats were missing.
+/// Fakes are assembled at runtime so no realistic token sits in the source.
+#[test]
+fn sanitizer_catches_prefixed_keys_and_vendor_tokens() {
+    let fake = |prefix: &str, body: &str| format!("{prefix}{body}");
+    let cases = [
+        ("DB_PASSWORD=hunter3fake".to_string(), "hunter3fake", "PASSWORD"),
+        ("PGPASSWORD=hunter4fake psql -h db".into(), "hunter4fake", "PASSWORD"),
+        ("MYSQL_ROOT_PASSWORD=hunter5fake".into(), "hunter5fake", "PASSWORD"),
+        ("STRIPE_API_KEY=fakevalue0006".into(), "fakevalue0006", "API_KEY"),
+        ("JWT_SECRET=fakevalue0007".into(), "fakevalue0007", "SECRET"),
+        ("login with pwd=hunter8fake".into(), "hunter8fake", "PASSWORD"),
+        (r#"{"db": {"user": "app", "pass": "hunter12fake"}}"#.into(), "hunter12fake", "PASSWORD"),
+        ("Authorization: Basic YWRtaW46aHVudGVyMTM=".into(), "YWRtaW46aHVudGVyMTM", "TOKEN"),
+        ("postgres://admin:p@ss10fake@db.example.com/app".into(), "ss10fake", "CREDENTIAL"),
+        ("redis://default:pa/ss11fake@cache.example.com:6379".into(), "ss11fake", "CREDENTIAL"),
+        (fake("token gl", "pat-FAKEfake0000000000x1"), "FAKEfake0000000000x1", "GITLAB_TOKEN"),
+        (fake("xo", "xb-000000000001-000000000002-FAKEfakeFAKEfake0001"), "FAKEfakeFAKEfake0001", "SLACK_TOKEN"),
+        (fake("sk_", "live_FAKEfakeFAKEfake00000001"), "FAKEfakeFAKEfake00000001", "STRIPE_KEY"),
+        (fake("np", "m_FAKEfakeFAKEfakeFAKEfake0000000001"), "FAKEfakeFAKEfakeFAKEfake0000000001", "NPM_TOKEN"),
+        (fake("AI", "zaSyFAKE-fake_FAKE-fake_FAKE0000001"), "SyFAKE-fake_FAKE-fake_FAKE0000001", "GOOGLE_API_KEY"),
+        (fake("eyJhbGciOiJIUzI1NiJ9.", "eyJzdWIiOiJ0ZXN0In0.FAKEsig0001"), "FAKEsig0001", "JWT"),
+        ("-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIFAKE0002\n-----END ENCRYPTED PRIVATE KEY-----".into(), "MIIFAKE0002", "PRIVATE_KEY"),
+        ("-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOFAKE0003\n-----END PGP PRIVATE KEY BLOCK-----".into(), "lQOFAKE0003", "PRIVATE_KEY"),
+        ("Test card 4111 1111 1111 1111".into(), "4111 1111 1111 1111", "CARD"),
+        ("On-call phone (555) 123-4567".into(), "123-4567", "PHONE"),
+        ("Thai support line +66 81 234 5678".into(), "81 234 5678", "PHONE_INTL"),
+    ];
+    for (input, secret, label) in &cases {
+        let out = sanitize_text(input);
+        assert!(!out.contains(secret), "{input:?} -> {out:?}");
+        assert!(
+            out.contains(&format!("[REDACTED_{label}]")),
+            "{input:?} -> {out:?}"
+        );
+        assert!(has_secrets(input), "{input:?}");
+        assert!(redactions(input).contains(&label.to_string()), "{input:?}");
+    }
+    // The key name stays, so the memory still says what was configured.
+    assert_eq!(
+        sanitize_text("DB_PASSWORD=hunter3fake"),
+        "DB_PASSWORD=[REDACTED_PASSWORD]"
+    );
+}
+
+/// Prose and placeholders that look like secrets at a glance stay exactly as written.
+#[test]
+fn sanitizer_leaves_prose_and_placeholders_alone() {
+    for prose in [
+        "Bearer token in the header",
+        "max_tokens=4096",
+        "PASSWORD_MIN_LENGTH=12",
+        "DB_PASSWORD=${DB_PASSWORD}",
+        "Set API_KEY=<your key> in .env.example",
+        "Session token: rotate weekly",
+        "BYPASS=1",
+        "Use https://host.example:8080/path@v2 for the mirror",
+        "npm install from https://registry.npmjs.org/@babel/core",
+        "Run with +1 retry and -2 jobs",
+        "Version 1.2.3+build.45",
+    ] {
+        assert_eq!(sanitize_text(prose), prose);
+        assert!(redactions(prose).is_empty(), "{prose:?}");
+    }
+}
+
+/// `refute --reason` used to drop the reason unless another memory did the refuting.
+#[test]
+fn refutation_reasons_are_kept_and_shown() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let id = store.insert_memory(mem("CI runs on Node 18"))?;
+    store.refute_memory(
+        &id,
+        "CI moved to Node 20; password=hunter2 was in the old config",
+        None,
+    )?;
+    let evidence = store.evidence(&id)?;
+    let reason = evidence[0]["metadata"]["reason"].as_str().unwrap();
+    assert!(reason.starts_with("CI moved to Node 20"), "{reason}");
+    assert!(
+        !reason.contains("hunter2"),
+        "reasons are sanitized: {reason}"
+    );
+    let audit = store.audit(10)?;
+    assert!(
+        audit.iter().any(|log| log["event"] == "refute"),
+        "{audit:?}"
+    );
+
+    let other = store.insert_memory(mem("Deploys run on Fridays"))?;
+    let rules = Rules::default();
+    mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_review",
+        &json!({"id": other, "action": "refute", "reason": "we deploy daily now"}),
+    )?;
+    assert_eq!(
+        store.evidence(&other)?[0]["metadata"]["reason"],
+        "we deploy daily now"
+    );
+    Ok(())
+}
+
+/// `add` stored identical text again and again; it now returns the memory that holds it.
+#[test]
+fn adding_the_same_text_returns_the_existing_memory() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let add = |store: &mut MemoryStore, content: &str| {
+        mcp::dispatch(
+            store,
+            &rules,
+            "memctrl_add",
+            &json!({"content": content, "layer": "project"}),
+        )
+    };
+    let first = add(&mut store, "Releases are cut from main")?;
+    let again = add(&mut store, "Releases are cut from main")?;
+    assert_eq!(again["status"], "exists");
+    assert_eq!(again["id"], first["id"]);
+    assert_eq!(store.list_memories(None, true)?.len(), 1);
+
+    // Refuted text isn't silently stored again.
+    store.refute_memory(first["id"].as_str().unwrap(), "we release from tags", None)?;
+    let refused = add(&mut store, "Releases are cut from main").unwrap_err();
+    assert!(refused.to_string().contains("refuted"), "{refused}");
+    Ok(())
+}
+
+/// The default `on_session_end` rule (`summarize session -> user`) moved raw work-in-progress
+/// notes into the user layer, where every session read them as preferences.
+#[test]
+fn session_end_proposes_candidates_instead_of_moving_notes() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let note = store.insert_memory(NewMemory {
+        layer: "session".into(),
+        ..mem("Migrating auth to sessions; logout is next")
+    })?;
+    let proposed = rules.fire_trigger("on_session_end", &json!({}), &mut store)?;
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(store.get_memory(&note, true)?.unwrap().layer, "session");
+    let candidate = store.get_memory(&proposed[0], true)?.unwrap();
+    assert_eq!(candidate.layer, "user");
+    assert_eq!(candidate.lifecycle_state, LifecycleState::Candidate);
+    assert!(candidate
+        .tags
+        .contains(&"proposed:on_session_end".to_string()));
+    let layers = vec!["user".to_string()];
+    let brief = memctrl::context::session_brief(&store, &layers, 2000, &|_| None)?;
+    assert!(!brief.markdown.contains("logout is next"));
+    let again = rules.fire_trigger("on_session_end", &json!({}), &mut store)?;
+    assert!(again.is_empty(), "a note is proposed once");
+    Ok(())
+}
+
+/// `on_commit` moved session notes into project but kept their 7-day session expiry.
+#[test]
+fn consolidation_takes_the_target_layers_retention() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let id = store.insert_memory(NewMemory {
+        layer: "session".into(),
+        expires_at: rules.expiry("session"),
+        ..mem("The cache key includes the tenant id")
+    })?;
+    rules.fire_trigger("on_commit", &json!({}), &mut store)?;
+    let promoted = store.get_memory(&id, true)?.unwrap();
+    assert_eq!(promoted.layer, "project");
+    assert_eq!(promoted.expires_at, None, "project memories don't expire");
+    Ok(())
+}
+
+/// The review found the query log and cache copying full memory text on every query: 20 queries
+/// on one 99 KB memory added 3.9 MB. Records now hold ids, scores and reasons.
+#[test]
+fn query_log_stays_small_for_large_memories() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let body = "zq7marker ".repeat(6000);
+    store.insert_memory(mem(&format!("Large design note {body}")))?;
+    for n in 0..20 {
+        let found = memctrl::retriever::retrieve(
+            &mut store,
+            &format!("zq7marker design {}", n % 2),
+            None,
+            5,
+        )?;
+        assert_eq!(
+            found.facts.len(),
+            1,
+            "a cache hit still returns the full fact"
+        );
+        assert!(found.facts[0].contains("zq7marker"));
+    }
+    let logged: i64 = store.conn.query_row(
+        "SELECT COALESCE(SUM(length(sources_json)+length(query)),0) + (SELECT COALESCE(SUM(length(result_json)),0) FROM rust_query_cache) FROM provenance",
+        [],
+        |r| r.get(0),
+    )?;
+    assert!(logged < 20_000, "log and cache hold {logged} bytes");
+    let leaked: i64 = store.conn.query_row(
+        "SELECT (SELECT COUNT(*) FROM provenance WHERE sources_json LIKE '%zq7marker zq7marker%') + (SELECT COUNT(*) FROM rust_query_cache WHERE result_json LIKE '%zq7marker zq7marker%')",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(leaked, 0, "no record copies memory text");
+    Ok(())
+}
+
+/// The log keeps the newest 10,000 records and nothing older than 30 days.
+#[test]
+fn provenance_retention_by_rows_and_age() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    store.insert_memory(mem("Releases are cut from main"))?;
+    store.conn.execute_batch("BEGIN")?;
+    for n in 0..10_050 {
+        store.conn.execute(
+            "INSERT INTO provenance(id,query,timestamp,method,sources_json) VALUES(?1,'q',?2,'test','[]')",
+            params![format!("p{n}"), if n < 10 { "2020-01-01T00:00:00.000000Z".to_string() } else { now() }],
+        )?;
+    }
+    store.conn.execute_batch("COMMIT")?;
+    memctrl::retriever::retrieve(&mut store, "releases main", None, 5)?;
+    let (rows, old): (i64, i64) = store.conn.query_row(
+        "SELECT COUNT(*), SUM(timestamp < '2021') FROM provenance",
+        [],
+        |r| Ok((r.get(0)?, r.get::<_, Option<i64>>(1)?.unwrap_or(0))),
+    )?;
+    assert!(rows <= 10_000, "{rows} rows kept");
+    assert_eq!(old, 0);
+    Ok(())
+}
+
+/// A 5 MB memory pushed a database to 2 GB through the logs. Memories are capped at 64 KiB on
+/// every write path; an oversized import entry is skipped and reported, not fatal.
+#[test]
+fn oversized_memory_rejected_on_every_write_path() -> anyhow::Result<()> {
+    let big = "x".repeat(MAX_MEMORY_BYTES + 1);
+    let mut store = MemoryStore::open(":memory:")?;
+    let error = store.insert_memory(mem(&big)).unwrap_err().to_string();
+    assert!(error.contains("64 KiB"), "{error}");
+    let rules = Rules::default();
+    let refused = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_add",
+        &json!({"content": big, "layer": "project"}),
+    );
+    assert!(refused.unwrap_err().to_string().contains("64 KiB"));
+    let file = format!(
+        "<!-- memctrl export v1. -->\n# Project memory\n\n## Facts and conventions\n\n- {big}\n- Releases are cut from main\n"
+    );
+    let report = memctrl::mirror::import(
+        &store,
+        &file,
+        &memctrl::mirror::ImportOptions::default(),
+        &memctrl::guard::Policy::default(),
+    )?;
+    assert_eq!(report["skipped"]["oversized"], json!([6]), "{report}");
+    assert_eq!(report["candidates"].as_array().unwrap().len(), 1);
+    assert!(clip_to_limit(&big).len() <= MAX_MEMORY_BYTES);
+    Ok(())
+}
+
+/// Opening a 2.1 database strips memory text from its old provenance rows and tree leaves once,
+/// without deleting any row.
+#[test]
+fn compaction_strips_text_from_2_1_rows() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("old.db");
+    {
+        let store = MemoryStore::open(&path)?;
+        let id = store.insert_memory(mem("Secretless design note"))?;
+        store.conn.execute(
+            "INSERT INTO provenance(id,query,timestamp,method,sources_json) VALUES('old','q','2020-01-01T00:00:00.000000Z','lexical_bm25',?1)",
+            [json!([{"memory_id": id, "content": "Secretless design note", "source": "manual", "trace_path": ["x"], "layer": "session", "why": {"matched": ["content"]}}]).to_string()],
+        )?;
+        store.conn.execute(
+            "INSERT INTO tree_nodes(id,parent_id,layer,title,summary,memory_ids) VALUES(?1,NULL,'session','t','Secretless design note','[]')",
+            [format!("mem_{id}")],
+        )?;
+        store
+            .conn
+            .execute("DELETE FROM maintenance_state WHERE key='compact_v1'", [])?;
+    }
+    let store = MemoryStore::open(&path)?;
+    let sources: String = store.conn.query_row(
+        "SELECT sources_json FROM provenance WHERE id='old'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert!(!sources.contains("Secretless"), "{sources}");
+    assert!(sources.contains("memory_id") && sources.contains("layer"));
+    let leaves: i64 = store.conn.query_row(
+        "SELECT COUNT(*) FROM tree_nodes WHERE id LIKE 'mem_%'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(leaves, 0);
+    assert!(store.last_maintenance("compact_v1")?.is_some());
+    Ok(())
+}
+
+/// At 100k memories under load, the session-start brief took 11–25 s: every read took the write
+/// lock. Opening, searching and the brief now read without it.
+#[test]
+fn reads_never_wait_for_the_write_lock() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("busy.db");
+    let mut reader = MemoryStore::open(&path)?;
+    reader.insert_memory(NewMemory {
+        layer: "project".into(),
+        ..mem("Releases are cut from main")
+    })?;
+    let writer = MemoryStore::open(&path)?;
+    writer.conn.execute_batch("BEGIN IMMEDIATE")?;
+    let started = std::time::Instant::now();
+    let found = memctrl::retriever::retrieve(&mut reader, "releases main", None, 5)?;
+    assert_eq!(found.facts.len(), 1);
+    let layers = vec!["project".to_string()];
+    let brief = memctrl::context::session_brief(&reader, &layers, 1500, &|_| None)?;
+    assert!(brief.markdown.contains("Releases are cut from main"));
+    let reopened = MemoryStore::open(&path)?;
+    drop(reopened);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "reads waited {:?} for the writer",
+        started.elapsed()
+    );
+    writer.conn.execute_batch("ROLLBACK")?;
+    Ok(())
+}
+
+/// `memctrl_tree` sounded read-only but rebuilt a 52 MB tree on every call and wiped every
+/// agent's cache. Reading is now read-only; a rebuild stores only layers and clusters.
+#[test]
+fn tree_tool_is_read_only_unless_rebuild_requested() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let id = store.insert_memory(NewMemory {
+        layer: "project".into(),
+        ..mem("We chose SQLx over Diesel for the database layer")
+    })?;
+    store.insert_memory(mem("Working on the login feature"))?;
+    let revision = store.revision()?;
+    let view = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    assert_eq!(store.revision()?, revision, "reading changes nothing");
+    assert!(view["note"].as_str().unwrap().contains("rebuild"));
+    let built = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_tree",
+        &json!({"rebuild": true}),
+    )?;
+    assert!(built.to_string().contains(&id));
+    assert_eq!(built["stale"], false);
+    let (nodes, longest): (i64, i64) = store.conn.query_row(
+        "SELECT COUNT(*), MAX(length(summary)) FROM tree_nodes",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    assert!(nodes <= 1 + 7 * 2, "{nodes} nodes stored");
+    assert!(longest < 200, "no memory text in the stored tree");
+    store.forget_memory(&id)?;
+    let after: i64 = store
+        .conn
+        .query_row("SELECT COUNT(*) FROM tree_nodes", [], |r| r.get(0))?;
+    assert_eq!(after, nodes, "forget leaves the tree alone");
+    let view = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    assert_eq!(view["stale"], true);
     Ok(())
 }

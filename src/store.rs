@@ -84,6 +84,106 @@ impl Drop for AtomicWrite<'_> {
         }
     }
 }
+/// A retracted id: forgotten here, or refuted/superseded/forgotten in a teammate's export.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tombstone {
+    pub id: String,
+    /// Digest of the text, so the same text under another id stays out too.
+    pub digest: String,
+    /// None for tombstones written before 2.2.
+    pub layer: Option<String>,
+    pub state: String,
+    pub reason: Option<String>,
+}
+/// A consistent read that takes no write lock: `BEGIN DEFERRED` at top level (writers never wait
+/// for a reader), or a savepoint inside a caller's transaction. Dropping it ends the read.
+pub struct ReadSnapshot<'a> {
+    conn: &'a Connection,
+    name: Option<String>,
+    active: bool,
+}
+impl<'a> ReadSnapshot<'a> {
+    pub fn new(conn: &'a Connection) -> Result<Self> {
+        let name = if conn.is_autocommit() {
+            conn.execute_batch("BEGIN DEFERRED")?;
+            None
+        } else {
+            let name = format!("memctrl_read_{}", Uuid::new_v4().simple());
+            conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+            Some(name)
+        };
+        Ok(Self {
+            conn,
+            name,
+            active: true,
+        })
+    }
+    pub fn finish(mut self) -> Result<()> {
+        match &self.name {
+            Some(name) => self.conn.execute_batch(&format!("RELEASE {name}"))?,
+            None => self.conn.execute_batch("COMMIT")?,
+        }
+        self.active = false;
+        Ok(())
+    }
+}
+impl Drop for ReadSnapshot<'_> {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = match &self.name {
+                Some(name) => self
+                    .conn
+                    .execute_batch(&format!("ROLLBACK TO {name}; RELEASE {name}")),
+                None => self.conn.execute_batch("ROLLBACK"),
+            };
+        }
+    }
+}
+/// The query log keeps at most this many records, none older than `LOG_DAYS`.
+const LOG_ROWS: i64 = 10_000;
+const LOG_DAYS: i64 = 30;
+/// Logged queries are cut to this many characters.
+pub const MAX_LOGGED_QUERY: usize = 1024;
+/// Indexes created on open, kept apart so `ready` can check they exist.
+const INDEXES: &str = "
+CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer);
+CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
+CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_state);
+CREATE INDEX IF NOT EXISTS idx_memories_verification ON memories(verification_state);
+CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_memory_id);
+CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_memory_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_mem ON memory_evidence(memory_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_src ON memory_evidence(source_system,source_id);
+CREATE INDEX IF NOT EXISTS idx_tree_parent ON tree_nodes(parent_id);
+CREATE INDEX IF NOT EXISTS idx_provenance_ts ON provenance(timestamp);
+CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);
+CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
+CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
+CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);";
+/// Columns 2.2 added to `memory_tombstones` (additive; 2.0 and 2.1 ignore them).
+const TOMBSTONE_COLUMNS: [&str; 3] = ["layer", "state", "reason"];
+const REVISION_TABLES: [&str; 4] = [
+    "memories",
+    "tree_nodes",
+    "memory_relations",
+    "memory_evidence",
+];
+const SEMANTIC_COLUMNS: [(&str, &str); 9] = [
+    ("updated_at", "TEXT"),
+    ("last_accessed_at", "TEXT"),
+    ("access_count", "INTEGER DEFAULT 0"),
+    ("claim_type", "TEXT DEFAULT 'assertion'"),
+    ("lifecycle_state", "TEXT DEFAULT 'accepted'"),
+    ("verification_state", "TEXT DEFAULT 'unverified'"),
+    ("observed_at", "TEXT"),
+    ("valid_from", "TEXT"),
+    ("valid_until", "TEXT"),
+];
+/// A query as the log keeps it: sanitized and cut to `MAX_LOGGED_QUERY` characters.
+pub fn logged_query(query: &str) -> String {
+    sanitize_text(&query.chars().take(MAX_LOGGED_QUERY).collect::<String>())
+}
 fn sql_error(error: anyhow::Error) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, error.into())
 }
@@ -159,8 +259,155 @@ impl MemoryStore {
         conn.busy_timeout(Duration::from_secs(30))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         let store = Self { conn };
-        store.initialize()?;
+        // Checking takes a read; only a store that needs migrating takes the write lock, so
+        // opening never waits behind other writers in the common case.
+        let ready = {
+            let snapshot = ReadSnapshot::new(&store.conn)?;
+            let ready = store.ready()?;
+            snapshot.finish()?;
+            ready
+        };
+        if !ready {
+            store.initialize()?;
+            store.compact()?;
+        }
         Ok(store)
+    }
+    /// True when the schema, indexes, triggers and search indexes are current and the one-time
+    /// compaction has run, so opening needs no writes.
+    fn ready(&self) -> Result<bool> {
+        let version_table: bool = self.conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version')", [], |r| r.get(0))?;
+        if !version_table {
+            return Ok(false);
+        }
+        let mut statement = self.conn.prepare("SELECT name FROM sqlite_master")?;
+        let present: HashSet<String> = statement
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        drop(statement);
+        let declared =
+            regex::Regex::new(r"CREATE (?:VIRTUAL )?(?:TABLE|INDEX|TRIGGER) IF NOT EXISTS (\w+)")?;
+        let mut expected: Vec<String> = [include_str!("schema.sql"), INDEXES, SEARCH_SCHEMA]
+            .iter()
+            .flat_map(|sql| {
+                declared
+                    .captures_iter(sql)
+                    .map(|c| c[1].to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for table in REVISION_TABLES {
+            for event in ["insert", "delete", "update"] {
+                expected.push(format!("rust_revision_{table}_{event}"));
+            }
+        }
+        if !expected.iter().all(|name| present.contains(name)) {
+            return Ok(false);
+        }
+        let columns = |table: &str| -> Result<HashSet<String>> {
+            let mut statement = self.conn.prepare(&format!("PRAGMA table_info({table})"))?;
+            let names = statement
+                .query_map([], |row| row.get(1))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(names)
+        };
+        let memory_columns = columns("memories")?;
+        let tombstone_columns = columns("memory_tombstones")?;
+        if !SEMANTIC_COLUMNS
+            .iter()
+            .all(|(name, _)| memory_columns.contains(*name))
+            || !columns("memory_citations")?.contains("head_offset")
+            || !TOMBSTONE_COLUMNS
+                .iter()
+                .all(|c| tombstone_columns.contains(*c))
+        {
+            return Ok(false);
+        }
+        Ok(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_version WHERE version=4)
+               AND EXISTS(SELECT 1 FROM rust_revision WHERE id=1)
+               AND EXISTS(SELECT 1 FROM maintenance_state WHERE key='compact_v1')
+               AND NOT EXISTS(SELECT 1 FROM memories WHERE claim_type IS NULL OR trim(claim_type)='' OR lifecycle_state IS NULL OR trim(lifecycle_state)='' OR verification_state IS NULL OR trim(verification_state)='')
+               AND (SELECT COUNT(*) FROM memories)=(SELECT COUNT(*) FROM memory_fts_docsize)
+               AND (SELECT COUNT(*) FROM memories)=(SELECT COUNT(*) FROM memory_fts_tri_docsize)",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+    /// One-time cleanup of what 2.1 logged: memory text in provenance and the old tree leaves,
+    /// stale caches, over-long logged queries, and log retention. Runs in chunks so it never
+    /// holds the write lock for long; space is reclaimed by `memctrl maintenance --vacuum`.
+    fn compact(&self) -> Result<()> {
+        if self.last_maintenance("compact_v1")?.is_some() {
+            return Ok(());
+        }
+        // A row matches only while one of its sources still has a key being removed, so each
+        // pass shrinks the set; the cap is a backstop, not the exit.
+        for _ in 0..100_000 {
+            let changed = self.atomic(|| {
+                Ok(self.conn.execute(
+                    "UPDATE provenance SET sources_json=(SELECT json_group_array(json_remove(value,'$.content','$.source','$.trace_path')) FROM json_each(provenance.sources_json))
+                     WHERE rowid IN (SELECT rowid FROM provenance WHERE json_valid(sources_json) AND json_type(sources_json)='array'
+                       AND EXISTS (SELECT 1 FROM json_each(provenance.sources_json) WHERE json_type(value)='object'
+                         AND (json_type(value,'$.content') IS NOT NULL OR json_type(value,'$.source') IS NOT NULL OR json_type(value,'$.trace_path') IS NOT NULL))
+                       LIMIT 1000)",
+                    [],
+                )?)
+            })?;
+            if changed == 0 {
+                break;
+            }
+        }
+        // Retention is not applied here: opening a database never deletes its rows. The log is
+        // trimmed as new records are written.
+        self.atomic(|| {
+            self.conn.execute_batch(&format!(
+                "DELETE FROM rust_query_cache; DELETE FROM query_cache;
+                 DELETE FROM tree_nodes WHERE id LIKE 'mem\\_%' ESCAPE '\\';
+                 UPDATE otel_spans SET query=substr(query,1,{MAX_LOGGED_QUERY}) WHERE length(query)>{MAX_LOGGED_QUERY};"
+            ))?;
+            self.maintenance("compact_v1", json!({}))
+        })
+    }
+    /// Keeps the query log bounded: the newest records only, none older than the retention.
+    fn prune_logs(&self) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM provenance WHERE rowid <= (SELECT MAX(rowid) FROM provenance) - ?1",
+            [LOG_ROWS],
+        )?;
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(LOG_DAYS))
+            .to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+        self.conn
+            .execute("DELETE FROM provenance WHERE timestamp < ?1", [cutoff])?;
+        Ok(())
+    }
+    /// Bookkeeping that must never cost a caller its result: access counts, provenance, caches,
+    /// telemetry. It runs in its own short write transaction with a 25 ms lock timeout and is
+    /// skipped (returning false, keeping none of its writes) when another process holds the
+    /// write lock, the database is read-only or `write` fails.
+    pub fn side_write(&self, write: impl FnOnce() -> Result<()>) -> bool {
+        let top = self.conn.is_autocommit();
+        if top {
+            let _ = self.conn.busy_timeout(Duration::from_millis(25));
+        }
+        let done = (|| {
+            let guard = AtomicWrite::new(&self.conn)?;
+            write()?;
+            guard.commit()
+        })()
+        .is_ok();
+        if top {
+            let _ = self.conn.busy_timeout(Duration::from_secs(30));
+        }
+        done
+    }
+    /// Runs `operation` (which may write) with the short lock timeout of a side write, for
+    /// bookkeeping such as telemetry that takes `&mut self`.
+    pub fn best_effort<T>(&mut self, operation: impl FnOnce(&mut Self) -> Result<T>) -> Option<T> {
+        let _ = self.conn.busy_timeout(Duration::from_millis(25));
+        let result = operation(self).ok();
+        let _ = self.conn.busy_timeout(Duration::from_secs(30));
+        result
     }
     fn atomic<T>(&self, operation: impl FnOnce() -> Result<T>) -> Result<T> {
         let guard = AtomicWrite::new(&self.conn)?;
@@ -173,36 +420,26 @@ impl MemoryStore {
         self.conn.execute_batch(include_str!("schema.sql"))?;
         let mut statement=self.conn.prepare("PRAGMA table_info(memories)")?;
         let columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
-        for (name,definition) in [("updated_at","TEXT"),("last_accessed_at","TEXT"),("access_count","INTEGER DEFAULT 0"),("claim_type","TEXT DEFAULT 'assertion'"),("lifecycle_state","TEXT DEFAULT 'accepted'"),("verification_state","TEXT DEFAULT 'unverified'"),("observed_at","TEXT"),("valid_from","TEXT"),("valid_until","TEXT")] {
+        for (name,definition) in SEMANTIC_COLUMNS {
             if !columns.contains(name){self.conn.execute_batch(&format!("ALTER TABLE memories ADD COLUMN {name} {definition}"))?;}
         }
-        self.conn.execute_batch("UPDATE memories SET claim_type=COALESCE(NULLIF(trim(claim_type),''),'assertion'), lifecycle_state=COALESCE(NULLIF(trim(lifecycle_state),''),'accepted'), verification_state=COALESCE(NULLIF(trim(verification_state),''),'unverified') WHERE claim_type IS NULL OR trim(claim_type)='' OR lifecycle_state IS NULL OR trim(lifecycle_state)='' OR verification_state IS NULL OR trim(verification_state)=''; INSERT OR IGNORE INTO schema_version VALUES(4);
-CREATE INDEX IF NOT EXISTS idx_memories_layer ON memories(layer);
-CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
-CREATE INDEX IF NOT EXISTS idx_memories_lifecycle ON memories(lifecycle_state);
-CREATE INDEX IF NOT EXISTS idx_memories_verification ON memories(verification_state);
-CREATE INDEX IF NOT EXISTS idx_relations_from ON memory_relations(from_memory_id);
-CREATE INDEX IF NOT EXISTS idx_relations_to ON memory_relations(to_memory_id);
-CREATE INDEX IF NOT EXISTS idx_evidence_mem ON memory_evidence(memory_id);
-CREATE INDEX IF NOT EXISTS idx_evidence_src ON memory_evidence(source_system,source_id);
-CREATE INDEX IF NOT EXISTS idx_tree_parent ON tree_nodes(parent_id);
-CREATE INDEX IF NOT EXISTS idx_provenance_ts ON provenance(timestamp);
-CREATE INDEX IF NOT EXISTS idx_otel_spans_trace ON otel_spans(trace_id);
-CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
-CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
-CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
-CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);")?;
+        self.conn.execute_batch("UPDATE memories SET claim_type=COALESCE(NULLIF(trim(claim_type),''),'assertion'), lifecycle_state=COALESCE(NULLIF(trim(lifecycle_state),''),'accepted'), verification_state=COALESCE(NULLIF(trim(verification_state),''),'unverified') WHERE claim_type IS NULL OR trim(claim_type)='' OR lifecycle_state IS NULL OR trim(lifecycle_state)='' OR verification_state IS NULL OR trim(verification_state)=''; INSERT OR IGNORE INTO schema_version VALUES(4);")?;
+        self.conn.execute_batch(INDEXES)?;
         // Rebuild when the indexes are new, when a sync trigger was missing (for example dropped
         // so a SQLite without FTS5 could write), or when row counts show the index drifted.
         // Databases written by pre-release builds of this branch lack head_offset.
         let mut statement=self.conn.prepare("PRAGMA table_info(memory_citations)")?;
         let citation_columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
         if !citation_columns.contains("head_offset"){self.conn.execute_batch("ALTER TABLE memory_citations ADD COLUMN head_offset INTEGER")?;}
+        // 2.2: tombstones record what was retracted, so retractions can travel in exports.
+        let mut statement=self.conn.prepare("PRAGMA table_info(memory_tombstones)")?;
+        let tombstone_columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
+        for column in TOMBSTONE_COLUMNS { if !tombstone_columns.contains(column){self.conn.execute_batch(&format!("ALTER TABLE memory_tombstones ADD COLUMN {column} TEXT"))?;} }
         let healthy:bool=self.conn.query_row("SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_fts','memory_fts_tri'))=2 AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('memory_fts_insert','memory_fts_delete','memory_fts_update'))=3",[],|r|r.get(0))?;
         self.conn.execute_batch(SEARCH_SCHEMA)?;
         let drifted:bool=healthy && self.conn.query_row("SELECT (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_docsize) OR (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_tri_docsize)",[],|r|r.get(0))?;
         if !healthy || drifted { self.rebuild_search_index()?; }
-        for table in ["memories","tree_nodes","memory_relations","memory_evidence"]{
+        for table in REVISION_TABLES{
             for event in ["INSERT","DELETE","UPDATE"]{
                 let clause=if table=="memories" && event=="UPDATE" {"UPDATE OF layer,content,source,confidence,created_at,expires_at,tags,claim_type,lifecycle_state,verification_state,observed_at,valid_from,valid_until"}else{event};
                 self.conn.execute_batch(&format!("CREATE TRIGGER IF NOT EXISTS rust_revision_{table}_{} AFTER {clause} ON {table} BEGIN UPDATE rust_revision SET revision=revision+1 WHERE id=1; DELETE FROM rust_query_cache; DELETE FROM query_cache; END;",event.to_lowercase()))?;
@@ -346,6 +583,47 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             ),
         }
     }
+    /// The memory in `layer` whose text is exactly `content` (as stored, after sanitizing), so a
+    /// repeated `add` can return it instead of storing a duplicate.
+    pub fn find_same(&self, layer: &str, content: &str) -> Result<Option<Memory>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT * FROM memories WHERE layer=? AND content=? ORDER BY created_at DESC,id LIMIT 1",
+                params![layer, sanitize_text(content)],
+                memory_row,
+            )
+            .optional()?)
+    }
+    /// For `add`: the active memory or candidate in `layer` that already holds this text, so it
+    /// is returned instead of duplicated. Text that was refuted, rejected or superseded is
+    /// refused with a hint; an expired memory doesn't count, so the fact can be stored again.
+    pub fn existing_for_add(&self, layer: &str, content: &str) -> Result<Option<Memory>> {
+        let Some(same) = self.find_same(layer, content)? else {
+            return Ok(None);
+        };
+        let short: String = same.id.chars().take(8).collect();
+        if same.verification_state == VerificationState::Refuted {
+            bail!("this text was refuted as {short}; add the corrected fact instead")
+        }
+        match same.lifecycle_state {
+            LifecycleState::Rejected | LifecycleState::Superseded | LifecycleState::Archived => bail!(
+                "this text is already stored as {short} ({}); add the corrected fact instead, or see `memctrl history {short}`",
+                same.lifecycle_state
+            ),
+            LifecycleState::Candidate => Ok(Some(same)),
+            LifecycleState::Accepted if same.eligible() => Ok(Some(same)),
+            LifecycleState::Accepted => Ok(None),
+        }
+    }
+    /// Candidates waiting for review.
+    pub fn count_candidates(&self) -> Result<usize> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE lifecycle_state='candidate'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )? as usize)
+    }
     pub fn list_memories(&self, layer: Option<&str>, include_history: bool) -> Result<Vec<Memory>> {
         if let Some(layer) = layer {
             validate_identifier(layer, "layer")?;
@@ -401,7 +679,6 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                     .execute("DELETE FROM memory_evidence WHERE memory_id=?", [id])?;
                 self.conn
                     .execute("DELETE FROM memory_citations WHERE memory_id=?", [id])?;
-                self.conn.execute("DELETE FROM tree_nodes", [])?;
             }
             Ok(count > 0)
         })
@@ -414,11 +691,60 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                 return Ok(false);
             };
             self.conn.execute(
-                "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at) VALUES(?,?,?)",
-                params![id, crate::citations::text_digest(&memory.content), now()],
+                "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at,layer,state) VALUES(?,?,?,?,'forgotten')",
+                params![id, crate::citations::text_digest(&memory.content), now(), memory.layer],
             )?;
             self.delete_memory(id)
         })
+    }
+    /// Records that an id was retracted (refuted, superseded or forgotten) so no older export can
+    /// bring it back, keeping the strongest retraction already recorded.
+    pub fn record_tombstone(
+        &self,
+        id: &str,
+        digest: &str,
+        layer: &str,
+        state: &str,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let rank = |s: &str| if s == "forgotten" { 2 } else { 1 };
+        let existing: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT state FROM memory_tombstones WHERE id=?",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(previous) = existing {
+            if rank(previous.as_deref().unwrap_or("forgotten")) >= rank(state) {
+                return Ok(());
+            }
+        }
+        self.conn.execute(
+            "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at,layer,state,reason) VALUES(?,?,?,?,?,?)",
+            params![id, digest, now(), layer, state, reason.map(sanitize_text)],
+        )?;
+        Ok(())
+    }
+    /// Every tombstone as (id, content digest, layer, state, reason). Tombstones written before
+    /// 2.2 have no layer or state; they were forgotten.
+    pub fn tombstone_records(&self) -> Result<Vec<Tombstone>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id,content_digest,layer,COALESCE(state,'forgotten'),reason FROM memory_tombstones ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map([], |r| {
+                Ok(Tombstone {
+                    id: r.get(0)?,
+                    digest: r.get(1)?,
+                    layer: r.get(2)?,
+                    state: r.get(3)?,
+                    reason: r.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
     /// Ids and content digests of forgotten memories.
     pub fn tombstones(&self) -> Result<(HashSet<String>, HashSet<String>)> {
@@ -501,6 +827,21 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             Ok(disputed)
         })
     }
+    /// Adds a tag to a memory, if it isn't there already.
+    pub fn add_tag(&self, id: &str, tag: &str) -> Result<bool> {
+        self.atomic(|| {
+            let memory = self.get_memory(id, true)?.context("memory not found")?;
+            if memory.tags.iter().any(|t| t == tag) {
+                return Ok(false);
+            }
+            let mut tags = memory.tags;
+            tags.push(tag.to_string());
+            Ok(self.conn.execute(
+                "UPDATE memories SET tags=?,updated_at=? WHERE id=?",
+                params![serde_json::to_string(&tags)?, now(), id],
+            )? > 0)
+        })
+    }
     /// Accepts a candidate that an import created from an entry the person has now reviewed,
     /// dropping its `import:new` tag so the next export renders the entry exactly as before.
     pub fn accept_imported(&self, id: &str) -> Result<bool> {
@@ -564,6 +905,16 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                 self.require_memory(refuter)?;
             }
             self.update_verification(id, VerificationState::Refuted)?;
+            // Keep the reason with the memory, whether or not another memory refutes it.
+            self.add_evidence(
+                id,
+                "memctrl",
+                "refute",
+                None,
+                RelationType::Refutes,
+                json!({"reason": sanitize_text(reason), "refuting_id": refuter}),
+            )?;
+            self.log_event("refute", reason, &[id.to_string()])?;
             if let Some(refuter) = refuter {
                 self.add_relation(
                     refuter,
@@ -710,17 +1061,60 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         )?;
         Ok(())
     }
+    /// Moves every active memory from one layer to another, which also takes the target layer's
+    /// retention (`expires_at`; `None` means it never expires, as in `project`).
     pub fn consolidate_and_log(
         &self,
         from: &str,
         to: &str,
         event: &str,
         action: &str,
+        expires_at: Option<&str>,
     ) -> Result<Vec<String>> {
         validate_identifier(from, "layer")?;
         validate_identifier(to, "layer")?;
         validate_identifier(event, "event")?;
-        self.atomic(||{let ids=self.list_memories(Some(from),false)?.into_iter().map(|m|m.id).collect::<Vec<_>>();for id in &ids{self.update_layer(id,to)?;}if !ids.is_empty(){self.conn.execute("INSERT INTO triggers_log(id,event,action,memories_affected,timestamp) VALUES(?,?,?,?,?)",params![Uuid::new_v4().to_string(),event,sanitize_text(action),serde_json::to_string(&ids)?,now()])?;}Ok(ids)})
+        self.atomic(||{let ids=self.list_memories(Some(from),false)?.into_iter().map(|m|m.id).collect::<Vec<_>>();for id in &ids{self.update_layer(id,to)?;self.conn.execute("UPDATE memories SET expires_at=? WHERE id=?",params![expires_at,id])?;}if !ids.is_empty(){self.conn.execute("INSERT INTO triggers_log(id,event,action,memories_affected,timestamp) VALUES(?,?,?,?,?)",params![Uuid::new_v4().to_string(),event,sanitize_text(action),serde_json::to_string(&ids)?,now()])?;}Ok(ids)})
+    }
+    /// Builds and stores the compact tree, recording the revision it describes.
+    pub fn store_tree(&self, tree: TreeNode) -> Result<TreeNode> {
+        let tree = crate::tree::compact(tree);
+        self.atomic(|| {
+            self.rebuild_tree(&tree)?;
+            self.maintenance("tree", json!({"revision": self.revision()?}))
+        })?;
+        Ok(tree)
+    }
+    /// The stored tree in a bounded view, whether it is out of date, and when it was built; or,
+    /// without a stored tree, per-layer counts. Read-only.
+    pub fn tree_overview(&self, layer: Option<&str>, limit: usize) -> Result<Value> {
+        let snapshot = ReadSnapshot::new(&self.conn)?;
+        let view = match self.load_tree()? {
+            Some(tree) => {
+                let built: Option<i64> = self
+                    .conn
+                    .query_row(
+                        "SELECT json_extract(metadata_json,'$.revision') FROM maintenance_state WHERE key='tree'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+                let mut view = crate::tree::overview(&tree, layer, limit);
+                view["built_at"] = json!(self.last_maintenance("tree")?);
+                view["stale"] = json!(built.is_none_or(|b| b != self.revision().unwrap_or(-1)));
+                view
+            }
+            None => {
+                let mut statement = self.conn.prepare("SELECT layer,COUNT(*) FROM memories WHERE lifecycle_state='accepted' AND verification_state<>'refuted' AND (?1 IS NULL OR layer=?1) GROUP BY layer")?;
+                let layers: Vec<Value> = statement
+                    .query_map([layer], |r| Ok(json!({"layer": r.get::<_, String>(0)?, "memories": r.get::<_, i64>(1)?})))?
+                    .collect::<rusqlite::Result<_>>()?;
+                json!({"layers": layers, "note": "no tree built yet; rebuild it with memctrl_tree {\"rebuild\": true} or `memctrl tree --rebuild`"})
+            }
+        };
+        snapshot.finish()?;
+        Ok(view)
     }
     pub fn rebuild_tree(&self, tree: &TreeNode) -> Result<()> {
         fn insert(
@@ -850,18 +1244,20 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         searched: usize,
         method: &str,
     ) -> Result<()> {
+        // Ids, scores and reasons only: `memctrl show <id>` has the text, and copying it into
+        // every record grew databases by megabytes per query.
         let mut sources = Vec::new();
         for (index, id) in result.memory_ids.iter().enumerate() {
             if let Some(memory) = self.get_memory(id, true)? {
-                let mut source = json!({"memory_id":id,"source":result.sources.get(index).unwrap_or(&memory.source),"content":memory.content,"layer":memory.layer,"confidence":memory.confidence,"match_reason":method,"trace_path":result.trace});
+                let mut source = json!({"memory_id":id,"layer":memory.layer,"confidence":memory.confidence,"match_reason":method});
                 if let Some(why) = result.why.get(index) {
                     source["why"] = json!(why);
                 }
                 sources.push(source);
             }
         }
-        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;
-        Ok(())
+        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),logged_query(query),now(),method,self.revision()?,searched as i64,result.confidence,sanitize_value(&json!(sources)).to_string()])?;
+        self.prune_logs()
     }
     /// Provenance that names memories by id only. Used for records written on every session
     /// start, where copying each memory's content would grow the table without adding audit value.
@@ -877,8 +1273,8 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             .iter()
             .map(|id| json!({"memory_id":id,"match_reason":method}))
             .collect();
-        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),sanitize_text(query),now(),method,self.revision()?,searched as i64,avg_confidence,json!(sources).to_string()])?;
-        Ok(())
+        self.conn.execute("INSERT INTO provenance(id,query,timestamp,method,tree_version,total_memories_searched,avg_confidence,sources_json) VALUES(?,?,?,?,?,?,?,?)",params![Uuid::new_v4().to_string(),logged_query(query),now(),method,self.revision()?,searched as i64,avg_confidence,json!(sources).to_string()])?;
+        self.prune_logs()
     }
     pub fn maintenance(&self, key: &str, details: Value) -> Result<()> {
         validate_identifier(key, "maintenance key")?;
@@ -945,6 +1341,30 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             }
             Ok(count as usize)
         })
+    }
+    /// Memories over `MAX_MEMORY_BYTES` (stored before the limit existed); still readable.
+    pub fn count_oversized(&self) -> Result<usize> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE length(CAST(content AS BLOB))>?1",
+            [crate::model::MAX_MEMORY_BYTES as i64],
+            |r| r.get::<_, i64>(0),
+        )? as usize)
+    }
+    /// Free pages a `maintenance --vacuum` would give back, in bytes.
+    pub fn reclaimable_bytes(&self) -> Result<i64> {
+        let free: i64 = self
+            .conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        let page: i64 = self.conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
+        Ok(free * page)
+    }
+    /// Rewrites the database to reclaim free pages, and from then on returns them as they free
+    /// up. Returns the bytes reclaimed.
+    pub fn vacuum(&self) -> Result<i64> {
+        let before = self.reclaimable_bytes()?;
+        self.conn
+            .execute_batch("PRAGMA auto_vacuum=INCREMENTAL; VACUUM;")?;
+        Ok(before - self.reclaimable_bytes()?)
     }
     pub fn checkpoint(&self) -> Result<()> {
         let busy = self

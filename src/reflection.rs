@@ -76,7 +76,9 @@ pub fn reflect(store: &mut MemoryStore, rules: &Rules, force: bool) -> Result<Ve
             .join("; ");
         let id = store.insert_memory(NewMemory {
             layer: "project".into(),
-            content: format!("Session reflection ({event}): {summary}"),
+            content: crate::model::clip_to_limit(&format!(
+                "Session reflection ({event}): {summary}"
+            )),
             source: "reflection".into(),
             confidence: 0.7,
             claim_type: ClaimType::DerivedLesson,

@@ -103,6 +103,118 @@ fn generic_queries_no_longer_return_everything() {
             .facts
             .is_empty()
     );
+    // Memories that use generic words in passing used to answer every vague question.
+    add(&store, "project", "Never use npm in this project");
+    add(
+        &store,
+        "project",
+        "Project information lives in docs/overview.md",
+    );
+    for vague in [
+        "current project context",
+        "how do we do things in this project",
+        "summarize the project",
+        "ภาพรวมของโปรเจกต์นี้",
+        "项目概况",
+    ] {
+        let found = retriever::retrieve(&mut store, vague, None, 10).unwrap();
+        assert!(found.facts.is_empty(), "{vague}: {:?}", found.facts);
+    }
+}
+
+/// Generic words still help ranking beside a topic word, and identifiers that contain one are
+/// never generic.
+#[test]
+fn generic_words_still_rank_beside_topic_words() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    let docs = add(
+        &store,
+        "project",
+        "Project information lives in docs/overview.md",
+    );
+    add(
+        &store,
+        "project",
+        "Information about releases lives in the wiki",
+    );
+    add(
+        &store,
+        "project",
+        "Set GOOGLE_CLOUD_PROJECT before running the emulator",
+    );
+    let found =
+        retriever::retrieve(&mut store, "where does project information live", None, 5).unwrap();
+    assert_eq!(found.memory_ids.first(), Some(&docs), "{:?}", found.facts);
+    assert!(
+        found.why[0]
+            .matched
+            .iter()
+            .any(|m| m == "project (generic)"),
+        "{:?}",
+        found.why[0]
+    );
+    assert_eq!(
+        top(&mut store, "GOOGLE_CLOUD_PROJECT").as_deref(),
+        Some("Set GOOGLE_CLOUD_PROJECT before running the emulator")
+    );
+    let only = retriever::retrieve(&mut store, "project information", None, 5).unwrap();
+    assert!(only.facts.is_empty());
+    assert!(
+        only.trace.contains(&"generic_only".to_string()),
+        "{:?}",
+        only.trace
+    );
+}
+
+/// English glued to Thai or Chinese has no token of its own, and used to be missed whenever the
+/// same word also appeared on its own somewhere else.
+#[test]
+fn english_glued_to_thai_is_found_beside_spaced_copies() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    let spaced = add(&store, "project", "Sessions live in Redis for 24 hours");
+    let thai = add(&store, "project", "ทีมเราใช้Redisเป็นคิวงาน");
+    add(&store, "project", "ทีมเราใช้Redissonเป็นไคลเอนต์");
+    let chinese = add(&store, "project", "订单服务使用PostgreSQL");
+    add(&store, "project", "Integration tests need Postgres running");
+    let found = retriever::retrieve(&mut store, "redis", None, 5).unwrap();
+    assert!(
+        found.memory_ids.contains(&spaced) && found.memory_ids.contains(&thai),
+        "{:?}",
+        found.facts
+    );
+    assert_eq!(
+        found.memory_ids.len(),
+        2,
+        "Redisson is another word: {:?}",
+        found.facts
+    );
+    let index = found.memory_ids.iter().position(|id| *id == thai).unwrap();
+    assert!(found.why[index]
+        .matched
+        .iter()
+        .any(|m| m == "redis (glued)"));
+    let found = retriever::retrieve(&mut store, "PostgreSQL", None, 5).unwrap();
+    assert!(found.memory_ids.contains(&chinese), "{:?}", found.facts);
+}
+
+/// A single Thai letter is a word only when it stands apart (ณ in หัก ณ ที่จ่าย); it used to
+/// match every memory that contained it anywhere.
+#[test]
+fn single_thai_letters_do_not_match_inside_words() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    add(&store, "project", "ภาษีหัก ณ ที่จ่ายคิดตอนสิ้นเดือน");
+    add(&store, "project", "API สาธารณะต้องมี rate limit");
+    add(&store, "project", "事務所の鍵は受付にある");
+    let found = retriever::retrieve(&mut store, "ณ", None, 5).unwrap();
+    assert_eq!(found.facts, ["ภาษีหัก ณ ที่จ่ายคิดตอนสิ้นเดือน"]);
+    assert!(retriever::retrieve(&mut store, "の", None, 5)
+        .unwrap()
+        .facts
+        .is_empty());
+    assert!(
+        top(&mut store, "事").is_some(),
+        "one Han character is still a word"
+    );
 }
 
 #[test]

@@ -658,3 +658,27 @@ fn accept_resolves_a_dispute() {
     assert_eq!(memory["verification_state"], "unverified");
     assert_eq!(memory["lifecycle_state"], "accepted");
 }
+
+/// `add` says what it redacted, so nobody assumes the stored text is what they typed.
+#[test]
+fn add_reports_what_it_redacted() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let added = success(
+        &dir,
+        &[
+            "add",
+            "Staging uses DB_PASSWORD=hunter3fake",
+            "--layer",
+            "project",
+        ],
+    );
+    assert_eq!(added["redacted"], json!(["PASSWORD"]));
+    let shown = success(&dir, &["show", added["id"].as_str().unwrap()]);
+    assert_eq!(
+        shown["memory"]["content"],
+        "Staging uses DB_PASSWORD=[REDACTED_PASSWORD]"
+    );
+    let plain = success(&dir, &["add", "Releases are cut from main"]);
+    assert!(plain.get("redacted").is_none());
+}

@@ -120,8 +120,12 @@ pub fn record(
     ensure(store)?;
     // Composes with a caller's transaction (nested savepoint) instead of failing on BEGIN.
     let guard = crate::store::AtomicWrite::new(&store.conn)?;
-    store.conn.execute("INSERT INTO otel_spans (id,trace_id,span_id,operation,timestamp,duration_ms,memory_id,layer,memory_type,confidence,query,top_k,results_count,status,error_message,attributes_json,service_name) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",params![id,trace_id,span_id,operation,chrono::Utc::now().timestamp_micros() as f64/1_000_000.0,duration_ms,text("memory_id","gen_ai.memory.id"),text("layer","gen_ai.memory.layer"),text("memory_type","gen_ai.memory.type"),confidence,text("query","gen_ai.memory.query"),top_k,results_count,attributes["status"].as_str().unwrap_or("ok"),attributes["error_message"].as_str(),attributes.to_string(),attributes["service_name"].as_str().unwrap_or("memctrl")])?;
-    store.conn.execute("DELETE FROM otel_spans WHERE id NOT IN (SELECT id FROM otel_spans ORDER BY timestamp DESC, rowid DESC LIMIT 10000)",[])?;
+    store.conn.execute("INSERT INTO otel_spans (id,trace_id,span_id,operation,timestamp,duration_ms,memory_id,layer,memory_type,confidence,query,top_k,results_count,status,error_message,attributes_json,service_name) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",params![id,trace_id,span_id,operation,chrono::Utc::now().timestamp_micros() as f64/1_000_000.0,duration_ms,text("memory_id","gen_ai.memory.id"),text("layer","gen_ai.memory.layer"),text("memory_type","gen_ai.memory.type"),confidence,text("query","gen_ai.memory.query").map(|q| crate::store::logged_query(&q)),top_k,results_count,attributes["status"].as_str().unwrap_or("ok"),attributes["error_message"].as_str(),attributes.to_string(),attributes["service_name"].as_str().unwrap_or("memctrl")])?;
+    // Keep the newest 10,000 spans; a rowid cutoff needs no sort.
+    store.conn.execute(
+        "DELETE FROM otel_spans WHERE rowid <= (SELECT MAX(rowid) FROM otel_spans) - 10000",
+        [],
+    )?;
     guard.commit()?;
     Ok(id)
 }
