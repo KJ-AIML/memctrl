@@ -45,7 +45,7 @@ memctrl keeps memory small, local and checkable:
 </tr>
 <tr>
 <td width="33%" valign="top"><b>Holds suspicious writes</b><br>Hidden Unicode or "ignore previous instructions" makes a memory a candidate for review instead of active knowledge.</td>
-<td width="33%" valign="top"><b>Travels through git</b><br>Export to Markdown, review it in a pull request, import it on another machine. Import never raises trust.</td>
+<td width="33%" valign="top"><b>Travels through git</b><br>Export to Markdown, review it in a pull request, import it on another machine. Import never overwrites your memories.</td>
 <td width="33%" valign="top"><b>Works in any language</b><br>Thai, Chinese, Japanese and Korean are searched with trigrams, since they are written without spaces.</td>
 </tr>
 </table>
@@ -64,7 +64,7 @@ memctrl init                                    # writes .memoryrc and .memctrl/
 memctrl install --tool claude --project --hook  # the skill, plus the session-start hook for Claude Code
 ```
 
-That's the whole setup. Save a fact and look at what the agent will see next session:
+That's the whole setup. Run memctrl from the project root (see the known issues below). Save a fact and look at what the agent will see next session:
 
 ```bash
 memctrl add "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs" \
@@ -97,6 +97,14 @@ cargo install --path . --locked
 Windows: download `memctrl-x86_64-pc-windows-msvc.zip` from [Releases](https://github.com/KJ-AIML/memctrl/releases) and put `memctrl.exe` on your `PATH`. Upgrading from 1.x or 2.0? Read [MIGRATION.md](MIGRATION.md) first.
 
 </details>
+
+> [!WARNING]
+> **Known issues in 2.1.0.** A real-world review found these; fixes are in progress for 2.1.1.
+> - **Team sharing is experimental until 2.2.** An entry in `.memctrl/memory.md` that carries metadata imports as accepted, so read memory.md changes in pull requests like code. `refute`, `supersede` and `forget` don't reach teammates, and `export` rewrites the file from your store: run `import` before `export`.
+> - **Review candidates yourself.** An agent can accept its own quarantined memory with `memctrl accept`. Don't let it.
+> - **Run memctrl from the project root.** In a subfolder, 2.1.0 creates a separate, empty store.
+> - **After `refresh`, check the citation** with `memctrl show <id>`: if the code moved and changed, it can be re-anchored at the old line numbers.
+> - **Keep secrets out of memory.** Keys with a prefix (`DB_PASSWORD=…`, `STRIPE_API_KEY=…`) and several vendor token formats are not redacted.
 
 ## How it works
 
@@ -185,7 +193,7 @@ trusted_sources = ["manual", "user", "cli"]
 ```
 
 > [!NOTE]
-> The guard is a heuristic. It never blocks, so a false positive costs one review, and determined phrasing can still get past it. Reviewing candidates is the safety net.
+> The guard is a tripwire, not a filter. It never blocks, so a false positive costs one review. In a red-team test it caught 19 of 73 injection attempts (paraphrases, other languages and encodings get past it) and held 36 of 50 ordinary notes. Review candidates yourself; never let the agent accept them.
 
 ### Share through git
 
@@ -195,13 +203,14 @@ memctrl export --check    # in CI: fail when the file is out of date
 memctrl import .memctrl/memory.md
 ```
 
-The export is plain Markdown: readable entries plus metadata comments (identity, states, citations, a content hash). Import never raises trust:
+The export is plain Markdown: readable entries plus metadata comments (identity, states, citations, a content hash). Import never overwrites what you have:
 
 - Local memories are never overwritten. Unchanged entries keep their identity.
 - Edited entries come back as candidates, and so do new `- ` bullets a teammate writes in a PR, filed under the section heading they sit beneath.
-- A memory you `forget` stays forgotten.
+- A memory you `forget` stays forgotten on your machine. Teammates keep their copy: `forget`, `refute` and `supersede` are not exported yet.
 - Text you already hold in any state, refuted included, is not added again.
 - Verification arrives as `unverified` unless you pass `--trust-verification`, since anyone who can edit the file can write metadata.
+- An entry with valid-looking metadata arrives **accepted**, and its metadata is easy to write by hand. Review memory.md diffs before importing (2.1.1 makes new entries candidates).
 
 `.memctrl/.gitignore` keeps the database out of git.
 
@@ -223,7 +232,7 @@ Built-in suite (30 memories, 48 queries), k=5:
 | Thai, Chinese, Japanese, Korean | **10 / 10** | 2 / 10 |
 | median latency | **0.13 ms** | 2.8 ms |
 
-The same author wrote the suite and the retriever, so treat these as regression floors, not an independent benchmark. Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team.
+The same author wrote the suite and the retriever, so treat these as regression floors, not an independent benchmark. The unanswerable queries share no words with the suite's memories; vague questions that do ("how do we do things in this project") still return notes, in every language. Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team.
 
 ## Commands
 
@@ -236,7 +245,7 @@ The same author wrote the suite and the retriever, so treat these as regression 
 | Review held writes | `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>` |
 | Check for code drift | `memctrl stale`, then correct the memory or `memctrl refresh <id>` |
 | Correct a memory | `memctrl refute <id> --reason "…"`, or add the right fact and `memctrl supersede <old> <new>` |
-| Remove a memory | `memctrl forget <id>` (it stays forgotten, even on import) |
+| Remove a memory | `memctrl forget <id>` (it stays forgotten on this machine, even on import) |
 | Share with the team | `memctrl export`, commit `.memctrl/memory.md`; teammates run `memctrl import .memctrl/memory.md` |
 | Check store health | `memctrl doctor` |
 
@@ -318,7 +327,8 @@ The server uses the official Rust MCP SDK over stdio, and stdout carries only pr
 
 - **Search matches words, not meaning.** A paraphrase that shares no words with the memory won't find it. Add aliases, or ask with the names, paths and errors the memory uses.
 - **Freshness covers cited memories only**, and it compares against your working tree, not a specific commit.
-- **The guard is a heuristic.** Review candidates before accepting them.
+- **The guard is a tripwire.** Review candidates yourself before accepting them.
+- **Team sharing is experimental until 2.2.** Corrections and removals don't travel, and imports trust metadata; see the known issues above.
 - **Other writers need FTS5.** Programs that write to a memctrl database directly need SQLite with full-text search; memctrl itself is unaffected.
 
 ## Development
