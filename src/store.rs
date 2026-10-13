@@ -1,6 +1,6 @@
 //! SQLite storage preserving Python v4 data and transactional lineage.
 use crate::{model::*, sanitize::*};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::{json, Value};
 use std::{
@@ -305,6 +305,42 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             .query_row("SELECT * FROM memories WHERE id=?", [id], memory_row)
             .optional()?;
         Ok(memory.filter(|m| include_history || m.eligible()))
+    }
+    /// Resolves a memory id as typed: the exact id, else a unique prefix of at least 4 hex
+    /// characters (the brief shows 8). Ambiguous prefixes are refused, listing the matches.
+    pub fn resolve_id(&self, input: &str) -> Result<String> {
+        let input = input.trim();
+        // An id-shaped prefix carries no credentials, and the sanitizer could mistake an
+        // all-digit one for a phone number; anything else is checked like any identifier.
+        let hex = (4..36).contains(&input.len())
+            && input.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+        if !hex {
+            validate_identifier(input, "memory_id")?;
+        }
+        if self.get_memory(input, true)?.is_some() {
+            return Ok(input.into());
+        }
+        ensure!(hex, "memory not found");
+        let prefix = input.to_ascii_lowercase();
+        let mut statement = self
+            .conn
+            .prepare("SELECT id FROM memories WHERE id GLOB ?1 || '*' ORDER BY id LIMIT 6")?;
+        let ids = statement
+            .query_map([&prefix], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        match ids.as_slice() {
+            [] => bail!("memory not found"),
+            [id] => Ok(id.clone()),
+            more => bail!(
+                "id prefix {prefix} is ambiguous: it matches {}{}; use more characters",
+                more.iter()
+                    .take(5)
+                    .map(|id| id.chars().take(13).collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if more.len() > 5 { ", …" } else { "" }
+            ),
+        }
     }
     pub fn list_memories(&self, layer: Option<&str>, include_history: bool) -> Result<Vec<Memory>> {
         if let Some(layer) = layer {

@@ -27,6 +27,15 @@ fn success(dir: &TempDir, args: &[&str]) -> Value {
     );
     serde_json::from_slice(&out.stdout).expect("stdout must contain only JSON")
 }
+fn invoke_in(path: &std::path::Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_memctrl"))
+        .current_dir(path)
+        .env_remove("MEMCTRL_DB_PATH")
+        .env_remove("MEMCTRL_PROJECT_ROOT")
+        .args(args)
+        .output()
+        .expect("run memctrl")
+}
 fn failure(dir: &TempDir, args: &[&str]) -> String {
     let out = invoke(dir, args);
     assert!(!out.status.success(), "{:?} unexpectedly succeeded", args);
@@ -84,6 +93,8 @@ fn lifecycle_and_command_arguments() {
         "refuted"
     );
     success(&dir, &["history", id]);
+    // The brief shows 8-character ids; they work wherever an id does.
+    assert_eq!(success(&dir, &["show", &id[..8]])["memory"]["id"], id);
     success(&dir, &["reject", id, "--reason", "review complete"]);
     success(&dir, &["list", "--include-history"]);
     success(&dir, &["maintenance"]);
@@ -112,6 +123,7 @@ fn lifecycle_and_command_arguments() {
 #[test]
 fn invalid_input_is_nonzero_and_sanitized() {
     let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
     for args in [
         vec!["add", "fact", "--confidence", "NaN"],
         vec!["add", "fact", "--confidence", "2"],
@@ -154,6 +166,7 @@ fn invalid_input_is_nonzero_and_sanitized() {
 #[test]
 fn checkpoints_and_agent_node_are_json_native() {
     let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
     success(
         &dir,
         &[
@@ -372,6 +385,7 @@ fn llm_is_opt_in_and_installer_respects_scope() {
             .env("MEMCTRL_LLM_BASE_URL", "http://invalid.example");
         command
     };
+    assert!(make().arg("init").output().unwrap().status.success());
     for args in [
         vec!["add", "We use deterministic retrieval by default"],
         vec!["query", "retrieval"],
@@ -539,4 +553,90 @@ fn memory_text_cannot_forge_the_context_markers() {
     assert!(sizes.windows(2).all(|w| w[0] == w[1]), "{sizes:?}");
     let text = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
     assert_eq!(text.matches("<!-- memctrl:context:end -->").count(), 1);
+}
+
+/// Commands find the project's store and rules from any subfolder, and only `init` (or a path
+/// the user names) creates a store, so a subfolder never gets an empty store of its own.
+#[test]
+fn subfolders_use_the_project_store_and_config_and_never_create_one() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(root.join("src/api")).unwrap();
+    success(&dir, &["init"]);
+    let rc = root.join(".memoryrc");
+    let rules = std::fs::read_to_string(&rc)
+        .unwrap()
+        .replace("mode = \"flag\"", "mode = \"strict\"");
+    std::fs::write(&rc, &rules).unwrap();
+    success(
+        &dir,
+        &["add", "Releases are cut from main", "--layer", "project"],
+    );
+    let src = root.join("src/api");
+    let in_src = |args: &[&str]| -> Value {
+        let out = invoke_in(&src, args);
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    assert_eq!(
+        in_src(&["query", "releases main"])["facts"][0],
+        "Releases are cut from main"
+    );
+    // The repository's rules apply too: strict mode holds an untrusted source for review.
+    assert_eq!(
+        in_src(&["add", "Deploys pause on Fridays", "--source", "agent"])["status"],
+        "quarantined"
+    );
+    in_src(&["export"]);
+    assert!(root.join(".memctrl/memory.md").exists());
+    assert!(!src.join(".memctrl").exists() && !root.join("src/.memctrl").exists());
+
+    // init inside a project refuses; init at the root again keeps the rules.
+    let nested = invoke_in(&src, &["init"]);
+    assert!(!nested.status.success());
+    assert!(String::from_utf8_lossy(&nested.stderr).contains("already a memctrl project"));
+    assert_eq!(success(&dir, &["init"])["rules_written"], false);
+    assert_eq!(std::fs::read_to_string(&rc).unwrap(), rules);
+
+    // A rules file committed by a teammate: init keeps it and creates the store it names.
+    let clone = TempDir::new().unwrap();
+    let team_rules = "[memctrl]\ndb_path = \"data/team.db\"\n";
+    std::fs::write(clone.path().join(".memoryrc"), team_rules).unwrap();
+    assert_eq!(success(&clone, &["init"])["rules_written"], false);
+    assert!(clone.path().join("data/team.db").exists());
+    assert_eq!(
+        std::fs::read_to_string(clone.path().join(".memoryrc")).unwrap(),
+        team_rules
+    );
+
+    // Outside any project, commands explain and create nothing.
+    let elsewhere = TempDir::new().unwrap();
+    for args in [
+        vec!["query", "releases"],
+        vec!["add", "a note"],
+        vec!["list"],
+    ] {
+        let message = failure(&elsewhere, &args);
+        assert!(message.contains("memctrl init"), "{message}");
+    }
+    success(&elsewhere, &["install", "--tool", "codex", "--project"]);
+    assert!(invoke(&elsewhere, &["context"]).status.success());
+    assert!(!elsewhere.path().join(".memctrl").exists());
+
+    // A path the user names may be created; doctor reports it as a stray store.
+    let stray = root.join("src/.memctrl/memories.db");
+    in_src(&["--db", stray.to_str().unwrap(), "add", "an old note"]);
+    let doctor = success(&dir, &["doctor"]);
+    let listed: Vec<String> = doctor["stray_stores"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap().replace('\\', "/"))
+        .collect();
+    assert_eq!(listed, ["src/.memctrl/memories.db"]);
 }

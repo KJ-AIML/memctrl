@@ -165,7 +165,7 @@ fn installer_places_six_tool_skills_under_explicit_scope() {
             assert!(path.starts_with(dir.path()));
             let content = std::fs::read_to_string(path).unwrap();
             assert!(content.contains("memctrl query"));
-            assert!(content.contains("memctrl trigger on_session_end"));
+            assert!(content.contains("Never accept a quarantined memory yourself"));
         }
     }
     assert!(installer::install("../escape", true, dir.path()).is_err());
