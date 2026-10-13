@@ -695,3 +695,111 @@ fn sanitizer_leaves_prose_and_placeholders_alone() {
         assert!(redactions(prose).is_empty(), "{prose:?}");
     }
 }
+
+/// `refute --reason` used to drop the reason unless another memory did the refuting.
+#[test]
+fn refutation_reasons_are_kept_and_shown() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let id = store.insert_memory(mem("CI runs on Node 18"))?;
+    store.refute_memory(
+        &id,
+        "CI moved to Node 20; password=hunter2 was in the old config",
+        None,
+    )?;
+    let evidence = store.evidence(&id)?;
+    let reason = evidence[0]["metadata"]["reason"].as_str().unwrap();
+    assert!(reason.starts_with("CI moved to Node 20"), "{reason}");
+    assert!(
+        !reason.contains("hunter2"),
+        "reasons are sanitized: {reason}"
+    );
+    let audit = store.audit(10)?;
+    assert!(
+        audit.iter().any(|log| log["event"] == "refute"),
+        "{audit:?}"
+    );
+
+    let other = store.insert_memory(mem("Deploys run on Fridays"))?;
+    let rules = Rules::default();
+    mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_review",
+        &json!({"id": other, "action": "refute", "reason": "we deploy daily now"}),
+    )?;
+    assert_eq!(
+        store.evidence(&other)?[0]["metadata"]["reason"],
+        "we deploy daily now"
+    );
+    Ok(())
+}
+
+/// `add` stored identical text again and again; it now returns the memory that holds it.
+#[test]
+fn adding_the_same_text_returns_the_existing_memory() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let add = |store: &mut MemoryStore, content: &str| {
+        mcp::dispatch(
+            store,
+            &rules,
+            "memctrl_add",
+            &json!({"content": content, "layer": "project"}),
+        )
+    };
+    let first = add(&mut store, "Releases are cut from main")?;
+    let again = add(&mut store, "Releases are cut from main")?;
+    assert_eq!(again["status"], "exists");
+    assert_eq!(again["id"], first["id"]);
+    assert_eq!(store.list_memories(None, true)?.len(), 1);
+
+    // Refuted text isn't silently stored again.
+    store.refute_memory(first["id"].as_str().unwrap(), "we release from tags", None)?;
+    let refused = add(&mut store, "Releases are cut from main").unwrap_err();
+    assert!(refused.to_string().contains("refuted"), "{refused}");
+    Ok(())
+}
+
+/// The default `on_session_end` rule (`summarize session -> user`) moved raw work-in-progress
+/// notes into the user layer, where every session read them as preferences.
+#[test]
+fn session_end_proposes_candidates_instead_of_moving_notes() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let note = store.insert_memory(NewMemory {
+        layer: "session".into(),
+        ..mem("Migrating auth to sessions; logout is next")
+    })?;
+    let proposed = rules.fire_trigger("on_session_end", &json!({}), &mut store)?;
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(store.get_memory(&note, true)?.unwrap().layer, "session");
+    let candidate = store.get_memory(&proposed[0], true)?.unwrap();
+    assert_eq!(candidate.layer, "user");
+    assert_eq!(candidate.lifecycle_state, LifecycleState::Candidate);
+    assert!(candidate
+        .tags
+        .contains(&"proposed:on_session_end".to_string()));
+    let layers = vec!["user".to_string()];
+    let brief = memctrl::context::session_brief(&store, &layers, 2000, &|_| None)?;
+    assert!(!brief.markdown.contains("logout is next"));
+    let again = rules.fire_trigger("on_session_end", &json!({}), &mut store)?;
+    assert!(again.is_empty(), "a note is proposed once");
+    Ok(())
+}
+
+/// `on_commit` moved session notes into project but kept their 7-day session expiry.
+#[test]
+fn consolidation_takes_the_target_layers_retention() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let id = store.insert_memory(NewMemory {
+        layer: "session".into(),
+        expires_at: rules.expiry("session"),
+        ..mem("The cache key includes the tenant id")
+    })?;
+    rules.fire_trigger("on_commit", &json!({}), &mut store)?;
+    let promoted = store.get_memory(&id, true)?.unwrap();
+    assert_eq!(promoted.layer, "project");
+    assert_eq!(promoted.expires_at, None, "project memories don't expire");
+    Ok(())
+}

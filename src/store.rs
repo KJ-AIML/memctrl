@@ -346,6 +346,47 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             ),
         }
     }
+    /// The memory in `layer` whose text is exactly `content` (as stored, after sanitizing), so a
+    /// repeated `add` can return it instead of storing a duplicate.
+    pub fn find_same(&self, layer: &str, content: &str) -> Result<Option<Memory>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT * FROM memories WHERE layer=? AND content=? ORDER BY created_at DESC,id LIMIT 1",
+                params![layer, sanitize_text(content)],
+                memory_row,
+            )
+            .optional()?)
+    }
+    /// For `add`: the active memory or candidate in `layer` that already holds this text, so it
+    /// is returned instead of duplicated. Text that was refuted, rejected or superseded is
+    /// refused with a hint; an expired memory doesn't count, so the fact can be stored again.
+    pub fn existing_for_add(&self, layer: &str, content: &str) -> Result<Option<Memory>> {
+        let Some(same) = self.find_same(layer, content)? else {
+            return Ok(None);
+        };
+        let short: String = same.id.chars().take(8).collect();
+        if same.verification_state == VerificationState::Refuted {
+            bail!("this text was refuted as {short}; add the corrected fact instead")
+        }
+        match same.lifecycle_state {
+            LifecycleState::Rejected | LifecycleState::Superseded | LifecycleState::Archived => bail!(
+                "this text is already stored as {short} ({}); add the corrected fact instead, or see `memctrl history {short}`",
+                same.lifecycle_state
+            ),
+            LifecycleState::Candidate => Ok(Some(same)),
+            LifecycleState::Accepted if same.eligible() => Ok(Some(same)),
+            LifecycleState::Accepted => Ok(None),
+        }
+    }
+    /// Candidates waiting for review.
+    pub fn count_candidates(&self) -> Result<usize> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE lifecycle_state='candidate'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )? as usize)
+    }
     pub fn list_memories(&self, layer: Option<&str>, include_history: bool) -> Result<Vec<Memory>> {
         if let Some(layer) = layer {
             validate_identifier(layer, "layer")?;
@@ -564,6 +605,16 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
                 self.require_memory(refuter)?;
             }
             self.update_verification(id, VerificationState::Refuted)?;
+            // Keep the reason with the memory, whether or not another memory refutes it.
+            self.add_evidence(
+                id,
+                "memctrl",
+                "refute",
+                None,
+                RelationType::Refutes,
+                json!({"reason": sanitize_text(reason), "refuting_id": refuter}),
+            )?;
+            self.log_event("refute", reason, &[id.to_string()])?;
             if let Some(refuter) = refuter {
                 self.add_relation(
                     refuter,
@@ -710,17 +761,20 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         )?;
         Ok(())
     }
+    /// Moves every active memory from one layer to another, which also takes the target layer's
+    /// retention (`expires_at`; `None` means it never expires, as in `project`).
     pub fn consolidate_and_log(
         &self,
         from: &str,
         to: &str,
         event: &str,
         action: &str,
+        expires_at: Option<&str>,
     ) -> Result<Vec<String>> {
         validate_identifier(from, "layer")?;
         validate_identifier(to, "layer")?;
         validate_identifier(event, "event")?;
-        self.atomic(||{let ids=self.list_memories(Some(from),false)?.into_iter().map(|m|m.id).collect::<Vec<_>>();for id in &ids{self.update_layer(id,to)?;}if !ids.is_empty(){self.conn.execute("INSERT INTO triggers_log(id,event,action,memories_affected,timestamp) VALUES(?,?,?,?,?)",params![Uuid::new_v4().to_string(),event,sanitize_text(action),serde_json::to_string(&ids)?,now()])?;}Ok(ids)})
+        self.atomic(||{let ids=self.list_memories(Some(from),false)?.into_iter().map(|m|m.id).collect::<Vec<_>>();for id in &ids{self.update_layer(id,to)?;self.conn.execute("UPDATE memories SET expires_at=? WHERE id=?",params![expires_at,id])?;}if !ids.is_empty(){self.conn.execute("INSERT INTO triggers_log(id,event,action,memories_affected,timestamp) VALUES(?,?,?,?,?)",params![Uuid::new_v4().to_string(),event,sanitize_text(action),serde_json::to_string(&ids)?,now()])?;}Ok(ids)})
     }
     pub fn rebuild_tree(&self, tree: &TreeNode) -> Result<()> {
         fn insert(

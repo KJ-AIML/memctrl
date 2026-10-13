@@ -131,6 +131,13 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 ..Default::default()
             };
             memory.validate()?;
+            if let Some(same) = store.existing_for_add(layer, content)? {
+                return Ok(sanitize_value(&json!({
+                    "id": same.id,
+                    "status": "exists",
+                    "lifecycle_state": same.lifecycle_state,
+                })));
+            }
             let verdict = crate::guard::apply(&mut memory, &rules.guard);
             let mut output = if specs.is_empty() {
                 json!({"id": store.insert_memory(memory)?, "status": "stored"})
@@ -252,6 +259,9 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 }
                 "reject" => {
                     store.update_lifecycle(id, LifecycleState::Rejected)?;
+                    if !reason.is_empty() {
+                        store.log_event("reject", reason, &[id.to_string()])?;
+                    }
                 }
                 "dispute" => {
                     store.update_verification(id, VerificationState::Disputed)?;

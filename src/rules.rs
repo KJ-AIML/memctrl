@@ -15,6 +15,8 @@ project = "architecture decisions, tech stack, ADRs, why we chose X"
 session = "current task, WIP, what was done this session"
 user = "preferences, working style, patterns, personal rules"
 [triggers]
+# consolidate moves memories (taking the target layer's retention); summarize proposes them as
+# candidates for review and leaves the originals where they are.
 on_commit = "consolidate session -> project"
 on_session_end = "summarize session -> user"
 'on_file "docs/ADR-*.md"' = "extract -> project"
@@ -555,6 +557,50 @@ impl Rules {
         Ok(rules)
     }
 
+    /// `summarize X -> Y` proposes each active X memory as a candidate in Y (through the guard,
+    /// with Y's retention, linked to its source) instead of moving the notes. Session notes are
+    /// work in progress; moved into `user` as-is, they read as preferences in every session.
+    /// Notes already proposed (same text in Y, in any state) are skipped.
+    fn propose(
+        &self,
+        store: &MemoryStore,
+        from: &str,
+        to: &str,
+        event: &str,
+        action: &str,
+    ) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        for source in store.list_memories(Some(from), false)? {
+            if store.find_same(to, &source.content)?.is_some() {
+                continue;
+            }
+            let mut memory = NewMemory {
+                layer: to.into(),
+                content: source.content.clone(),
+                source: "trigger".into(),
+                confidence: source.confidence,
+                claim_type: source.claim_type,
+                lifecycle_state: crate::model::LifecycleState::Candidate,
+                tags: vec![format!("proposed:{event}")],
+                expires_at: self.expiry(to),
+                ..Default::default()
+            };
+            crate::guard::apply(&mut memory, &self.guard);
+            let id = store.insert_memory(memory)?;
+            store.add_relation(
+                &id,
+                &source.id,
+                crate::model::RelationType::DerivedFrom,
+                serde_json::json!({"event": event}),
+            )?;
+            ids.push(id);
+        }
+        if !ids.is_empty() {
+            store.log_event(event, &format!("proposed: {action}"), &ids)?;
+        }
+        Ok(ids)
+    }
+
     /// Every active synonym group: built-ins (unless disabled) followed by custom groups.
     pub fn alias_groups(&self) -> Vec<Vec<String>> {
         let mut groups: Vec<Vec<String>> = if self.builtin_aliases {
@@ -757,8 +803,17 @@ impl Rules {
                         "trigger",
                         serde_json::json!({"event":event,"action":action}),
                     )?;
+                } else if verb == "summarize" {
+                    ids.extend(self.propose(store, &from, &to, event, &action)?);
                 } else {
-                    ids.extend(store.consolidate_and_log(&from, &to, event, &action)?);
+                    let expires_at = self.expiry(&to);
+                    ids.extend(store.consolidate_and_log(
+                        &from,
+                        &to,
+                        event,
+                        &action,
+                        expires_at.as_deref(),
+                    )?);
                 }
             }
             ids.sort();

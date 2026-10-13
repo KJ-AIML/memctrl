@@ -232,7 +232,7 @@ fn consolidation_audit_failure_rolls_back_memory_and_revision() -> anyhow::Resul
     let revision = store.revision()?;
     store.conn.execute_batch("CREATE TRIGGER reject_log BEFORE INSERT ON triggers_log BEGIN SELECT RAISE(ABORT,'injected log failure'); END;")?;
     assert!(store
-        .consolidate_and_log("session", "project", "on_commit", "move")
+        .consolidate_and_log("session", "project", "on_commit", "move", None)
         .is_err());
     assert_eq!(store.get_memory(&id, true)?.unwrap().layer, "session");
     assert_eq!(store.revision()?, revision);

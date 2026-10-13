@@ -21,6 +21,8 @@ memctrl context
 
 Entries under **Check before trusting** are disputed, or their cited code changed after they were saved. Confirm them against the code before relying on them.
 
+If the header says entries were not shown for space, run `memctrl stale` to see what needs checking. If it says memories wait for review, tell the user; only they can accept them.
+
 memctrl works from any folder inside the project. The ids in the brief are the first 8 characters of a memory's id; every command accepts them.
 
 ## Look things up
@@ -61,10 +63,11 @@ A memory containing hidden Unicode or instruction-like text ("ignore previous in
 
 ```bash
 memctrl supersede <old_id> <new_id>        # the new memory replaces the old one
-memctrl refute <id> -r "reason"            # wrong; refutation is permanent
+memctrl refute <id> -r "reason"            # wrong; refutation is permanent and the reason is kept
 memctrl dispute <id>                       # doubtful; shown under "Check before trusting"
 memctrl stale                              # memories whose cited code changed
 memctrl refresh <id>                       # after re-checking, re-anchor its citations
+memctrl refresh <id> --cite src/db.rs:40-52 # when memctrl can't tell where the code moved
 ```
 
 ## Share with the team

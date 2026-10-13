@@ -191,7 +191,15 @@ enum Command {
         all: bool,
     },
     /// Re-anchor a memory's citations to the current code after re-checking the memory.
-    Refresh { memory_id: String },
+    Refresh {
+        memory_id: String,
+        #[arg(
+            long = "cite",
+            value_name = "PATH:START-END",
+            help = "Set the range for a path the memory cites, when its code can't be followed automatically (repeatable)"
+        )]
+        cite: Vec<String>,
+    },
     /// Write shared memory to a Markdown file for review in pull requests.
     Export {
         #[arg(
@@ -722,6 +730,15 @@ async fn execute(
                 }
                 let ids = store.insert_memories(memories)?;
                 json!({"memory_ids":ids,"status":"stored","quarantined":quarantined})
+            } else if let Some(same) = store.existing_for_add(layer, content)? {
+                // Adding the same text again returns the memory that holds it.
+                let mut output =
+                    json!({"id":same.id,"status":"exists","lifecycle_state":same.lifecycle_state});
+                if !anchors.is_empty() {
+                    output["note"] =
+                        json!("not changed; add citations with `memctrl cite <id> <path>`");
+                }
+                output
             } else {
                 let verdict = guard::apply(&mut memory, &rules.guard);
                 let id = match root {
@@ -770,9 +787,13 @@ async fn execute(
             validate_layer(layer.as_deref())?;
             citations::stale_report(store, &project_root(rules)?, layer.as_deref(), *all)?
         }
-        Command::Refresh { memory_id } => {
+        Command::Refresh { memory_id, cite } => {
             let memory_id = require_memory(store, memory_id)?;
-            citations::refresh(store, &project_root(rules)?, &memory_id)?
+            let overrides = cite
+                .iter()
+                .map(|spec| citations::parse_spec(spec))
+                .collect::<Result<Vec<_>>>()?;
+            citations::refresh(store, &project_root(rules)?, &memory_id, &overrides)?
         }
         Command::Export {
             out,
