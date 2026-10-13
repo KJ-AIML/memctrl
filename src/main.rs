@@ -208,6 +208,11 @@ enum Command {
             help = "Fail if the file is not up to date instead of writing it"
         )]
         check: bool,
+        #[arg(
+            long,
+            help = "Overwrite even if the file has entries your store hasn't imported"
+        )]
+        force: bool,
     },
     /// Measure retrieval quality on a suite (built in, or --file) without touching your database.
     Eval {
@@ -226,15 +231,20 @@ enum Command {
         )]
         min_hit_rate: Option<f64>,
     },
-    /// Import a memctrl export; never overwrites local memories.
+    /// Import a memctrl export; never overwrites local memories. New entries arrive as
+    /// candidates unless you pass --accept after reading the file's changes.
     Import {
         file: PathBuf,
         #[arg(
-            long,
-            default_value = "project",
-            help = "Layer for hand-written entries"
+            long = "layer",
+            help = "Layer to import (repeatable; default: project). Hand-written entries go to the first"
         )]
-        layer: String,
+        layers: Vec<String>,
+        #[arg(
+            long,
+            help = "You have read the file's changes: accept new entries instead of holding them as candidates"
+        )]
+        accept: bool,
         #[arg(long)]
         dry_run: bool,
         #[arg(
@@ -513,6 +523,29 @@ fn confinement(path: &Path, rules: &Rules) -> Result<Option<PathBuf>> {
         None
     })
 }
+/// A path as the user would type it: relative to the working directory when it is inside it.
+fn shown(path: &Path) -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(cwd).ok().map(|p| p.display().to_string()))
+        .unwrap_or_else(|| path.display().to_string())
+}
+/// Why an export would drop entries, and how to keep them.
+fn describe_unmerged(out: &Path, entries: &[mirror::Unmerged]) -> String {
+    let listed: Vec<String> = entries
+        .iter()
+        .take(5)
+        .map(|e| format!("line {}: \"{}\" ({})", e.line, e.preview, e.reason))
+        .collect();
+    format!(
+        "it has {} {} your store hasn't imported ({}{}). Run `memctrl import {}` first and review the candidates (or import with --accept after reading the changes), or pass --force to drop them",
+        entries.len(),
+        if entries.len() == 1 { "entry" } else { "entries" },
+        listed.join("; "),
+        if entries.len() > 5 { "; …" } else { "" },
+        shown(out)
+    )
+}
 /// The full id of an existing memory, from the id or a unique prefix (the brief shows 8 characters).
 fn require_memory(store: &MemoryStore, id: &str) -> Result<String> {
     store.resolve_id(id)
@@ -728,7 +761,12 @@ async fn execute(
             let memory_id = require_memory(store, memory_id)?;
             citations::refresh(store, &project_root(rules)?, &memory_id)?
         }
-        Command::Export { out, layers, check } => {
+        Command::Export {
+            out,
+            layers,
+            check,
+            force,
+        } => {
             // The default path is anchored to the project folder, and confined like a relative one.
             let (out, confine) = match out {
                 Some(path) => (path.clone(), confinement(path, rules)?),
@@ -747,19 +785,43 @@ async fn execute(
                 layers.clone()
             };
             let (text, count) = mirror::render(store, &layers)?;
+            // Refuse a symlink that escapes the project before reading through it.
+            let target = memctrl::fsutil::confined_target(out, confine.as_deref())?;
             // Compare as text: a CRLF checkout or a BOM is not a content change.
-            let current = std::fs::read_to_string(out)
+            let current = std::fs::read_to_string(&target)
                 .ok()
                 .map(|t| mirror::normalize(&t));
             let up_to_date = current.as_deref() == Some(text.as_str());
+            // Entries a teammate added (or edited) that this store hasn't imported would vanish.
+            let unmerged = match &current {
+                Some(existing) if !up_to_date && !*force => mirror::unmerged(store, existing)
+                    .with_context(|| {
+                        format!(
+                            "{} exists but can't be read as a memctrl export; fix it, or pass --force to overwrite it",
+                            shown(out)
+                        )
+                    })?,
+                _ => Vec::new(),
+            };
             if *check {
                 ensure!(
                     up_to_date,
-                    "{} is out of date; run `memctrl export`",
-                    out.display()
+                    "{} is out of date; {}",
+                    shown(out),
+                    if unmerged.is_empty() {
+                        "run `memctrl export`".to_string()
+                    } else {
+                        describe_unmerged(out, &unmerged)
+                    }
                 );
                 json!({"output":out,"memories":count,"up_to_date":true})
             } else {
+                ensure!(
+                    unmerged.is_empty(),
+                    "refusing to overwrite {}: {}",
+                    shown(out),
+                    describe_unmerged(out, &unmerged)
+                );
                 if !up_to_date {
                     memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
                 }
@@ -769,17 +831,22 @@ async fn execute(
         }
         Command::Import {
             file,
-            layer,
+            layers,
+            accept,
             dry_run,
             trust_verification,
         } => {
-            validate_layer(Some(layer))?;
             let text = std::fs::read_to_string(file)
                 .with_context(|| format!("cannot read {}", file.display()))?;
             let options = mirror::ImportOptions {
-                default_layer: layer.clone(),
+                layers: if layers.is_empty() {
+                    mirror::DEFAULT_LAYERS.map(String::from).to_vec()
+                } else {
+                    layers.clone()
+                },
                 dry_run: *dry_run,
                 trust_verification: *trust_verification,
+                accept: *accept,
             };
             let mut report = mirror::import(store, &text, &options, &rules.guard)?;
             report["file"] = json!(file);
@@ -1165,6 +1232,12 @@ async fn run(cli: Cli) -> Result<()> {
             return Ok(());
         }
     }
+    // CI checkouts have no store (the database stays out of git).
+    if matches!(&cli.command, Command::Export { check: true, .. }) && !db.exists() {
+        bail!(
+            "export --check compares the file with your local store, and there is none here. To validate memory.md without a store (in CI), run `memctrl --db :memory: import --dry-run .memctrl/memory.md`"
+        );
+    }
     // Only init, or a path the user named, creates a store, so a subfolder never gets its own.
     if !db.exists() && !named && !matches!(&cli.command, Command::Init { .. }) {
         if project.found {
@@ -1203,6 +1276,7 @@ async fn run(cli: Cli) -> Result<()> {
                 command: ReviewCommand::Heli { persist: false, .. }
             }
             | Command::Decay { dry_run: true, .. }
+            | Command::Import { dry_run: true, .. }
     ) {
         telemetry::record(
             &mut store,
@@ -1285,7 +1359,8 @@ async fn main() {
         }
     };
     if let Err(error) = run(cli).await {
-        eprintln!("{}", json!({"error":sanitize_text(&error.to_string())}));
+        // The whole chain ("entry at line 6: memory id must be a UUID: …"), still sanitized.
+        eprintln!("{}", json!({"error":sanitize_text(&format!("{error:#}"))}));
         std::process::exit(1);
     }
 }
