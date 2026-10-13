@@ -219,9 +219,39 @@ enum Command {
         check: bool,
         #[arg(
             long,
-            help = "Overwrite even if the file has entries your store hasn't imported"
+            help = "Write from your store alone, dropping entries it hasn't imported and retraction records it doesn't know"
         )]
         force: bool,
+    },
+    /// After pulling: import memory.md (new entries as candidates, retractions applied), then
+    /// export your store merged with it.
+    Sync {
+        #[arg(help = "Export to sync (default: .memctrl/memory.md in the project folder)")]
+        file: Option<PathBuf>,
+        #[arg(long = "layer", help = "Layer to sync (repeatable; default: project)")]
+        layers: Vec<String>,
+        #[arg(
+            long,
+            help = "You have read the file's changes: accept new entries (asks in a terminal)"
+        )]
+        accept: bool,
+    },
+    /// Validate memory.md without a database (for CI): format, ids, hashes, layout, and with
+    /// --base that no retraction was dropped.
+    Check {
+        #[arg(help = "Export to check (default: .memctrl/memory.md in the project folder)")]
+        file: Option<PathBuf>,
+        #[arg(
+            long,
+            value_name = "GIT_REF",
+            help = "Compare with this commit's version of the file (e.g. origin/main)"
+        )]
+        base: Option<String>,
+        #[arg(
+            long,
+            help = "Treat warnings (edited or hand-written entries, layout) as errors"
+        )]
+        strict: bool,
     },
     /// Measure retrieval quality on a suite (built in, or --file) without touching your database.
     Eval {
@@ -550,28 +580,147 @@ fn at_terminal() -> bool {
     use std::io::IsTerminal;
     std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
+fn import_options(
+    layers: &[String],
+    accept: bool,
+    dry_run: bool,
+    trust_verification: bool,
+) -> mirror::ImportOptions {
+    mirror::ImportOptions {
+        layers: if layers.is_empty() {
+            mirror::DEFAULT_LAYERS.map(String::from).to_vec()
+        } else {
+            layers.to_vec()
+        },
+        dry_run,
+        trust_verification,
+        accept,
+    }
+}
+
+/// Imports an export. With `accept`, which is the person's review step, it plans without holding
+/// the lock while asking at the terminal, then imports only what was confirmed.
+fn run_import(
+    store: &mut MemoryStore,
+    rules: &Rules,
+    file: &Path,
+    options: mirror::ImportOptions,
+) -> Result<Value> {
+    let text =
+        std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
+    let mut report = if options.accept && !options.dry_run {
+        let mut accepting = Vec::new();
+        let preview = mirror::ImportOptions {
+            dry_run: true,
+            ..options.clone()
+        };
+        mirror::import_with(store, &text, &preview, &rules.guard, &mut |entries| {
+            accepting = entries.to_vec();
+            Ok(true)
+        })?;
+        if !accepting.is_empty() {
+            ensure!(
+                at_terminal(),
+                "import --accept would accept {} entries, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review",
+                accepting.len()
+            );
+            ensure!(
+                review::confirm_import(
+                    &shown(file),
+                    &accepting,
+                    &mut std::io::stdin().lock(),
+                    &mut std::io::stderr()
+                )?,
+                "import cancelled; nothing was changed"
+            );
+        }
+        mirror::import_with(store, &text, &options, &rules.guard, &mut |entries| {
+            ensure!(
+                entries.iter().all(|e| accepting.contains(e)),
+                "the store or the file changed while you were confirming; run the import again"
+            );
+            Ok(true)
+        })?
+    } else {
+        mirror::import(store, &text, &options, &rules.guard)?
+    };
+    report["file"] = json!(file);
+    Ok(report)
+}
+
+/// Writes (or with `check`, compares) the export. An existing file is merged: entries the store
+/// hasn't decided on are carried over and retraction records kept. `force` renders from the store
+/// alone, dropping them.
+fn run_export(
+    store: &MemoryStore,
+    rules: &Rules,
+    project: &Project,
+    out: Option<&Path>,
+    layers: &[String],
+    check: bool,
+    force: bool,
+) -> Result<Value> {
+    // The default path is anchored to the project folder, and confined like a relative one.
+    let (out, confine) = match out {
+        Some(path) => (path.to_path_buf(), confinement(path, rules)?),
+        None => (
+            project.dir.join(mirror::DEFAULT_PATH),
+            Some(project_root(rules)?),
+        ),
+    };
+    let out = &out;
+    let layers: Vec<String> = if layers.is_empty() {
+        mirror::DEFAULT_LAYERS.map(String::from).to_vec()
+    } else {
+        layers.to_vec()
+    };
+    // Refuse a symlink that escapes the project before reading through it.
+    let target = memctrl::fsutil::confined_target(out, confine.as_deref())?;
+    // Compare as text: a CRLF checkout or a BOM is not a content change.
+    let current = std::fs::read_to_string(&target)
+        .ok()
+        .map(|t| mirror::normalize(&t));
+    let merge_with = current.as_deref().filter(|_| !force);
+    let (text, count) = mirror::render_merged(store, &layers, merge_with).with_context(|| {
+        format!(
+            "{} exists but can't be read as a memctrl export; fix it, or pass --force to overwrite it",
+            shown(out)
+        )
+    })?;
+    let carried = match merge_with {
+        Some(existing) => mirror::unmerged(store, existing)?.len(),
+        None => 0,
+    };
+    let up_to_date = current.as_deref() == Some(text.as_str());
+    let mut output = if check {
+        ensure!(
+            up_to_date,
+            "{} is out of date; run `memctrl sync` (or `memctrl import`, then `memctrl export`)",
+            shown(out)
+        );
+        json!({"output":out,"memories":count,"up_to_date":true})
+    } else {
+        if !up_to_date {
+            memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
+        }
+        mirror::ensure_gitignore(out)?;
+        json!({"output":out,"memories":count,"changed":!up_to_date})
+    };
+    if carried > 0 {
+        output["carried"] = json!(carried);
+        output["note"] = json!(format!(
+            "kept {carried} entries your store hasn't imported; review them with `memctrl import {}`",
+            shown(out)
+        ));
+    }
+    Ok(output)
+}
 /// A path as the user would type it: relative to the working directory when it is inside it.
 fn shown(path: &Path) -> String {
     std::env::current_dir()
         .ok()
         .and_then(|cwd| path.strip_prefix(cwd).ok().map(|p| p.display().to_string()))
         .unwrap_or_else(|| path.display().to_string())
-}
-/// Why an export would drop entries, and how to keep them.
-fn describe_unmerged(out: &Path, entries: &[mirror::Unmerged]) -> String {
-    let listed: Vec<String> = entries
-        .iter()
-        .take(5)
-        .map(|e| format!("line {}: \"{}\" ({})", e.line, e.preview, e.reason))
-        .collect();
-    format!(
-        "it has {} {} your store hasn't imported ({}{}). Run `memctrl import {}` first and review the candidates (or import with --accept after reading the changes), or pass --force to drop them",
-        entries.len(),
-        if entries.len() == 1 { "entry" } else { "entries" },
-        listed.join("; "),
-        if entries.len() > 5 { "; …" } else { "" },
-        shown(out)
-    )
 }
 /// The full id of an existing memory, from the id or a unique prefix (the brief shows 8 characters).
 fn require_memory(store: &MemoryStore, id: &str) -> Result<String> {
@@ -812,128 +961,48 @@ async fn execute(
             layers,
             check,
             force,
-        } => {
-            // The default path is anchored to the project folder, and confined like a relative one.
-            let (out, confine) = match out {
-                Some(path) => (path.clone(), confinement(path, rules)?),
-                None => (
-                    project.dir.join(mirror::DEFAULT_PATH),
-                    Some(project_root(rules)?),
-                ),
-            };
-            let out = &out;
-            let layers: Vec<String> = if layers.is_empty() {
-                mirror::DEFAULT_LAYERS
-                    .iter()
-                    .map(|l| l.to_string())
-                    .collect()
-            } else {
-                layers.clone()
-            };
-            let (text, count) = mirror::render(store, &layers)?;
-            // Refuse a symlink that escapes the project before reading through it.
-            let target = memctrl::fsutil::confined_target(out, confine.as_deref())?;
-            // Compare as text: a CRLF checkout or a BOM is not a content change.
-            let current = std::fs::read_to_string(&target)
-                .ok()
-                .map(|t| mirror::normalize(&t));
-            let up_to_date = current.as_deref() == Some(text.as_str());
-            // Entries a teammate added (or edited) that this store hasn't imported would vanish.
-            let unmerged = match &current {
-                Some(existing) if !up_to_date && !*force => mirror::unmerged(store, existing)
-                    .with_context(|| {
-                        format!(
-                            "{} exists but can't be read as a memctrl export; fix it, or pass --force to overwrite it",
-                            shown(out)
-                        )
-                    })?,
-                _ => Vec::new(),
-            };
-            if *check {
-                ensure!(
-                    up_to_date,
-                    "{} is out of date; {}",
-                    shown(out),
-                    if unmerged.is_empty() {
-                        "run `memctrl export`".to_string()
-                    } else {
-                        describe_unmerged(out, &unmerged)
-                    }
-                );
-                json!({"output":out,"memories":count,"up_to_date":true})
-            } else {
-                ensure!(
-                    unmerged.is_empty(),
-                    "refusing to overwrite {}: {}",
-                    shown(out),
-                    describe_unmerged(out, &unmerged)
-                );
-                if !up_to_date {
-                    memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
-                }
-                mirror::ensure_gitignore(out)?;
-                json!({"output":out,"memories":count,"changed":!up_to_date})
-            }
-        }
+        } => run_export(
+            store,
+            rules,
+            project,
+            out.as_deref(),
+            layers,
+            *check,
+            *force,
+        )?,
         Command::Import {
             file,
             layers,
             accept,
             dry_run,
             trust_verification,
+        } => run_import(
+            store,
+            rules,
+            file,
+            import_options(layers, *accept, *dry_run, *trust_verification),
+        )?,
+        Command::Sync {
+            file,
+            layers,
+            accept,
         } => {
-            let text = std::fs::read_to_string(file)
-                .with_context(|| format!("cannot read {}", file.display()))?;
-            let options = mirror::ImportOptions {
-                layers: if layers.is_empty() {
-                    mirror::DEFAULT_LAYERS.map(String::from).to_vec()
-                } else {
-                    layers.clone()
-                },
-                dry_run: *dry_run,
-                trust_verification: *trust_verification,
-                accept: *accept,
-            };
-            let mut report = if options.accept && !options.dry_run {
-                // Accepting is the person's review step: plan without holding the lock while
-                // asking, then import only what was confirmed.
-                let mut accepting = Vec::new();
-                let preview = mirror::ImportOptions {
-                    dry_run: true,
-                    ..options.clone()
-                };
-                mirror::import_with(store, &text, &preview, &rules.guard, &mut |entries| {
-                    accepting = entries.to_vec();
-                    Ok(true)
-                })?;
-                if !accepting.is_empty() {
-                    ensure!(
-                        at_terminal(),
-                        "import --accept would accept {} entries, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review",
-                        accepting.len()
-                    );
-                    ensure!(
-                        review::confirm_import(
-                            &shown(file),
-                            &accepting,
-                            &mut std::io::stdin().lock(),
-                            &mut std::io::stderr()
-                        )?,
-                        "import cancelled; nothing was changed"
-                    );
-                }
-                mirror::import_with(store, &text, &options, &rules.guard, &mut |entries| {
-                    ensure!(
-                        entries.iter().all(|e| accepting.contains(e)),
-                        "the store or the file changed while you were confirming; run the import again"
-                    );
-                    Ok(true)
-                })?
+            // Import first, so the export that follows keeps what teammates wrote.
+            let path = file
+                .clone()
+                .unwrap_or_else(|| project.dir.join(mirror::DEFAULT_PATH));
+            let imported = if path.exists() {
+                run_import(
+                    store,
+                    rules,
+                    &path,
+                    import_options(layers, *accept, false, false),
+                )?
             } else {
-                mirror::import(store, &text, &options, &rules.guard)?
+                Value::Null
             };
-            report["file"] = json!(file);
-            report
+            let exported = run_export(store, rules, project, Some(&path), layers, false, false)?;
+            json!({"import": imported, "export": exported})
         }
         Command::Query {
             query_text,
@@ -1269,6 +1338,7 @@ async fn execute(
         Command::Serve => bail!("serve is handled separately"),
         Command::Eval { .. } => bail!("eval is handled separately"),
         Command::Install { .. } => bail!("install is handled separately"),
+        Command::Check { .. } => bail!("check is handled separately"),
     };
     Ok(sanitize_value(&result))
 }
@@ -1335,6 +1405,56 @@ async fn run(cli: Cli) -> Result<()> {
         std::io::stdout().lock().write_all(encoded.as_bytes())?;
         return Ok(());
     }
+    // Check reads only the file (and git), never a store: it runs in CI checkouts.
+    if let Command::Check { file, base, strict } = &cli.command {
+        let path = file
+            .clone()
+            .unwrap_or_else(|| project.dir.join(mirror::DEFAULT_PATH));
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("cannot read {}", path.display()))?;
+        let mut warnings = Vec::new();
+        let base_text = match base {
+            Some(rev) => {
+                let dir = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                let name = path.file_name().context("check needs a file")?;
+                let shown_at = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(dir)
+                    .arg("show")
+                    .arg(format!("{rev}:./{}", name.to_string_lossy()))
+                    .output()
+                    .context("check --base needs git")?;
+                if shown_at.status.success() {
+                    Some(String::from_utf8_lossy(&shown_at.stdout).into_owned())
+                } else {
+                    warnings.push(format!("no {} at {rev}; nothing to compare", shown(&path)));
+                    None
+                }
+            }
+            None => None,
+        };
+        let mut report = mirror::check(&text, base_text.as_deref())?;
+        report.warnings.extend(warnings);
+        let failing = !report.errors.is_empty() || (*strict && !report.warnings.is_empty());
+        ensure!(
+            !failing,
+            "{} failed the check: {}",
+            shown(&path),
+            report
+                .errors
+                .iter()
+                .chain(report.warnings.iter().filter(|_| *strict))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        let encoded = serde_json::to_string(&sanitize_value(&json!(report)))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
     if let Command::Context { format, write, .. } = &cli.command {
@@ -1357,7 +1477,7 @@ async fn run(cli: Cli) -> Result<()> {
     // CI checkouts have no store (the database stays out of git).
     if matches!(&cli.command, Command::Export { check: true, .. }) && !db.exists() {
         bail!(
-            "export --check compares the file with your local store, and there is none here. To validate memory.md without a store (in CI), run `memctrl --db :memory: import --dry-run .memctrl/memory.md`"
+            "export --check compares the file with your local store, and there is none here. To validate memory.md without a store (in CI), run `memctrl check` (add `--base origin/main` to catch dropped retractions)"
         );
     }
     // Only init, or a path the user named, creates a store, so a subfolder never gets its own.
@@ -1449,6 +1569,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::Stale { .. } => "stale",
         Command::Refresh { .. } => "refresh",
         Command::Export { .. } => "export",
+        Command::Sync { .. } => "sync",
+        Command::Check { .. } => "check",
         Command::Eval { .. } => "eval",
         Command::Import { .. } => "import",
         Command::Add { .. } => "store",

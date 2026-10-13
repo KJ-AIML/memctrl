@@ -73,9 +73,11 @@ memctrl refresh <id> --cite src/db.rs:40-52 # when memctrl can't tell where the 
 ## Share with the team
 
 ```bash
-memctrl import .memctrl/memory.md   # after pulling; new entries arrive as candidates
-memctrl export                      # writes .memctrl/memory.md for review in pull requests
+memctrl sync     # after pulling: imports .memctrl/memory.md, then exports your store merged with it
+memctrl export   # after saving or correcting memories: writes .memctrl/memory.md for review
 ```
+
+Corrections travel too: a memory you refute, supersede or forget is recorded in the file's Retracted section, and teammates' stores apply it when they sync.
 
 Anyone who can edit `.memctrl/memory.md` can add an entry, so imported entries wait as candidates. Accepting them is the user's review step: tell the user, who reads the file's changes and runs `memctrl import --accept .memctrl/memory.md` in a terminal. memctrl refuses `--accept` without one. If `export` refuses because the file has entries your store hasn't imported, import first; never use `--force` to get past it.
 

@@ -747,9 +747,9 @@ fn forged_metadata_is_a_candidate_until_explicitly_accepted() {
 }
 
 /// Pulling a teammate's export and exporting without importing it used to silently delete
-/// their entries. Export now refuses until the store has imported them.
+/// their entries. Export now merges: entries the store hasn't decided on are carried over.
 #[test]
-fn export_refuses_to_drop_entries_the_store_has_not_seen() {
+fn export_keeps_entries_the_store_has_not_seen() {
     let dir = TempDir::new().unwrap();
     std::fs::create_dir(dir.path().join(".git")).unwrap();
     ok(&dir, &["init"]);
@@ -771,28 +771,32 @@ fn export_refuses_to_drop_entries_the_store_has_not_seen() {
     );
     std::fs::write(&path, &merged).unwrap();
 
-    let refused = run(&dir, &["export"]);
-    assert!(!refused.status.success());
-    let message = String::from_utf8_lossy(&refused.stderr);
-    for needle in ["line", "Tags follow semver", "Hotfixes", "memctrl import"] {
-        assert!(message.contains(needle), "{needle}: {message}");
+    let exported = ok(&dir, &["export"]);
+    assert_eq!(exported["carried"], 2, "{exported}");
+    let text = std::fs::read_to_string(&path).unwrap();
+    for kept in [
+        "Releases are cut from main",
+        "Tags follow semver",
+        "Hotfixes need two reviewers",
+    ] {
+        assert!(text.contains(kept), "{kept}: {text}");
     }
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), merged);
+    assert_eq!(ok(&dir, &["export"])["changed"], false, "merging is stable");
 
-    // A plain import leaves them waiting for review, which still blocks the export.
+    // A plain import leaves them as candidates; the export still keeps them.
     ok(&dir, &["import", ".memctrl/memory.md"]);
-    let waiting = run(&dir, &["export"]);
-    assert!(String::from_utf8_lossy(&waiting.stderr).contains("waiting for review"));
-    let check = run(&dir, &["export", "--check"]);
-    assert!(String::from_utf8_lossy(&check.stderr).contains("waiting for review"));
+    assert_eq!(ok(&dir, &["export", "--check"])["up_to_date"], true);
 
     // Accepting is a person's step: without a terminal the CLI refuses and changes nothing.
     let unattended = run(&dir, &["import", "--accept", ".memctrl/memory.md"]);
     assert!(!unattended.status.success());
     assert!(String::from_utf8_lossy(&unattended.stderr).contains("only a person"));
-    assert!(String::from_utf8_lossy(&run(&dir, &["export"]).stderr).contains("waiting for review"));
     accept_import(&dir, ".memctrl/memory.md");
-    ok(&dir, &["export"]);
+    let after = ok(&dir, &["export"]);
+    assert!(
+        after.get("carried").is_none(),
+        "everything is in the store now: {after}"
+    );
     let exported = std::fs::read_to_string(&path).unwrap();
     assert!(
         exported.contains("Tags follow semver") && exported.contains("Hotfixes need two reviewers")
@@ -884,7 +888,7 @@ fn bad_entries_name_their_line_and_reason() {
             vec!["line", "merge conflict"],
         ),
         (
-            good.replacen("memctrl export v1", "memctrl export v2", 1),
+            good.replacen("memctrl export v2", "memctrl export v3", 1),
             vec!["newer memctrl"],
         ),
     ];
@@ -920,7 +924,9 @@ fn export_check_without_a_store_explains_and_creates_nothing() {
     }
     let out = run(&ci, &["export", "--check"]);
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("import --dry-run"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("memctrl check"));
+    let checked = ok(&ci, &["check"]);
+    assert_eq!(checked["entries"], 1, "{checked}");
     let validated = ok(
         &ci,
         &[
@@ -1047,4 +1053,194 @@ fn gitignore_is_never_written_through_a_symlink() {
     std::os::unix::fs::symlink(&target, dir.path().join(".memctrl/.gitignore")).unwrap();
     mirror::ensure_gitignore(&dir.path().join(".memctrl/memory.md")).unwrap();
     assert!(!target.exists(), "nothing is written through the link");
+}
+
+/// The review's team tester: Alice refuted, superseded and forgot memories, but Bob kept them
+/// active, and Bob's next export put them back for new hires. Retractions now travel in the
+/// export's Retracted section and are applied on import, one way only.
+#[test]
+fn retractions_travel_and_never_come_back() {
+    let alice = MemoryStore::open(":memory:").unwrap();
+    let project = |content: &str| NewMemory {
+        layer: "project".into(),
+        content: content.into(),
+        ..Default::default()
+    };
+    let x = alice
+        .insert_memory(project("Flags live in LaunchDarkly"))
+        .unwrap();
+    let y = alice
+        .insert_memory(project("Deploys run on Fridays"))
+        .unwrap();
+    let z = alice
+        .insert_memory(project("The staging password rotates monthly"))
+        .unwrap();
+    let w = alice.insert_memory(project("CI runs on Node 18")).unwrap();
+    let layers = vec!["project".to_string()];
+    let (v1, _) = mirror::render(&alice, &layers).unwrap();
+    let bob = MemoryStore::open(":memory:").unwrap();
+    mirror::import(&bob, &v1, &opts(false, false, true), &Policy::default()).unwrap();
+
+    alice.refute_memory(&x, "moved to Unleash", None).unwrap();
+    let y2 = alice.insert_memory(project("Deploys run daily")).unwrap();
+    alice.supersede_memory(&y, &y2, json!({})).unwrap();
+    assert!(alice.forget_memory(&z).unwrap());
+    alice
+        .update_verification(&w, VerificationState::Disputed)
+        .unwrap();
+    let (v2, _) = mirror::render_merged(&alice, &layers, Some(&v1)).unwrap();
+    assert!(v2.contains("## Retracted"), "{v2}");
+    assert!(
+        !v2.contains("staging password"),
+        "a forgotten text is never republished"
+    );
+
+    let report = mirror::import(&bob, &v2, &ImportOptions::default(), &Policy::default()).unwrap();
+    assert_eq!(report["retracted"]["refuted"], 1, "{report}");
+    assert_eq!(report["retracted"]["superseded"], 1, "{report}");
+    assert_eq!(report["retracted"]["forgotten"], 1, "{report}");
+    assert_eq!(report["retracted"]["disputed"], 1, "{report}");
+    let refuted = bob.get_memory(&x, true).unwrap().unwrap();
+    assert_eq!(refuted.verification_state, VerificationState::Refuted);
+    assert_eq!(
+        bob.evidence(&x).unwrap()[0]["metadata"]["reason"],
+        "moved to Unleash"
+    );
+    let brief = memctrl::context::session_brief(&bob, &layers, 4000, &|_| None).unwrap();
+    for gone in ["LaunchDarkly", "on Fridays", "staging password"] {
+        assert!(!brief.markdown.contains(gone), "{gone}: {}", brief.markdown);
+    }
+    assert!(brief.markdown.contains("## Check before trusting"));
+
+    // Bob's own export keeps the records; a new hire who also imports the old file never sees
+    // the retracted memories active.
+    let (from_bob, _) = mirror::render_merged(&bob, &layers, Some(&v2)).unwrap();
+    assert!(from_bob.contains("## Retracted") && from_bob.contains("moved to Unleash"));
+    let hire = MemoryStore::open(":memory:").unwrap();
+    mirror::import(
+        &hire,
+        &from_bob,
+        &opts(false, false, true),
+        &Policy::default(),
+    )
+    .unwrap();
+    mirror::import(&hire, &v1, &opts(false, false, true), &Policy::default()).unwrap();
+    let active: Vec<String> = hire
+        .list_memories(None, false)
+        .unwrap()
+        .into_iter()
+        .map(|m| m.content)
+        .collect();
+    for gone in [
+        "Flags live in LaunchDarkly",
+        "Deploys run on Fridays",
+        "The staging password rotates monthly",
+    ] {
+        assert!(
+            !active.iter().any(|c| c == gone),
+            "{gone} came back: {active:?}"
+        );
+    }
+    // Retractions only ever lower a state: importing the old file again changes nothing.
+    let again = mirror::import(&bob, &v1, &opts(false, false, true), &Policy::default()).unwrap();
+    assert!(again["imported"].as_array().unwrap().is_empty(), "{again}");
+}
+
+/// Two teammates syncing in either order reach the same file.
+#[test]
+fn sync_converges_in_either_order() {
+    let file = TempDir::new().unwrap();
+    let path = file.path().join("memory.md");
+    let path = path.to_str().unwrap();
+    let alice = TempDir::new().unwrap();
+    let bob = TempDir::new().unwrap();
+    for (dir, fact) in [
+        (&alice, "Releases are cut from main"),
+        (&bob, "Tags follow semver"),
+    ] {
+        ok(dir, &["init"]);
+        ok(dir, &["add", fact, "--layer", "project"]);
+    }
+    ok(&alice, &["sync", path]);
+    ok(&bob, &["sync", path]);
+    let after_bob = std::fs::read_to_string(path).unwrap();
+    assert!(
+        after_bob.contains("Releases are cut from main")
+            && after_bob.contains("Tags follow semver")
+    );
+    let again = ok(&alice, &["sync", path]);
+    assert_eq!(again["export"]["changed"], false, "{again}");
+    assert_eq!(std::fs::read_to_string(path).unwrap(), after_bob);
+    assert!(
+        !after_bob.contains("memories from"),
+        "no count line to conflict on"
+    );
+}
+
+/// CI has no store: `memctrl check` validates the file alone, and with --base it catches a
+/// retraction that an old memctrl (or a hand edit) dropped.
+#[test]
+fn check_runs_without_a_store() {
+    let dir = TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(dir.path())
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    ok(&dir, &["init"]);
+    let id = ok(
+        &dir,
+        &["add", "Flags live in LaunchDarkly", "--layer", "project"],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(
+        &dir,
+        &["add", "Releases are cut from main", "--layer", "project"],
+    );
+    ok(&dir, &["refute", &id, "-r", "moved to Unleash"]);
+    ok(&dir, &["export"]);
+    git(&["add", ".memctrl/memory.md"]);
+    git(&["commit", "-qm", "memory"]);
+    // A CI checkout: the file, no database.
+    let ci = TempDir::new().unwrap();
+    std::fs::create_dir_all(ci.path().join(".memctrl")).unwrap();
+    let path = dir.path().join(".memctrl/memory.md");
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(ci.path().join(".memctrl/memory.md"), &text).unwrap();
+    let report = ok(&ci, &["--db", "unused.db", "check"]);
+    assert_eq!(report["errors"], json!([]), "{report}");
+    assert_eq!(report["retracted"], 1);
+    assert!(
+        !ci.path().join("unused.db").exists() && !ci.path().join(".memctrl/memories.db").exists()
+    );
+
+    // Hand edits are warnings, an error only with --strict.
+    std::fs::write(
+        &path,
+        text.replace(
+            "Releases are cut from main",
+            "Releases are cut from develop",
+        ),
+    )
+    .unwrap();
+    let edited = ok(&dir, &["check"]);
+    assert!(
+        edited["warnings"][0].as_str().unwrap().contains("edited"),
+        "{edited}"
+    );
+    assert!(!run(&dir, &["check", "--strict"]).status.success());
+
+    // An old export (memctrl 2.1 rewrote the file from its store) drops the retraction record.
+    let without = text[..text.find("## Retracted").unwrap()].to_string();
+    std::fs::write(&path, &without).unwrap();
+    let dropped = run(&dir, &["check", "--base", "HEAD"]);
+    assert!(!dropped.status.success());
+    assert!(String::from_utf8_lossy(&dropped.stderr).contains("retraction record"));
 }

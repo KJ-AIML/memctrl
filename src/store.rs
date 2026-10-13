@@ -84,6 +84,17 @@ impl Drop for AtomicWrite<'_> {
         }
     }
 }
+/// A retracted id: forgotten here, or refuted/superseded/forgotten in a teammate's export.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tombstone {
+    pub id: String,
+    /// Digest of the text, so the same text under another id stays out too.
+    pub digest: String,
+    /// None for tombstones written before 2.2.
+    pub layer: Option<String>,
+    pub state: String,
+    pub reason: Option<String>,
+}
 /// A consistent read that takes no write lock: `BEGIN DEFERRED` at top level (writers never wait
 /// for a reader), or a savepoint inside a caller's transaction. Dropping it ends the read.
 pub struct ReadSnapshot<'a> {
@@ -150,6 +161,8 @@ CREATE INDEX IF NOT EXISTS idx_otel_spans_op ON otel_spans(operation);
 CREATE INDEX IF NOT EXISTS idx_tree_layer ON tree_nodes(layer);
 CREATE INDEX IF NOT EXISTS idx_triggers_ts ON triggers_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);";
+/// Columns 2.2 added to `memory_tombstones` (additive; 2.0 and 2.1 ignore them).
+const TOMBSTONE_COLUMNS: [&str; 3] = ["layer", "state", "reason"];
 const REVISION_TABLES: [&str; 4] = [
     "memories",
     "tree_nodes",
@@ -299,10 +312,14 @@ impl MemoryStore {
             Ok(names)
         };
         let memory_columns = columns("memories")?;
+        let tombstone_columns = columns("memory_tombstones")?;
         if !SEMANTIC_COLUMNS
             .iter()
             .all(|(name, _)| memory_columns.contains(*name))
             || !columns("memory_citations")?.contains("head_offset")
+            || !TOMBSTONE_COLUMNS
+                .iter()
+                .all(|c| tombstone_columns.contains(*c))
         {
             return Ok(false);
         }
@@ -414,6 +431,10 @@ impl MemoryStore {
         let mut statement=self.conn.prepare("PRAGMA table_info(memory_citations)")?;
         let citation_columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
         if !citation_columns.contains("head_offset"){self.conn.execute_batch("ALTER TABLE memory_citations ADD COLUMN head_offset INTEGER")?;}
+        // 2.2: tombstones record what was retracted, so retractions can travel in exports.
+        let mut statement=self.conn.prepare("PRAGMA table_info(memory_tombstones)")?;
+        let tombstone_columns:HashSet<String>=statement.query_map([],|row|row.get(1))?.collect::<rusqlite::Result<_>>()?;drop(statement);
+        for column in TOMBSTONE_COLUMNS { if !tombstone_columns.contains(column){self.conn.execute_batch(&format!("ALTER TABLE memory_tombstones ADD COLUMN {column} TEXT"))?;} }
         let healthy:bool=self.conn.query_row("SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('memory_fts','memory_fts_tri'))=2 AND (SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('memory_fts_insert','memory_fts_delete','memory_fts_update'))=3",[],|r|r.get(0))?;
         self.conn.execute_batch(SEARCH_SCHEMA)?;
         let drifted:bool=healthy && self.conn.query_row("SELECT (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_docsize) OR (SELECT COUNT(*) FROM memories)<>(SELECT COUNT(*) FROM memory_fts_tri_docsize)",[],|r|r.get(0))?;
@@ -670,11 +691,60 @@ impl MemoryStore {
                 return Ok(false);
             };
             self.conn.execute(
-                "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at) VALUES(?,?,?)",
-                params![id, crate::citations::text_digest(&memory.content), now()],
+                "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at,layer,state) VALUES(?,?,?,?,'forgotten')",
+                params![id, crate::citations::text_digest(&memory.content), now(), memory.layer],
             )?;
             self.delete_memory(id)
         })
+    }
+    /// Records that an id was retracted (refuted, superseded or forgotten) so no older export can
+    /// bring it back, keeping the strongest retraction already recorded.
+    pub fn record_tombstone(
+        &self,
+        id: &str,
+        digest: &str,
+        layer: &str,
+        state: &str,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let rank = |s: &str| if s == "forgotten" { 2 } else { 1 };
+        let existing: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT state FROM memory_tombstones WHERE id=?",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(previous) = existing {
+            if rank(previous.as_deref().unwrap_or("forgotten")) >= rank(state) {
+                return Ok(());
+            }
+        }
+        self.conn.execute(
+            "INSERT OR REPLACE INTO memory_tombstones(id,content_digest,deleted_at,layer,state,reason) VALUES(?,?,?,?,?,?)",
+            params![id, digest, now(), layer, state, reason.map(sanitize_text)],
+        )?;
+        Ok(())
+    }
+    /// Every tombstone as (id, content digest, layer, state, reason). Tombstones written before
+    /// 2.2 have no layer or state; they were forgotten.
+    pub fn tombstone_records(&self) -> Result<Vec<Tombstone>> {
+        let mut statement = self.conn.prepare(
+            "SELECT id,content_digest,layer,COALESCE(state,'forgotten'),reason FROM memory_tombstones ORDER BY id",
+        )?;
+        let rows = statement
+            .query_map([], |r| {
+                Ok(Tombstone {
+                    id: r.get(0)?,
+                    digest: r.get(1)?,
+                    layer: r.get(2)?,
+                    state: r.get(3)?,
+                    reason: r.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
     }
     /// Ids and content digests of forgotten memories.
     pub fn tombstones(&self) -> Result<(HashSet<String>, HashSet<String>)> {

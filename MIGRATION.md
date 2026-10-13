@@ -90,6 +90,18 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Library:** `ImportOptions` replaces `default_layer` with `layers` and adds `accept`; `mirror::unmerged` lists entries an export would drop; `fsutil::confined_target` checks a path before reading it; `MemoryStore::insert_memory_as` requires canonical ids; `MemoryStore::accept_imported` promotes an import candidate.
 - **Library:** `memctrl::project` finds projects; `MemoryStore::resolve_id` resolves prefixes; `mcp::serve` takes the project folder; `Rules` has a `project_dir` field; `citations::root_for(&rules)` resolves the citation root with the project folder as a fallback.
 
+## Team sharing v2 (unreleased)
+
+`.memctrl/memory.md` moves to export format v2. memctrl now reads v1 and v2 and writes v2. Databases change only by three additive columns on `memory_tombstones`, so 2.0 and 2.1 can still open them.
+
+- **Corrections travel.** A final `## Retracted` section records refuted, superseded and forgotten memories, with the refute reason and the superseding id. Import applies them one way only (active < disputed < superseded = refuted < forgotten): it can lower a memory's state but never revive one. A teammate's `forget` archives the memory here (it can be undone) and records a tombstone, as do retractions of memories this store never had, so an older export can't bring them back. A disputed entry marks the local copy disputed. Forgotten records carry no text, so a forgotten secret is never published again. The import report lists what changed under `retracted`.
+- **Export merges.** Writing over an existing memory.md keeps the entries your store hasn't decided on (a teammate's new entries, hand-written bullets, edits waiting for review) and every retraction record, instead of refusing or dropping them. `export --force` writes from your store alone. The report says how many entries were `carried`.
+- **`memctrl sync`** imports memory.md (new entries as candidates, retractions applied), then exports your store merged with it: the one command to run after pulling. `--accept` is the reviewed bulk accept, at a terminal.
+- **`memctrl check`** validates memory.md without a database, for CI: header, merge markers, canonical and unique ids, each entry's sha, and the layout export writes. Edited and hand-written entries are warnings (errors with `--strict`). `--base origin/main` fails when a retraction record was removed or a retracted memory is live again.
+- **Fewer merge conflicts.** Entries are ordered by id within each section, so two pull requests that each add an entry rarely touch the same lines, and the count line is gone.
+- **Compatibility.** memctrl 2.1.0 can't read a v2 file ("not a memctrl export"), and a 2.1.0 `export` overwrites it, dropping its retraction records. Run `memctrl check --base origin/main` in CI to catch that; any teammate on this version restores the records with their next export. The first export after upgrading rewrites the file once, in the new order; commit that change on its own.
+- **Library:** `mirror::{render_merged, check, CheckReport, Retracted}`; `MemoryStore::{record_tombstone, tombstone_records}` and `store::Tombstone`.
+
 ## 2.1.1 → 2.1.2 (unreleased)
 
 No schema change; 2.0, 2.1 and 2.1.x keep sharing one database.
