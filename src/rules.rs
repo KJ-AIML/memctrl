@@ -364,7 +364,14 @@ impl Rules {
             if db_path.is_absolute()
                 || db_path
                     .components()
-                    .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+                    // `/x` has no drive letter on Windows, so it isn't "absolute" there, but
+                    // it still starts outside the repository.
+                    .any(|c| {
+                        matches!(
+                            c,
+                            Component::ParentDir | Component::Prefix(_) | Component::RootDir
+                        )
+                    })
             {
                 ignored.push(format!(
                     "[memctrl] db_path = {db:?} (outside the repository)"
