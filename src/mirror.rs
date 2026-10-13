@@ -2,9 +2,12 @@
 //! machines. The text stays readable; a metadata comment after each entry carries identity,
 //! states, citations and a content hash, so hand edits are detected rather than trusted.
 //!
-//! Import never raises trust: verification is capped at `unverified` unless the caller opts in,
-//! forgotten memories stay forgotten, text the local store already holds (in any state,
-//! refuted included) is never added again, and everything passes the write guard.
+//! Import never raises trust on its own: anyone who can edit the file can write an entry and its
+//! metadata, so new entries arrive as candidates until the person importing accepts them
+//! (`accept`) after reading the changes. Verification is capped at `unverified` unless the
+//! caller opts in, forgotten memories stay forgotten, text the local store already holds (in any
+//! state, refuted included) is never added again, an id written with different texts is held for
+//! review, and everything passes the write guard.
 use crate::citations::{parse_spec, text_digest, Anchor};
 use crate::guard::{self, Policy};
 use crate::model::{ClaimType, LifecycleState, Memory, NewMemory, VerificationState};
@@ -13,14 +16,14 @@ use crate::store::{AtomicWrite, MemoryStore};
 use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub const DEFAULT_PATH: &str = ".memctrl/memory.md";
 pub const DEFAULT_LAYERS: [&str; 1] = ["project"];
 const HEADER: &str = "<!-- memctrl export v1. Review changes like code. Edit entry text freely \
 (edited entries return as candidates on import) and add new `- ` bullets for teammates to review; \
 keep the memctrl comments intact. -->";
-const HEADER_PREFIX: &str = "<!-- memctrl export v1";
+const HEADER_PREFIX: &str = "<!-- memctrl export v";
 /// Metadata comments sit at exactly two spaces of indentation.
 const META_LINE: &str = "  <!-- memctrl {";
 const META_PREFIX: &str = "<!-- memctrl {";
@@ -222,10 +225,23 @@ struct Entry {
 
 fn parse(text: &str) -> Result<Vec<Entry>> {
     let first = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
-    ensure!(
-        first.starts_with(HEADER_PREFIX),
-        "not a memctrl export (expected a first line starting with {HEADER_PREFIX:?})"
-    );
+    let version = first
+        .strip_prefix(HEADER_PREFIX)
+        .map(|rest| {
+            rest.chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>()
+        })
+        .and_then(|digits| digits.parse::<u32>().ok());
+    match version {
+        Some(1) => {}
+        Some(newer) if newer > 1 => {
+            bail!("written by a newer memctrl (export format v{newer}); upgrade memctrl to read it")
+        }
+        _ => bail!(
+            "not a memctrl export (expected a first line starting with \"<!-- memctrl export v1\")"
+        ),
+    }
     let mut entries = Vec::new();
     let mut heading = String::new();
     let mut open: Option<Entry> = None;
@@ -237,6 +253,12 @@ fn parse(text: &str) -> Result<Vec<Entry>> {
     };
     for (index, line) in text.lines().enumerate() {
         let number = index + 1;
+        if ["<<<<<<<", "|||||||", "=======", ">>>>>>>"]
+            .iter()
+            .any(|marker| line == *marker || line.starts_with(&format!("{marker} ")))
+        {
+            bail!("line {number}: unresolved merge conflict; keep both sides' entries, remove the markers, then import");
+        }
         if let Some(entry) = open.as_mut() {
             if line.starts_with(META_LINE) && line.trim_end().ends_with(META_SUFFIX) {
                 let trimmed = line.trim();
@@ -328,27 +350,37 @@ fn anchor_from(cite: &CiteMeta) -> Result<Anchor> {
 /// How an import treats the file.
 #[derive(Debug, Clone)]
 pub struct ImportOptions {
-    /// Layer for hand-written entries.
-    pub default_layer: String,
+    /// Layers to import, so a file can't plant memories in layers you didn't ask for. Entries in
+    /// other layers are skipped; hand-written entries go to the first.
+    pub layers: Vec<String>,
     pub dry_run: bool,
     /// Keep `supported` verification from the file. Off by default: anyone who can edit the
     /// file can write metadata, so imported claims arrive unverified.
     pub trust_verification: bool,
+    /// The person importing has read the file's changes: new entries are accepted, and so are
+    /// candidates an earlier import created from them. Without it, everything new arrives as a
+    /// candidate. Edited and guard-flagged entries stay candidates either way.
+    pub accept: bool,
 }
 impl Default for ImportOptions {
     fn default() -> Self {
         Self {
-            default_layer: "project".into(),
+            layers: vec!["project".into()],
             dry_run: false,
             trust_verification: false,
+            accept: false,
         }
     }
 }
+
+/// Tag on candidates created from new entries, removed when they are accepted on import.
+const NEW_TAG: &str = "import:new";
 
 enum Skip {
     Forgotten,
     DuplicateId,
     DuplicateContent,
+    Layer,
 }
 
 enum Action {
@@ -362,9 +394,29 @@ enum Action {
         memory: NewMemory,
         anchors: Vec<Anchor>,
     },
+    /// An earlier import's candidate for this exact entry, accepted now.
+    Promote(String),
     Unchanged,
     KeptLocal,
     Skipped(Skip),
+}
+
+/// The canonical spelling of a memory id. Uppercase, braced, `urn:uuid:` and unhyphenated
+/// spellings of one UUID are the same memory, not new ones.
+fn canonical_id(raw: &str) -> Result<String> {
+    Ok(uuid::Uuid::parse_str(raw)
+        .context("memory id must be a UUID")?
+        .hyphenated()
+        .to_string())
+}
+
+/// `created_at` from the file, normalized as the store keeps it. A future time is clamped to
+/// now: it would otherwise win every "newest first" tie in the brief.
+fn import_time(raw: &str) -> Result<String> {
+    let time = crate::model::parse_time(raw).context("invalid created_at")?;
+    Ok(time
+        .min(chrono::Utc::now())
+        .to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
 }
 
 /// Imports an export atomically; see the module docs for the trust rules.
@@ -374,21 +426,53 @@ pub fn import(
     options: &ImportOptions,
     policy: &Policy,
 ) -> Result<Value> {
-    validate_identifier(&options.default_layer, "layer")?;
+    ensure!(
+        !options.layers.is_empty(),
+        "import needs at least one layer"
+    );
+    for layer in &options.layers {
+        validate_identifier(layer, "layer")?;
+    }
     let text = normalize(text);
     let entries = parse(&text)?;
-    // Plan under the writer lock, so nothing changes between checking and writing.
-    let lock = if options.dry_run {
-        None
-    } else {
-        Some(AtomicWrite::new(&store.conn)?)
+    // Plan and write under the writer lock, so nothing changes between checking and writing. A
+    // dry run takes the same path and rolls back, so it fails exactly when the import would.
+    let lock = AtomicWrite::new(&store.conn)?;
+    let memories = store.list_memories(None, true)?;
+    let mut known: HashSet<String> = memories.iter().map(|m| m.content.clone()).collect();
+    // Candidates an earlier import created from new entries, which `accept` promotes.
+    let promotable = |memory: &Memory| {
+        memory.lifecycle_state == LifecycleState::Candidate
+            && memory.tags.iter().any(|t| t == NEW_TAG)
+            && !memory.tags.iter().any(|t| t.starts_with("guard:"))
     };
-    let mut known: HashSet<String> = store
-        .list_memories(None, true)?
-        .into_iter()
-        .map(|m| m.content)
+    let mut pending: HashMap<String, String> = memories
+        .iter()
+        .filter(|m| promotable(m))
+        .map(|m| (m.content.clone(), m.id.clone()))
         .collect();
     let (forgotten_ids, forgotten_text) = store.tombstones()?;
+    // An id that appears with different texts can't be trusted in any copy: a forged duplicate
+    // placed first would otherwise win.
+    let mut texts_by_id: HashMap<String, HashSet<String>> = HashMap::new();
+    for entry in &entries {
+        if let Some(id) = entry.meta.as_ref().and_then(|m| canonical_id(&m.id).ok()) {
+            texts_by_id
+                .entry(id)
+                .or_default()
+                .insert(sanitize_text(&entry.content));
+        }
+    }
+    let conflicted: HashSet<String> = texts_by_id
+        .into_iter()
+        .filter(|(_, texts)| texts.len() > 1)
+        .map(|(id, _)| id)
+        .collect();
+    let new_state = if options.accept {
+        LifecycleState::Accepted
+    } else {
+        LifecycleState::Candidate
+    };
     let mut seen_ids = HashSet::new();
     let mut capped = 0;
     let mut plan = Vec::new();
@@ -399,11 +483,10 @@ pub fn import(
         let context = |e: anyhow::Error| e.context(format!("entry at line {}", entry.line));
         let action = match &entry.meta {
             Some(meta) => {
-                uuid::Uuid::parse_str(&meta.id)
-                    .context("memory id must be a UUID")
-                    .map_err(context)?;
+                let id = canonical_id(&meta.id).map_err(context)?;
                 validate_identifier(&meta.layer, "layer").map_err(context)?;
                 validate_identifier(&meta.source, "source").map_err(context)?;
+                let created_at = import_time(&meta.created_at).map_err(context)?;
                 let anchors = meta
                     .cite
                     .iter()
@@ -423,27 +506,43 @@ pub fn import(
                     valid_from: meta.valid_from.clone(),
                     valid_until: meta.valid_until.clone(),
                     claim_type: meta.claim_type,
-                    lifecycle_state: LifecycleState::Accepted,
+                    lifecycle_state: LifecycleState::Candidate,
                     verification_state: verification,
                 };
-                if !seen_ids.insert(meta.id.clone()) {
-                    Action::Skipped(Skip::DuplicateId)
-                } else if forgotten_ids.contains(&meta.id) || forgotten_text.contains(&digest) {
+                let held = |tag: &str| {
+                    let mut memory = base(VerificationState::Unverified);
+                    memory.tags.push(tag.into());
+                    Action::Candidate {
+                        memory,
+                        anchors: anchors.clone(),
+                    }
+                };
+                if !options.layers.contains(&meta.layer) {
+                    Action::Skipped(Skip::Layer)
+                } else if forgotten_ids.contains(&id) || forgotten_text.contains(&digest) {
                     Action::Skipped(Skip::Forgotten)
+                } else if conflicted.contains(&id) {
+                    if blocked {
+                        Action::Unchanged
+                    } else {
+                        held("import:conflict")
+                    }
+                } else if !seen_ids.insert(id.clone()) {
+                    Action::Skipped(Skip::DuplicateId)
                 } else if edited {
                     if blocked {
                         Action::Unchanged
                     } else {
-                        let mut memory = base(VerificationState::Unverified);
-                        memory.lifecycle_state = LifecycleState::Candidate;
-                        memory.tags.push("import:edited".into());
-                        Action::Candidate { memory, anchors }
+                        held("import:edited")
                     }
-                } else if let Some(local) = store.get_memory(&meta.id, true)? {
-                    if local.content == content {
-                        Action::Unchanged
-                    } else {
+                } else if let Some(local) = store.get_memory(&id, true)? {
+                    if local.content != content {
                         Action::KeptLocal
+                    } else if options.accept && promotable(&local) {
+                        pending.remove(&content);
+                        Action::Promote(id)
+                    } else {
+                        Action::Unchanged
                     }
                 } else if blocked {
                     // The same text is already stored under another id, possibly refuted.
@@ -453,23 +552,35 @@ pub fn import(
                         verification = VerificationState::Unverified;
                         capped += 1;
                     }
+                    let mut memory = base(verification);
+                    memory.lifecycle_state = new_state;
+                    if !options.accept {
+                        memory.tags.push(NEW_TAG.into());
+                    }
                     Action::Keep {
-                        id: meta.id.clone(),
-                        created_at: meta.created_at.clone(),
-                        memory: base(verification),
+                        id,
+                        created_at,
+                        memory,
                         anchors,
                     }
                 }
             }
-            None if blocked => Action::Unchanged,
+            None if blocked => match options.accept.then(|| pending.remove(&content)) {
+                Some(Some(id)) => Action::Promote(id),
+                _ => Action::Unchanged,
+            },
             None => Action::Candidate {
                 memory: NewMemory {
-                    layer: options.default_layer.clone(),
+                    layer: options.layers[0].clone(),
                     content: content.clone(),
                     source: "import".into(),
                     claim_type: claim_for_heading(&entry.heading),
-                    lifecycle_state: LifecycleState::Candidate,
-                    tags: vec!["import:new".into()],
+                    lifecycle_state: new_state,
+                    tags: if options.accept {
+                        Vec::new()
+                    } else {
+                        vec![NEW_TAG.into()]
+                    },
                     ..Default::default()
                 },
                 anchors: Vec::new(),
@@ -479,18 +590,24 @@ pub fn import(
             memory.validate().map_err(context)?;
             known.insert(memory.content.clone());
         }
-        plan.push(action);
+        plan.push((entry.line, action));
     }
     let (mut imported, mut candidates, mut quarantined) = (Vec::new(), Vec::new(), 0);
     let (mut unchanged, mut kept_local) = (0, 0);
-    let (mut forgotten, mut duplicate_ids, mut duplicate_content) = (0, 0, 0);
-    for action in plan {
+    let (mut forgotten, mut duplicate_ids, mut duplicate_content, mut other_layers) = (0, 0, 0, 0);
+    for (line, action) in plan {
+        let context = |e: anyhow::Error| e.context(format!("entry at line {line}"));
         match action {
             Action::Unchanged => unchanged += 1,
             Action::KeptLocal => kept_local += 1,
             Action::Skipped(Skip::Forgotten) => forgotten += 1,
             Action::Skipped(Skip::DuplicateId) => duplicate_ids += 1,
             Action::Skipped(Skip::DuplicateContent) => duplicate_content += 1,
+            Action::Skipped(Skip::Layer) => other_layers += 1,
+            Action::Promote(id) => {
+                store.accept_imported(&id).map_err(context)?;
+                imported.push(id);
+            }
             Action::Keep {
                 id,
                 created_at,
@@ -502,13 +619,14 @@ pub fn import(
                     guard::quarantine(&mut memory, &verdict);
                     quarantined += 1;
                 }
-                if !options.dry_run {
-                    store.insert_memory_as(memory.clone(), &id, Some(&created_at))?;
-                    for anchor in &anchors {
-                        store.add_citation(&id, anchor, None)?;
-                    }
+                let state = memory.lifecycle_state;
+                store
+                    .insert_memory_as(memory, &id, Some(&created_at))
+                    .map_err(context)?;
+                for anchor in &anchors {
+                    store.add_citation(&id, anchor, None).map_err(context)?;
                 }
-                if memory.lifecycle_state == LifecycleState::Candidate {
+                if state == LifecycleState::Candidate {
                     candidates.push(id);
                 } else {
                     imported.push(id);
@@ -523,29 +641,106 @@ pub fn import(
                     guard::quarantine(&mut memory, &verdict);
                     quarantined += 1;
                 }
+                let state = memory.lifecycle_state;
+                let id = store
+                    .insert_memory_with_citations(memory, &anchors, None)
+                    .map_err(context)?;
                 let id = if options.dry_run {
                     "(dry run)".to_string()
                 } else {
-                    store.insert_memory_with_citations(memory, &anchors, None)?
+                    id
                 };
-                candidates.push(id);
+                if state == LifecycleState::Candidate {
+                    candidates.push(id);
+                } else {
+                    imported.push(id);
+                }
             }
         }
     }
-    if let Some(lock) = lock {
+    if !options.dry_run {
         lock.commit()?;
     }
-    Ok(json!({
+    let mut report = json!({
         "entries": entries.len(),
         "imported": imported,
         "candidates": candidates,
         "unchanged": unchanged,
         "kept_local": kept_local,
-        "skipped": {"forgotten": forgotten, "duplicate_id": duplicate_ids, "duplicate_content": duplicate_content},
+        "skipped": {"forgotten": forgotten, "duplicate_id": duplicate_ids, "duplicate_content": duplicate_content, "other_layers": other_layers},
         "verification_capped": capped,
         "quarantined": quarantined,
         "dry_run": options.dry_run,
-    }))
+    });
+    if !candidates.is_empty() {
+        report["note"] = json!(if options.accept {
+            "edited, conflicting or guard-flagged entries stay candidates: review them with `memctrl candidates`"
+        } else {
+            "new entries are candidates until reviewed: read the file's changes, then run `memctrl import --accept <file>`, or review them one by one with `memctrl candidates`"
+        });
+    }
+    Ok(report)
+}
+
+/// An entry in an existing export that the store hasn't decided on.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Unmerged {
+    pub line: usize,
+    /// The start of the entry's text.
+    pub preview: String,
+    /// "not in your store", or "waiting for review" when only a candidate holds it.
+    pub reason: &'static str,
+}
+
+/// Entries of `existing` (an export on disk) that the store has never seen, or holds only as
+/// candidates. Writing a new export over them would drop a teammate's entries or hand edits.
+/// Entries the store has decided on in any way (kept, rejected, refuted, forgotten) are fine:
+/// dropping those is the point.
+pub fn unmerged(store: &MemoryStore, existing: &str) -> Result<Vec<Unmerged>> {
+    let entries = parse(&normalize(existing))?;
+    let memories = store.list_memories(None, true)?;
+    let (forgotten_ids, forgotten_text) = store.tombstones()?;
+    let decided = |memory: &Memory| memory.lifecycle_state != LifecycleState::Candidate;
+    let mut found = Vec::new();
+    for entry in &entries {
+        let content = sanitize_text(&entry.content);
+        if forgotten_text.contains(&text_digest(&content)) {
+            continue;
+        }
+        let by_id = match &entry.meta {
+            Some(meta) if text_digest(&entry.content) == meta.sha => match canonical_id(&meta.id) {
+                Ok(id) if forgotten_ids.contains(&id) => continue,
+                Ok(id) => memories.iter().find(|m| m.id == id),
+                Err(_) => None,
+            },
+            _ => None,
+        };
+        let reason = match by_id {
+            Some(memory) if decided(memory) => continue,
+            Some(_) => "waiting for review",
+            None => {
+                let mut same = memories.iter().filter(|m| m.content == content).peekable();
+                if same.peek().is_none() {
+                    "not in your store"
+                } else if same.any(decided) {
+                    continue;
+                } else {
+                    "waiting for review"
+                }
+            }
+        };
+        let first = content.lines().next().unwrap_or_default();
+        let mut preview: String = first.chars().take(60).collect();
+        if preview.len() < content.len() {
+            preview.push('…');
+        }
+        found.push(Unmerged {
+            line: entry.line,
+            preview,
+            reason,
+        });
+    }
+    Ok(found)
 }
 
 #[cfg(test)]

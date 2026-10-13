@@ -70,11 +70,11 @@ memctrl refresh <id>                       # after re-checking, re-anchor its ci
 ## Share with the team
 
 ```bash
-memctrl import .memctrl/memory.md   # after pulling: import first, so export keeps teammates' entries
+memctrl import .memctrl/memory.md   # after pulling; new entries arrive as candidates
 memctrl export                      # writes .memctrl/memory.md for review in pull requests
 ```
 
-Treat changes to `.memctrl/memory.md` in a pull request like code: anyone who can edit the file can add an entry, so the user should read the diff before it is imported.
+Anyone who can edit `.memctrl/memory.md` can add an entry, so imported entries wait as candidates. Accepting them is the user's review step: tell the user, who reads the file's changes and runs `memctrl import --accept .memctrl/memory.md`. Don't run `--accept` yourself. If `export` refuses because the file has entries your store hasn't imported, import first; never use `--force` to get past it.
 
 ## Session end
 

@@ -16,14 +16,10 @@ fn existing_ancestor(path: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Writes through a sibling temp file and a rename, so readers never see a half-written file and
-/// a failed write leaves the original intact. The original file's permissions are kept.
-///
-/// A symlinked target (for example AGENTS.md pointing at CLAUDE.md) is resolved so the link
-/// survives. With `confine`, the resolved target, including any symlinked directories on the
-/// way, must stay inside that directory. This stops a cloned repository from aiming a committed
-/// file at something like ~/.bashrc.
-pub fn write_atomic(path: &Path, contents: &[u8], confine: Option<&Path>) -> Result<PathBuf> {
+/// The file a write to `path` would change: a symlink is resolved, and with `confine` the result
+/// (including symlinked directories on the way) must stay inside that directory. Callers that
+/// read a file before replacing it check this first, so they never read through an escape.
+pub fn confined_target(path: &Path, confine: Option<&Path>) -> Result<PathBuf> {
     let target = match std::fs::symlink_metadata(path) {
         Ok(meta) if meta.file_type().is_symlink() => std::fs::canonicalize(path)
             .with_context(|| format!("cannot resolve symlink {}", path.display()))?,
@@ -42,6 +38,18 @@ pub fn write_atomic(path: &Path, contents: &[u8], confine: Option<&Path>) -> Res
             );
         }
     }
+    Ok(target)
+}
+
+/// Writes through a sibling temp file and a rename, so readers never see a half-written file and
+/// a failed write leaves the original intact. The original file's permissions are kept.
+///
+/// A symlinked target (for example AGENTS.md pointing at CLAUDE.md) is resolved so the link
+/// survives. With `confine`, the resolved target, including any symlinked directories on the
+/// way, must stay inside that directory. This stops a cloned repository from aiming a committed
+/// file at something like ~/.bashrc.
+pub fn write_atomic(path: &Path, contents: &[u8], confine: Option<&Path>) -> Result<PathBuf> {
+    let target = confined_target(path, confine)?;
     let parent = target
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

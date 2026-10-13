@@ -199,7 +199,7 @@ trusted_sources = ["manual", "user", "cli"]
 
 ```bash
 memctrl export            # writes .memctrl/memory.md; commit it and review changes in PRs
-memctrl export --check    # in CI: fail when the file is out of date
+memctrl --db :memory: import --dry-run .memctrl/memory.md   # in CI: validate the file, creating nothing
 memctrl import .memctrl/memory.md
 ```
 

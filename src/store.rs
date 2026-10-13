@@ -275,7 +275,11 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
         id: &str,
         created_at: Option<&str>,
     ) -> Result<()> {
-        Uuid::parse_str(id).context("memory id must be a UUID")?;
+        let parsed = Uuid::parse_str(id).context("memory id must be a UUID")?;
+        ensure!(
+            parsed.hyphenated().to_string() == id,
+            "memory id must be a lowercase, hyphenated UUID"
+        );
         memory.validate()?;
         memory.content = sanitize_text(&memory.content);
         memory.source = sanitize_text(&memory.source);
@@ -461,6 +465,34 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             Ok(self.conn.execute(
                 "UPDATE memories SET lifecycle_state=?,updated_at=? WHERE id=?",
                 params![state.to_string(), now(), id],
+            )? > 0)
+        })
+    }
+    /// Accepts a candidate that an import created from an entry the person has now reviewed,
+    /// dropping its `import:new` tag so the next export renders the entry exactly as before.
+    pub fn accept_imported(&self, id: &str) -> Result<bool> {
+        self.atomic(|| {
+            let Some(memory) = self.get_memory(id, true)? else {
+                return Ok(false);
+            };
+            if memory.lifecycle_state != LifecycleState::Candidate
+                || memory.verification_state == VerificationState::Refuted
+            {
+                return Ok(false);
+            }
+            let tags: Vec<String> = memory
+                .tags
+                .into_iter()
+                .filter(|t| t != "import:new")
+                .collect();
+            Ok(self.conn.execute(
+                "UPDATE memories SET lifecycle_state=?,tags=?,updated_at=? WHERE id=?",
+                params![
+                    LifecycleState::Accepted.to_string(),
+                    serde_json::to_string(&tags)?,
+                    now(),
+                    id
+                ],
             )? > 0)
         })
     }

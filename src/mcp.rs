@@ -362,7 +362,7 @@ impl ServerHandler for MemoryServer {
         let result = match result {
             Ok(v) => CallToolResult::success(vec![ContentBlock::text(v.to_string())]),
             Err(e) => CallToolResult::error(vec![ContentBlock::text(
-                json!({"error":sanitize_text(&e.to_string())}).to_string(),
+                json!({"error":sanitize_text(&format!("{e:#}"))}).to_string(),
             )]),
         };
         Ok(result.into())
