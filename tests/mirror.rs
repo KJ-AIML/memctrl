@@ -1034,3 +1034,17 @@ fn quarantined_candidates_need_a_person_to_release() {
     let tagged = run(&dir, &["add", "plain fact", "--tags", "guard:x"]);
     assert!(String::from_utf8_lossy(&tagged.stderr).contains("reserved"));
 }
+
+/// `ensure_gitignore` checked `exists()` and then wrote, which follows a dangling symlink a
+/// cloned repository commits as `.memctrl/.gitignore`.
+#[cfg(unix)]
+#[test]
+fn gitignore_is_never_written_through_a_symlink() {
+    let dir = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    let target = outside.path().join("created-by-memctrl.txt");
+    std::fs::create_dir_all(dir.path().join(".memctrl")).unwrap();
+    std::os::unix::fs::symlink(&target, dir.path().join(".memctrl/.gitignore")).unwrap();
+    mirror::ensure_gitignore(&dir.path().join(".memctrl/memory.md")).unwrap();
+    assert!(!target.exists(), "nothing is written through the link");
+}

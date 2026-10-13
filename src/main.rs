@@ -735,6 +735,11 @@ async fn execute(
                 if !anchors.is_empty() {
                     output["citations"] = json!(anchors.len());
                 }
+                // Say what was removed, so nobody assumes the stored text is what they typed.
+                let redacted = memctrl::sanitize::redactions(content);
+                if !redacted.is_empty() {
+                    output["redacted"] = json!(redacted);
+                }
                 if verdict.quarantined() {
                     output["status"] = json!("quarantined");
                     output["lifecycle_state"] = json!("candidate");

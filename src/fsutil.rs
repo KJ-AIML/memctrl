@@ -59,12 +59,40 @@ pub fn write_atomic(path: &Path, contents: &[u8], confine: Option<&Path>) -> Res
         .file_name()
         .context("path has no file name")?
         .to_string_lossy();
-    let temp = parent.join(format!(".{name}.memctrl-{}.tmp", std::process::id()));
-    std::fs::write(&temp, contents)?;
-    if let Ok(meta) = std::fs::metadata(&target) {
-        std::fs::set_permissions(&temp, meta.permissions())?;
-    }
-    if let Err(error) = std::fs::rename(&temp, &target) {
+    // A random name, created exclusively: an existing path (a symlink planted under a
+    // predictable name, say) fails instead of being followed.
+    let mut attempts = 0;
+    let (temp, mut file) = loop {
+        let temp = parent.join(format!(
+            ".{name}.{}.memctrl.tmp",
+            uuid::Uuid::new_v4().simple()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(file) => break (temp, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && attempts < 16 => {
+                attempts += 1
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("cannot write next to {}", target.display()))
+            }
+        }
+    };
+    let written = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        file.write_all(contents)?;
+        if let Ok(meta) = std::fs::metadata(&target) {
+            file.set_permissions(meta.permissions())?;
+        }
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, &target)
+    })();
+    if let Err(error) = written {
         let _ = std::fs::remove_file(&temp);
         return Err(error).with_context(|| format!("cannot replace {}", target.display()));
     }
@@ -163,5 +191,30 @@ mod tests {
         assert!(write_atomic(&repo.path().join("docs/new.md"), b"x", Some(repo.path())).is_err());
         assert_eq!(std::fs::read_to_string(&victim).unwrap(), "export PATH");
         assert!(!outside.path().join("new.md").exists());
+    }
+
+    /// 2.1.0 wrote through `.{name}.memctrl-{pid}.tmp`, so a cloned repository could plant a
+    /// symlink under that name and redirect the write.
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_ignores_planted_temp_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim");
+        std::fs::write(&victim, "original").unwrap();
+        let target = dir.path().join("AGENTS.md");
+        let planted = dir
+            .path()
+            .join(format!(".AGENTS.md.memctrl-{}.tmp", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &planted).unwrap();
+        write_atomic(&target, b"brief", Some(dir.path())).unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "original");
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "brief");
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".memctrl.tmp"))
+            .collect();
+        assert!(leftovers.is_empty());
     }
 }

@@ -153,6 +153,10 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 output["lifecycle_state"] = json!("candidate");
                 output["guard"] = json!(verdict);
             }
+            let redacted = crate::sanitize::redactions(content);
+            if !redacted.is_empty() {
+                output["redacted"] = json!(redacted);
+            }
             output
         }
         "memctrl_query" => {

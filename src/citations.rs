@@ -175,7 +175,7 @@ pub fn parse_spec(spec: &str) -> Result<CitationSpec> {
 
 /// Files that hold credentials. Their line hashes would be shared through `memctrl export`, and a
 /// short secret can be recovered from an unsalted hash by guessing.
-fn secret_file(path: &str) -> bool {
+pub fn secret_file(path: &str) -> bool {
     let lower = path.to_lowercase();
     if lower
         .split('/')
@@ -302,6 +302,14 @@ fn read_scoped(root: &Path, path: &str) -> std::result::Result<String, Status> {
     if !resolved.starts_with(&root) {
         return Err(Status::Unresolved);
     }
+    // Never hash a secrets file, even for a citation stored before this check existed.
+    let inside = resolved
+        .strip_prefix(&root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    if secret_file(&inside) {
+        return Err(Status::Unchecked);
+    }
     let meta = std::fs::metadata(&resolved).map_err(|_| Status::Missing)?;
     if !meta.is_file() || meta.len() > MAX_FILE_BYTES {
         return Err(Status::Unchecked);
@@ -335,6 +343,12 @@ pub fn anchor(root: &Path, cwd: &Path, spec: &CitationSpec) -> Result<Anchor> {
         .map(|c| c.as_os_str().to_string_lossy())
         .collect::<Vec<_>>()
         .join("/");
+    // The typed path was checked in parse_spec; a symlink can still lead to a secrets file.
+    ensure!(
+        !secret_file(&relative),
+        "refusing to cite {}: it resolves to {relative}, which looks like a secrets file, and citation hashes are shared through exports",
+        spec.path
+    );
     let text = match read_scoped(&root, &relative) {
         Ok(text) => text,
         Err(Status::Unchecked) => bail!(

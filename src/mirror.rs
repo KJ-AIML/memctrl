@@ -166,6 +166,9 @@ pub fn render(store: &MemoryStore, layers: &[String]) -> Result<(String, usize)>
         let cite = store
             .citations(&memory.id)?
             .into_iter()
+            // Hashes of a secrets file must never be published (2.1.0 could store them through
+            // a symlink); the citation stays local.
+            .filter(|c| !crate::citations::secret_file(&c.path))
             .map(|c| CiteMeta {
                 lines: lines_label(c.line_start, c.line_end),
                 path: c.path,
@@ -206,10 +209,16 @@ pub fn ensure_gitignore(export: &std::path::Path) -> Result<()> {
         return Ok(());
     };
     if dir.file_name().is_some_and(|n| n == ".memctrl") {
-        let ignore = dir.join(".gitignore");
-        if !ignore.exists() {
-            std::fs::create_dir_all(dir)?;
-            std::fs::write(ignore, GITIGNORE)?;
+        std::fs::create_dir_all(dir)?;
+        // create_new never follows a symlink planted at the path, dangling or not.
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dir.join(".gitignore"))
+        {
+            Ok(mut file) => std::io::Write::write_all(&mut file, GITIGNORE.as_bytes())?,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
         }
     }
     Ok(())
@@ -491,9 +500,13 @@ pub fn import_with(
     };
     let mut seen_ids = HashSet::new();
     let mut capped = 0;
+    let mut redacted = std::collections::BTreeSet::new();
     let mut plan = Vec::new();
     for entry in &entries {
         let content = sanitize_text(&entry.content);
+        if content != entry.content {
+            redacted.extend(crate::sanitize::redactions(&entry.content));
+        }
         let digest = text_digest(&content);
         let blocked = known.contains(&content) || forgotten_text.contains(&digest);
         let context = |e: anyhow::Error| e.context(format!("entry at line {}", entry.line));
@@ -711,6 +724,9 @@ pub fn import_with(
         "quarantined": quarantined,
         "dry_run": options.dry_run,
     });
+    if !redacted.is_empty() {
+        report["redacted"] = json!(redacted);
+    }
     if !candidates.is_empty() {
         report["note"] = json!(if options.accept {
             "edited, conflicting or guard-flagged entries stay candidates: review them with `memctrl candidates`"

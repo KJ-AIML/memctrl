@@ -258,3 +258,26 @@ fn mcp_add_cites_atomically_and_stale_tool_reports_changes() {
     .unwrap();
     assert_eq!(found["why"][0]["freshness"], "stale");
 }
+
+/// The secrets-file check ran on the typed path, so a symlink to config/secrets.yml was cited
+/// and its line hashes exported.
+#[cfg(unix)]
+#[test]
+fn secret_files_are_refused_through_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::create_dir_all(root.join("config")).unwrap();
+    std::fs::write(root.join("config/secrets.yml"), "token: hunter2\n").unwrap();
+    std::fs::write(root.join(".env"), "KEY=1\n").unwrap();
+    std::os::unix::fs::symlink(root.join("config/secrets.yml"), root.join("notes.txt")).unwrap();
+    std::os::unix::fs::symlink(root.join(".env"), root.join("config/app.toml")).unwrap();
+    for typed in ["notes.txt:1", "config/app.toml"] {
+        let spec = memctrl::citations::parse_spec(typed).unwrap();
+        let error = memctrl::citations::anchor(&root, &root, &spec).unwrap_err();
+        assert!(
+            error.to_string().contains("secrets file"),
+            "{typed}: {error}"
+        );
+    }
+}

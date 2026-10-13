@@ -628,3 +628,70 @@ fn id_prefixes_resolve_uniquely_or_report_ambiguity() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// The review found 20 of 34 fake secret formats stored in plain text: `\b` never fires between
+/// `_` and a letter, so `DB_PASSWORD=` slipped through, and common vendor formats were missing.
+/// Fakes are assembled at runtime so no realistic token sits in the source.
+#[test]
+fn sanitizer_catches_prefixed_keys_and_vendor_tokens() {
+    let fake = |prefix: &str, body: &str| format!("{prefix}{body}");
+    let cases = [
+        ("DB_PASSWORD=hunter3fake".to_string(), "hunter3fake", "PASSWORD"),
+        ("PGPASSWORD=hunter4fake psql -h db".into(), "hunter4fake", "PASSWORD"),
+        ("MYSQL_ROOT_PASSWORD=hunter5fake".into(), "hunter5fake", "PASSWORD"),
+        ("STRIPE_API_KEY=fakevalue0006".into(), "fakevalue0006", "API_KEY"),
+        ("JWT_SECRET=fakevalue0007".into(), "fakevalue0007", "SECRET"),
+        ("login with pwd=hunter8fake".into(), "hunter8fake", "PASSWORD"),
+        (r#"{"db": {"user": "app", "pass": "hunter12fake"}}"#.into(), "hunter12fake", "PASSWORD"),
+        ("Authorization: Basic YWRtaW46aHVudGVyMTM=".into(), "YWRtaW46aHVudGVyMTM", "TOKEN"),
+        ("postgres://admin:p@ss10fake@db.example.com/app".into(), "ss10fake", "CREDENTIAL"),
+        ("redis://default:pa/ss11fake@cache.example.com:6379".into(), "ss11fake", "CREDENTIAL"),
+        (fake("token gl", "pat-FAKEfake0000000000x1"), "FAKEfake0000000000x1", "GITLAB_TOKEN"),
+        (fake("xo", "xb-000000000001-000000000002-FAKEfakeFAKEfake0001"), "FAKEfakeFAKEfake0001", "SLACK_TOKEN"),
+        (fake("sk_", "live_FAKEfakeFAKEfake00000001"), "FAKEfakeFAKEfake00000001", "STRIPE_KEY"),
+        (fake("np", "m_FAKEfakeFAKEfakeFAKEfake0000000001"), "FAKEfakeFAKEfakeFAKEfake0000000001", "NPM_TOKEN"),
+        (fake("AI", "zaSyFAKE-fake_FAKE-fake_FAKE0000001"), "SyFAKE-fake_FAKE-fake_FAKE0000001", "GOOGLE_API_KEY"),
+        (fake("eyJhbGciOiJIUzI1NiJ9.", "eyJzdWIiOiJ0ZXN0In0.FAKEsig0001"), "FAKEsig0001", "JWT"),
+        ("-----BEGIN ENCRYPTED PRIVATE KEY-----\nMIIFAKE0002\n-----END ENCRYPTED PRIVATE KEY-----".into(), "MIIFAKE0002", "PRIVATE_KEY"),
+        ("-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOFAKE0003\n-----END PGP PRIVATE KEY BLOCK-----".into(), "lQOFAKE0003", "PRIVATE_KEY"),
+        ("Test card 4111 1111 1111 1111".into(), "4111 1111 1111 1111", "CARD"),
+        ("On-call phone (555) 123-4567".into(), "123-4567", "PHONE"),
+        ("Thai support line +66 81 234 5678".into(), "81 234 5678", "PHONE_INTL"),
+    ];
+    for (input, secret, label) in &cases {
+        let out = sanitize_text(input);
+        assert!(!out.contains(secret), "{input:?} -> {out:?}");
+        assert!(
+            out.contains(&format!("[REDACTED_{label}]")),
+            "{input:?} -> {out:?}"
+        );
+        assert!(has_secrets(input), "{input:?}");
+        assert!(redactions(input).contains(&label.to_string()), "{input:?}");
+    }
+    // The key name stays, so the memory still says what was configured.
+    assert_eq!(
+        sanitize_text("DB_PASSWORD=hunter3fake"),
+        "DB_PASSWORD=[REDACTED_PASSWORD]"
+    );
+}
+
+/// Prose and placeholders that look like secrets at a glance stay exactly as written.
+#[test]
+fn sanitizer_leaves_prose_and_placeholders_alone() {
+    for prose in [
+        "Bearer token in the header",
+        "max_tokens=4096",
+        "PASSWORD_MIN_LENGTH=12",
+        "DB_PASSWORD=${DB_PASSWORD}",
+        "Set API_KEY=<your key> in .env.example",
+        "Session token: rotate weekly",
+        "BYPASS=1",
+        "Use https://host.example:8080/path@v2 for the mirror",
+        "npm install from https://registry.npmjs.org/@babel/core",
+        "Run with +1 retry and -2 jobs",
+        "Version 1.2.3+build.45",
+    ] {
+        assert_eq!(sanitize_text(prose), prose);
+        assert!(redactions(prose).is_empty(), "{prose:?}");
+    }
+}
