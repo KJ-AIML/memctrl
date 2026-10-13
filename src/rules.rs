@@ -64,6 +64,11 @@ pub struct Rules {
     /// Custom synonym groups from `[retrieval] aliases`.
     pub aliases: Vec<Vec<String>>,
     pub builtin_aliases: bool,
+    /// `[retrieval] generic_words`: words that rank but can't make a memory match on their own.
+    #[serde(default)]
+    pub generic_words: Vec<String>,
+    #[serde(default = "default_true")]
+    pub builtin_generic: bool,
     /// `[citations] root`, resolved against the rules file's directory.
     pub citations_root: Option<std::path::PathBuf>,
     /// `[guard]`: how suspicious writes are held for review.
@@ -131,6 +136,8 @@ impl Default for Rules {
             db_path: None,
             aliases: Vec::new(),
             builtin_aliases: true,
+            generic_words: Vec::new(),
+            builtin_generic: true,
             citations_root: None,
             guard: crate::guard::Policy::default(),
             project_dir: None,
@@ -252,6 +259,10 @@ pub fn repository_root(path: &Path) -> PathBuf {
     dir.ancestors()
         .find(|d| d.join(".git").exists())
         .map_or(dir.clone(), Path::to_path_buf)
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn parse_mode(value: &toml::Value) -> Result<crate::guard::Mode> {
@@ -494,6 +505,34 @@ impl Rules {
         }
         if let Some(retrieval) = raw.get("retrieval") {
             let retrieval = retrieval.as_table().context("retrieval must be a table")?;
+            if let Some(flag) = retrieval.get("builtin_generic") {
+                rules.builtin_generic = flag
+                    .as_bool()
+                    .context("retrieval.builtin_generic must be true or false")?;
+            }
+            if let Some(words) = retrieval.get("generic_words") {
+                let words = words
+                    .as_array()
+                    .context("retrieval.generic_words must be an array of strings")?;
+                if words.len() > 500 {
+                    bail!("retrieval.generic_words allows at most 500 words");
+                }
+                for word in words {
+                    let word = word
+                        .as_str()
+                        .context("generic_words entries must be strings")?
+                        .trim()
+                        .to_lowercase();
+                    if word.is_empty() || word.chars().count() > 64 || has_secrets(&word) {
+                        bail!(
+                            "generic_words entries must be 1 to 64 characters without credentials"
+                        );
+                    }
+                    if !rules.generic_words.contains(&word) {
+                        rules.generic_words.push(word);
+                    }
+                }
+            }
             if let Some(flag) = retrieval.get("builtin_aliases") {
                 rules.builtin_aliases = flag
                     .as_bool()

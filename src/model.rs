@@ -180,7 +180,9 @@ pub struct Why {
     /// Fraction of the query's terms this memory matched (0–1).
     pub coverage: f64,
     /// Matched query terms. "a → b (alias)" means the query word a matched through its alias b;
-    /// "(substring)" means a partial-word match; "(k/n)" counts matched character trigrams.
+    /// "(substring)" means a partial-word match; "(glued)" a whole word written against Thai or
+    /// CJK text; "(standalone)" a lone Thai-script letter standing apart; "(generic)" a topic-free
+    /// word that ranks but can't qualify a memory alone; "(k/n)" counts matched trigrams.
     pub matched: Vec<String>,
     /// For memories with citations: fresh, stale or uncited.
     #[serde(skip_serializing_if = "Option::is_none")]

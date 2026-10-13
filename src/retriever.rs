@@ -169,18 +169,38 @@ pub fn keyword_retrieve(
 }
 
 /// Retrieval settings derived from `.memoryrc`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SearchOptions {
     pub alias_groups: Vec<Vec<String>>,
+    /// `[retrieval] generic_words`: more words that rank but can't qualify a memory alone.
+    pub generic_words: Vec<String>,
+    /// `[retrieval] builtin_generic`: whether the built-in generic words apply.
+    pub builtin_generic: bool,
+}
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            alias_groups: Vec::new(),
+            generic_words: Vec::new(),
+            builtin_generic: true,
+        }
+    }
 }
 impl SearchOptions {
     pub fn from_rules(rules: &crate::rules::Rules) -> Self {
         Self {
             alias_groups: rules.alias_groups(),
+            generic_words: rules.generic_words.clone(),
+            builtin_generic: rules.builtin_generic,
         }
     }
     fn fingerprint(&self) -> String {
-        let joined: Vec<String> = self.alias_groups.iter().map(|g| g.join("\u{1f}")).collect();
+        let mut joined: Vec<String> = self.alias_groups.iter().map(|g| g.join("\u{1f}")).collect();
+        joined.push(format!(
+            "generic:{}:{}",
+            self.builtin_generic,
+            self.generic_words.join("\u{1f}")
+        ));
         let refs: Vec<&str> = joined.iter().map(String::as_str).collect();
         fingerprint(&refs)
     }
@@ -195,10 +215,23 @@ pub fn lexical_retrieve(
     top_k: usize,
     options: &SearchOptions,
 ) -> Result<RetrievalResult> {
-    let parsed = crate::search::parse_query(query, &options.alias_groups);
+    let parsed = crate::search::parse_query_with(
+        query,
+        &options.alias_groups,
+        &options.generic_words,
+        options.builtin_generic,
+    );
     if parsed.is_empty() {
         return Ok(RetrievalResult {
             trace: vec!["no_keywords".into()],
+            ..Default::default()
+        });
+    }
+    // Only topic-free words ("summarize the project"): an honest "nothing specific" beats
+    // returning whatever mentions a project.
+    if parsed.only_generic() {
+        return Ok(RetrievalResult {
+            trace: vec![METHOD.to_string(), "generic_only".into()],
             ..Default::default()
         });
     }
@@ -399,7 +432,7 @@ pub fn publish_selection(
 }
 
 /// Part of every cache key: bump when scoring changes so upgrades never serve old results.
-const RETRIEVAL_VERSION: &str = "lexical-v1";
+const RETRIEVAL_VERSION: &str = "lexical-v2";
 /// Part of every cache key: what an entry holds (ids only). 2.1 entries held full results and
 /// never match these keys, in either direction.
 const CACHE_FORMAT: &str = "ids-v1";

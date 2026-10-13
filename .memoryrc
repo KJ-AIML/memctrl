@@ -12,7 +12,7 @@ on_session_end = "summarize session -> user"
 'on_file "*.md"' = "extract -> project if contains decision"
 
 [forget]
-never = ["passwords", "keys", "PII", "secrets"]
+never = ["passwords", "keys", "PII", "secrets", "api_key", "token", "secret", "password"]
 after_days = { session = 7, user = 90 }
 
 [extract]

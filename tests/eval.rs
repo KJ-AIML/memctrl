@@ -38,11 +38,11 @@ fn built_in_suite_meets_published_floors() {
         "{report}"
     );
     assert!(
-        metric(&report, "lexical", &["hit_at_1"]) >= 0.85,
+        metric(&report, "lexical", &["hit_at_1"]) >= 0.90,
         "{report}"
     );
     assert!(
-        metric(&report, "lexical", &["negative_accuracy"]) >= 0.80,
+        metric(&report, "lexical", &["negative_accuracy"]) >= 0.90,
         "{report}"
     );
     for kind in [
@@ -54,6 +54,7 @@ fn built_in_suite_meets_published_floors() {
         "chinese",
         "japanese",
         "korean",
+        "glued",
     ] {
         assert_eq!(
             metric(&report, "lexical", &["by_kind", kind, "hit_at_k"]),
@@ -134,4 +135,62 @@ fn cli_eval_never_creates_a_database_and_gates_on_request() {
     let value: Value = serde_json::from_slice(&custom.stdout).unwrap();
     assert_eq!(value["suite"], "mine");
     assert_eq!(value["results"]["lexical"]["hit_at_k"], 1.0);
+}
+
+fn fixture(name: &str) -> Value {
+    let text = std::fs::read_to_string(format!("tests/fixtures/eval/{name}")).unwrap();
+    let suite = eval::parse_suite(&text).unwrap();
+    let options = SearchOptions::from_rules(&Rules::default());
+    eval::run(&suite, &[Retriever::Lexical], 5, &options).unwrap()
+}
+
+/// A reviewer's Thai team suite (not written by the retriever's author). In 2.1.0, 41% of its
+/// vague questions returned notes.
+#[test]
+fn multilingual_suite_meets_floors() {
+    let report = fixture("thai-team.json");
+    assert!(
+        metric(&report, "lexical", &["hit_at_k"]) >= 0.93,
+        "{report}"
+    );
+    assert!(
+        metric(&report, "lexical", &["hit_at_1"]) >= 0.90,
+        "{report}"
+    );
+    assert!(
+        metric(&report, "lexical", &["negative_accuracy"]) >= 0.95,
+        "{report}"
+    );
+    for kind in ["glued", "th_short", "th_exact", "th_compound"] {
+        assert_eq!(
+            metric(&report, "lexical", &["by_kind", kind, "hit_at_k"]),
+            1.0,
+            "{kind}: {report}"
+        );
+    }
+}
+
+/// Held-out questions never used for tuning (2.1.0: 0.769 correctly empty). Fix the retriever,
+/// never the word lists, when this fails.
+#[test]
+fn held_out_vague_questions_do_not_regress() {
+    let report = fixture("thai-team-heldout.json");
+    assert!(
+        metric(&report, "lexical", &["negative_accuracy"]) >= 0.90,
+        "{report}"
+    );
+    assert!(
+        metric(&report, "lexical", &["hit_at_k"]) >= 0.91,
+        "{report}"
+    );
+}
+
+/// English vague and off-topic questions (2.1.0: half returned notes).
+#[test]
+fn english_vague_questions_are_mostly_empty() {
+    let report = fixture("en-mirror.json");
+    assert!(
+        metric(&report, "lexical", &["negative_accuracy"]) >= 0.90,
+        "{report}"
+    );
 }
