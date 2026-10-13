@@ -62,6 +62,16 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **`forget` is remembered.** It records a tombstone (id and content digest) so `import` can't bring the memory back. `clear` resets tombstones along with everything else.
 - **`memctrl init`** also writes `.memctrl/.gitignore`, so the database stays out of git when `.memctrl/memory.md` is committed. `memctrl maintenance` rebuilds the search indexes.
 
+## 2.1 → 2.1.1 (unreleased)
+
+2.1.1 fixes the findings of a real-world review. No schema change: 2.0, 2.1 and 2.1.1 keep sharing one database. Entries are added here as each fix lands.
+
+- **Commands work from any subfolder.** memctrl walks up from the working directory to the nearest `.memoryrc` (stopping at the repository root, and never climbing into your home folder from below) and uses that project's rules and store. Without a `.memoryrc`, a store at the repository root or in the working directory is used, so projects set up without `init` keep working. `--rc` still names a rules file explicitly. The default `export --out` and `install --project` use the project folder too.
+- **Only `memctrl init` creates a store**, or a database path you name (`--db`, `MEMCTRL_DB_PATH`, `db_path`). Other commands fail with a hint instead of creating an empty store wherever they run; `context` stays silent. `init` keeps an existing `.memoryrc` (for example one a teammate committed) unless you pass `--force`, and it refuses inside another project.
+- **Stray stores.** 2.1.0 created a store in whatever folder a command ran in. `memctrl doctor` lists them under `stray_stores`. To keep one's memories: `memctrl --db src/.memctrl/memories.db export --out stray.md --layer project --layer user`, then `memctrl import stray.md`.
+- **Short ids.** Every command and `memctrl_review` accept a unique id prefix of at least 4 hex characters, such as the 8 characters the brief shows. An ambiguous prefix is refused with its matches.
+- **Library:** `memctrl::project` finds projects; `MemoryStore::resolve_id` resolves prefixes; `mcp::serve` takes the project folder; `Rules` has a `project_dir` field; `citations::root_for(&rules)` resolves the citation root with the project folder as a fallback.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.

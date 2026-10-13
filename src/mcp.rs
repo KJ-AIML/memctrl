@@ -135,7 +135,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 json!({"id": store.insert_memory(memory)?, "status": "stored"})
             } else {
                 // Resolve and hash every citation before writing anything.
-                let root = crate::citations::project_root(rules.citations_root.as_deref())?;
+                let root = crate::citations::root_for(rules)?;
                 let cwd = std::env::current_dir()?;
                 let anchors = specs
                     .iter()
@@ -167,7 +167,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 limit(args)?,
                 &crate::retriever::SearchOptions::from_rules(rules),
             )?;
-            if let Ok(root) = crate::citations::project_root(rules.citations_root.as_deref()) {
+            if let Ok(root) = crate::citations::root_for(rules) {
                 crate::citations::annotate(store, &root, &mut result)?;
             }
             serde_json::to_value(result)?
@@ -188,7 +188,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             if let Some(l) = layer {
                 validate_identifier(l, "layer")?;
             }
-            let root = crate::citations::project_root(rules.citations_root.as_deref())?;
+            let root = crate::citations::root_for(rules)?;
             crate::citations::stale_report(store, &root, layer, false)?
         }
         "memctrl_trigger" => {
@@ -221,13 +221,14 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
         }
         "memctrl_review" => {
             let id = string(args, "id")?;
-            validate_identifier(id, "id")?;
             let action = string(args, "action")?;
             let reason = optional_string(args, "reason")?.unwrap_or("");
             ensure!(
                 ["accept", "reject", "dispute", "refute"].contains(&action),
                 "unknown review action"
             );
+            let id = store.resolve_id(id)?;
+            let id = id.as_str();
             let memory = store
                 .get_memory(id, true)?
                 .ok_or_else(|| anyhow::anyhow!("memory not found"))?;
@@ -328,6 +329,7 @@ fn tools() -> Vec<Tool> {
 struct MemoryServer {
     store: Mutex<MemoryStore>,
     rc: PathBuf,
+    project_dir: Option<PathBuf>,
 }
 impl ServerHandler for MemoryServer {
     fn get_info(&self) -> ServerConfig {
@@ -348,7 +350,9 @@ impl ServerHandler for MemoryServer {
     ) -> std::result::Result<CallToolResponse, ErrorData> {
         let args = Value::Object(request.arguments.unwrap_or_default());
         let result = (|| -> Result<Value> {
-            let rules = Rules::load(&self.rc)?; // Each request observes the latest rules, including invalid TOML.
+            // Each request observes the latest rules, including invalid TOML.
+            let mut rules = Rules::load(&self.rc)?;
+            rules.project_dir = self.project_dir.clone();
             let mut store = self
                 .store
                 .lock()
@@ -364,10 +368,12 @@ impl ServerHandler for MemoryServer {
         Ok(result.into())
     }
 }
-pub async fn serve(store: MemoryStore, rc: PathBuf) -> Result<()> {
+/// `rc` should be absolute so the server keeps its project's rules whatever its working directory.
+pub async fn serve(store: MemoryStore, rc: PathBuf, project_dir: Option<PathBuf>) -> Result<()> {
     let server = MemoryServer {
         store: Mutex::new(store),
         rc,
+        project_dir,
     };
     let service = server.serve(rmcp::transport::stdio()).await?;
     service.waiting().await?;

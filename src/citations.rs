@@ -227,6 +227,19 @@ fn secret_file(path: &str) -> bool {
 /// The project root: `MEMCTRL_PROJECT_ROOT`, else the configured root, else the nearest
 /// ancestor of the working directory containing `.git`, else the working directory.
 pub fn project_root(configured: Option<&Path>) -> Result<PathBuf> {
+    project_root_in(configured, None)
+}
+
+/// The project root for these rules: as `project_root`, but outside git the project folder
+/// (where `.memoryrc` was found) comes before the working directory.
+pub fn root_for(rules: &crate::rules::Rules) -> Result<PathBuf> {
+    project_root_in(
+        rules.citations_root.as_deref(),
+        rules.project_dir.as_deref(),
+    )
+}
+
+fn project_root_in(configured: Option<&Path>, project_dir: Option<&Path>) -> Result<PathBuf> {
     if let Some(root) = std::env::var_os("MEMCTRL_PROJECT_ROOT").filter(|r| !r.is_empty()) {
         return PathBuf::from(root)
             .canonicalize()
@@ -243,7 +256,7 @@ pub fn project_root(configured: Option<&Path>) -> Result<PathBuf> {
             return Ok(dir.canonicalize()?);
         }
     }
-    Ok(cwd.canonicalize()?)
+    Ok(project_dir.unwrap_or(&cwd).canonicalize()?)
 }
 
 fn normalize(text: &str) -> Vec<String> {
@@ -442,7 +455,7 @@ pub fn stale_notes(
     store: &crate::store::MemoryStore,
     rules: &crate::rules::Rules,
 ) -> std::collections::HashMap<String, String> {
-    let Ok(root) = project_root(rules.citations_root.as_deref()) else {
+    let Ok(root) = root_for(rules) else {
         return Default::default();
     };
     let Ok(ids) = store.cited_memory_ids() else {

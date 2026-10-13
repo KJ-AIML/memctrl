@@ -13,6 +13,7 @@ pub mod llm;
 pub mod mcp;
 pub mod mirror;
 pub mod model;
+pub mod project;
 pub mod reflection;
 pub mod retriever;
 pub mod rules;

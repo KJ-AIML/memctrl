@@ -66,6 +66,9 @@ pub struct Rules {
     pub citations_root: Option<std::path::PathBuf>,
     /// `[guard]`: how suspicious writes are held for review.
     pub guard: crate::guard::Policy,
+    /// The project folder the command runs in (set by the caller, never read from the file).
+    #[serde(skip)]
+    pub project_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for Rules {
@@ -125,6 +128,7 @@ impl Default for Rules {
             builtin_aliases: true,
             citations_root: None,
             guard: crate::guard::Policy::default(),
+            project_dir: None,
         }
     }
 }

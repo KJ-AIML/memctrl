@@ -259,6 +259,7 @@ fn cli_export_check_and_gitignore() {
     assert!(String::from_utf8_lossy(&stale.stderr).contains("out of date"));
 
     let other = TempDir::new().unwrap();
+    ok(&other, &["init"]);
     std::fs::copy(
         dir.path().join(".memctrl/memory.md"),
         other.path().join("memory.md"),

@@ -5,6 +5,7 @@ use memctrl::{
     llm::{LlmClient, LlmConfig, LlmSettings},
     mcp, mirror,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
+    project::{self, Project},
     reflection, retriever,
     rules::{Rules, DEFAULT_RULES},
     sanitize::{sanitize_text, sanitize_value, validate_identifier},
@@ -30,16 +31,15 @@ struct Cli {
         long,
         global = true,
         env = "MEMCTRL_DB_PATH",
-        help = "SQLite database (otherwise .memoryrc db_path or .memctrl/memories.db)"
+        help = "SQLite database (otherwise db_path in .memoryrc, else .memctrl/memories.db in the project folder)"
     )]
     db: Option<PathBuf>,
     #[arg(
         long,
         global = true,
-        default_value = ".memoryrc",
-        help = "TOML rules file; missing files use defaults"
+        help = "TOML rules file (default: the nearest .memoryrc in this folder or a parent, up to the repository root)"
     )]
-    rc: PathBuf,
+    rc: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -193,8 +193,11 @@ enum Command {
     Refresh { memory_id: String },
     /// Write shared memory to a Markdown file for review in pull requests.
     Export {
-        #[arg(long, default_value = mirror::DEFAULT_PATH)]
-        out: PathBuf,
+        #[arg(
+            long,
+            help = "Output file (default: .memctrl/memory.md in the project folder)"
+        )]
+        out: Option<PathBuf>,
         #[arg(
             long = "layer",
             help = "Layer to export (repeatable; default: project)"
@@ -432,22 +435,53 @@ fn validate_layer(layer: Option<&str>) -> Result<()> {
     }
     Ok(())
 }
-fn find_db(cli: &Cli) -> Result<PathBuf> {
+/// The project this command runs in: the nearest `.memoryrc` at or above the working directory
+/// (see `project::locate`). `--rc` names the rules file instead, with the working directory as
+/// the project. `init` always sets up the working directory, and refuses inside another project.
+fn project(cli: &Cli) -> Result<Project> {
+    let cwd = std::env::current_dir()?;
+    if let Some(rc) = &cli.rc {
+        let rc = cwd.join(rc);
+        return Ok(Project {
+            found: rc.is_file(),
+            rc,
+            dir: cwd.clone(),
+            searched_to: cwd,
+        });
+    }
+    let located = project::locate_here()?;
+    if let Command::Init { force } = &cli.command {
+        ensure!(
+            *force || !located.found || located.dir == cwd,
+            "{} is already a memctrl project, and commands work from any folder inside it; to start a separate project here, run `memctrl init --force`",
+            located.dir.display()
+        );
+        let rc = cwd.join(project::RULES_FILE);
+        return Ok(Project {
+            found: rc.is_file(),
+            rc,
+            dir: cwd.clone(),
+            searched_to: cwd,
+        });
+    }
+    Ok(located)
+}
+/// The database: `--db` (or `MEMCTRL_DB_PATH`), else `db_path` from the rules file (relative to
+/// that file), else the project's `.memctrl/memories.db`. True when the user named the path.
+fn database(cli: &Cli, rules: &Rules, project: &Project) -> (PathBuf, bool) {
     if let Some(db) = &cli.db {
-        return Ok(db.clone());
+        return (db.clone(), true);
     }
-    if cli.rc.exists() {
-        let value: toml::Value = toml::from_str(&std::fs::read_to_string(&cli.rc)?)?;
-        if let Some(path) = value.get("memctrl").and_then(|v| v.get("db_path")) {
-            let path = PathBuf::from(path.as_str().context("memctrl.db_path must be a string")?);
-            return Ok(if path.is_absolute() {
-                path
-            } else {
-                cli.rc.parent().unwrap_or(Path::new(".")).join(path)
-            });
-        }
+    if let Some(path) = &rules.db_path {
+        let path = PathBuf::from(path);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            project.rc.parent().unwrap_or(&project.dir).join(path)
+        };
+        return (path, true);
     }
-    Ok(PathBuf::from(".memctrl/memories.db"))
+    (project.default_db(), false)
 }
 fn selected_memory_ids(
     node: &memctrl::model::TreeNode,
@@ -468,7 +502,7 @@ fn selected_memory_ids(
     }
 }
 fn project_root(rules: &Rules) -> Result<PathBuf> {
-    citations::project_root(rules.citations_root.as_deref())
+    citations::root_for(rules)
 }
 /// Relative output paths must resolve inside the project, so a committed symlink can't redirect
 /// a write. Absolute paths are the caller's explicit choice.
@@ -479,68 +513,73 @@ fn confinement(path: &Path, rules: &Rules) -> Result<Option<PathBuf>> {
         None
     })
 }
-fn require_memory(store: &MemoryStore, id: &str) -> Result<()> {
-    validate_identifier(id, "memory_id")?;
-    ensure!(store.get_memory(id, true)?.is_some(), "memory not found");
-    Ok(())
+/// The full id of an existing memory, from the id or a unique prefix (the brief shows 8 characters).
+fn require_memory(store: &MemoryStore, id: &str) -> Result<String> {
+    store.resolve_id(id)
 }
-async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Value> {
+/// Installs the skill (and hook) without opening a store: installing creates no database.
+fn install(
+    tool: Option<&str>,
+    project_scope: bool,
+    hook: bool,
+    project: &Project,
+) -> Result<Value> {
+    let tool =
+        tool.context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
+    ensure!(
+        !hook || matches!(tool, "claude" | "claude_code"),
+        "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
+    );
+    let root = if project_scope {
+        project.dir.clone()
+    } else {
+        PathBuf::from(
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .context("home directory is not configured; use --project")?,
+        )
+    };
+    let path = installer::install(tool, project_scope, &root)?;
+    let mut output = json!({"path": path});
+    if let Some(legacy) = installer::legacy_skill_path(tool)
+        .map(|relative| root.join(relative))
+        .filter(|p| p.exists())
+    {
+        output["legacy_skill"] = json!(legacy);
+        output["note"] =
+            json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
+    }
+    if hook {
+        let executable = std::env::current_exe()?;
+        let (settings, changed) = installer::install_hook(
+            &root,
+            installer::settings_file(project_scope),
+            &installer::hook_command(&executable),
+        )?;
+        output["hook"] = json!(settings);
+        output["hook_changed"] = json!(changed);
+    }
+    Ok(output)
+}
+async fn execute(
+    cli: &Cli,
+    store: &mut MemoryStore,
+    rules: &Rules,
+    project: &Project,
+    db: &Path,
+) -> Result<Value> {
     let result = match &cli.command {
         Command::Init { force } => {
-            ensure!(
-                *force || !cli.rc.exists(),
-                "rules file already exists; use --force"
-            );
-            if let Some(parent) = cli.rc.parent().filter(|p| !p.as_os_str().is_empty()) {
-                std::fs::create_dir_all(parent)?;
+            // An existing .memoryrc (often committed by a teammate) is kept unless --force.
+            let written = *force || !project.rc.exists();
+            if written {
+                if let Some(parent) = project.rc.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&project.rc, DEFAULT_RULES)?;
             }
-            std::fs::write(&cli.rc, DEFAULT_RULES)?;
-            let database = find_db(cli)?;
-            mirror::ensure_gitignore(&database)?;
-            json!({"status":"initialized","rules":cli.rc,"database":database})
-        }
-        Command::Install {
-            tool,
-            project,
-            hook,
-        } => {
-            let tool = tool
-                .as_deref()
-                .context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
-            ensure!(
-                !*hook || matches!(tool, "claude" | "claude_code"),
-                "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
-            );
-            let root = if *project {
-                std::env::current_dir()?
-            } else {
-                PathBuf::from(
-                    std::env::var_os("HOME")
-                        .or_else(|| std::env::var_os("USERPROFILE"))
-                        .context("home directory is not configured; use --project")?,
-                )
-            };
-            let path = installer::install(tool, *project, &root)?;
-            let mut output = json!({"path": path});
-            if let Some(legacy) = installer::legacy_skill_path(tool)
-                .map(|relative| root.join(relative))
-                .filter(|p| p.exists())
-            {
-                output["legacy_skill"] = json!(legacy);
-                output["note"] =
-                    json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
-            }
-            if *hook {
-                let executable = std::env::current_exe()?;
-                let (settings, changed) = installer::install_hook(
-                    &root,
-                    installer::settings_file(*project),
-                    &installer::hook_command(&executable),
-                )?;
-                output["hook"] = json!(settings);
-                output["hook_changed"] = json!(changed);
-            }
-            output
+            mirror::ensure_gitignore(db)?;
+            json!({"status":"initialized","rules":project.rc,"rules_written":written,"database":db})
         }
         Command::Context {
             budget,
@@ -665,7 +704,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             }
         }
         Command::Cite { memory_id, specs } => {
-            require_memory(store, memory_id)?;
+            let memory_id = &require_memory(store, memory_id)?;
             let root = project_root(rules)?;
             let cwd = std::env::current_dir()?;
             let anchors = specs
@@ -686,10 +725,19 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             citations::stale_report(store, &project_root(rules)?, layer.as_deref(), *all)?
         }
         Command::Refresh { memory_id } => {
-            require_memory(store, memory_id)?;
-            citations::refresh(store, &project_root(rules)?, memory_id)?
+            let memory_id = require_memory(store, memory_id)?;
+            citations::refresh(store, &project_root(rules)?, &memory_id)?
         }
         Command::Export { out, layers, check } => {
+            // The default path is anchored to the project folder, and confined like a relative one.
+            let (out, confine) = match out {
+                Some(path) => (path.clone(), confinement(path, rules)?),
+                None => (
+                    project.dir.join(mirror::DEFAULT_PATH),
+                    Some(project_root(rules)?),
+                ),
+            };
+            let out = &out;
             let layers: Vec<String> = if layers.is_empty() {
                 mirror::DEFAULT_LAYERS
                     .iter()
@@ -713,7 +761,6 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 json!({"output":out,"memories":count,"up_to_date":true})
             } else {
                 if !up_to_date {
-                    let confine = confinement(out, rules)?;
                     memctrl::fsutil::write_atomic(out, text.as_bytes(), confine.as_deref())?;
                 }
                 mirror::ensure_gitignore(out)?;
@@ -791,7 +838,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             }
         }
         Command::Show { memory_id } | Command::History { memory_id } => {
-            require_memory(store, memory_id)?;
+            let memory_id = &require_memory(store, memory_id)?;
             let cited = match project_root(rules) {
                 Ok(root) => citations::describe(store, &root, memory_id)?,
                 Err(_) => json!(store.citations(memory_id)?),
@@ -822,16 +869,17 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             reason,
             refuting_id,
         } => {
-            require_memory(store, memory_id)?;
-            if let Some(id) = refuting_id {
-                require_memory(store, id)?;
-            }
+            let memory_id = &require_memory(store, memory_id)?;
+            let refuting_id = match refuting_id {
+                Some(id) => Some(require_memory(store, id)?),
+                None => None,
+            };
             store.refute_memory(memory_id, reason, refuting_id.as_deref())?;
             json!({"id":memory_id,"status":"refuted"})
         }
         Command::Supersede { old_id, new_id } => {
-            require_memory(store, old_id)?;
-            require_memory(store, new_id)?;
+            let old_id = &require_memory(store, old_id)?;
+            let new_id = &require_memory(store, new_id)?;
             store.supersede_memory(old_id, new_id, json!({}))?;
             json!({"old_id":old_id,"new_id":new_id,"status":"superseded"})
         }
@@ -844,7 +892,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             serde_json::to_value(root)?
         }
         Command::Forget { memory_id } => {
-            require_memory(store, memory_id)?;
+            let memory_id = &require_memory(store, memory_id)?;
             ensure!(store.forget_memory(memory_id)?, "memory not found");
             json!({"id":memory_id,"status":"deleted"})
         }
@@ -880,7 +928,7 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
             json!({"dry_run":dry_run,"decayed":changed,"flagged":flagged})
         }
         Command::Reinforce { memory_id } => {
-            require_memory(store, memory_id)?;
+            let memory_id = &require_memory(store, memory_id)?;
             json!({"id":memory_id,"reinforced":decay::reinforce(store,memory_id)?})
         }
         Command::Trigger { event, context } => {
@@ -910,6 +958,11 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
                 .map(|m| m.id)
                 .collect();
             report["weak_memory_ids"] = json!(weak);
+            let stray = project::stray_stores(&project.dir, db);
+            if !stray.is_empty() {
+                report["stray_stores_note"] = json!("stores an earlier memctrl created in subfolders; this project no longer reads them. To keep their memories: memctrl --db <stray> export --out stray.md --layer project --layer user, then memctrl import stray.md");
+            }
+            report["stray_stores"] = json!(stray);
             report["stale_memories"] = match project_root(rules) {
                 Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
                     .as_array()
@@ -1030,21 +1083,20 @@ async fn execute(cli: &Cli, store: &mut MemoryStore, rules: &Rules) -> Result<Va
         },
         Command::Serve => bail!("serve is handled separately"),
         Command::Eval { .. } => bail!("eval is handled separately"),
+        Command::Install { .. } => bail!("install is handled separately"),
     };
     Ok(sanitize_value(&result))
 }
 async fn run(cli: Cli) -> Result<()> {
+    let project = project(&cli)?;
     // Init must be able to replace malformed rules explicitly; every other command fails closed.
-    let rules = if matches!(&cli.command, Command::Init { .. }) {
-        Rules::default()
-    } else {
-        Rules::load(&cli.rc)?
+    // Init without --force keeps an existing rules file, so its db_path still applies.
+    let mut rules = match &cli.command {
+        Command::Init { force } if *force || !project.rc.exists() => Rules::default(),
+        _ => Rules::load(&project.rc)?,
     };
-    let db = if matches!(&cli.command, Command::Init { force: true }) && cli.db.is_none() {
-        PathBuf::from(".memctrl/memories.db")
-    } else {
-        find_db(&cli)?
-    };
+    rules.project_dir = Some(project.dir.clone());
+    let (db, named) = database(&cli, &rules, &project);
     // Evaluation runs on an in-memory store and never opens or creates the real database.
     if let Command::Eval {
         file,
@@ -1083,6 +1135,17 @@ async fn run(cli: Cli) -> Result<()> {
         std::io::stdout().lock().write_all(encoded.as_bytes())?;
         return Ok(());
     }
+    if let Command::Install {
+        tool,
+        project: project_scope,
+        hook,
+    } = &cli.command
+    {
+        let output = install(tool.as_deref(), *project_scope, *hook, &project)?;
+        let encoded = serde_json::to_string(&sanitize_value(&output))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
     if let Command::Context { format, write, .. } = &cli.command {
@@ -1102,15 +1165,29 @@ async fn run(cli: Cli) -> Result<()> {
             return Ok(());
         }
     }
+    // Only init, or a path the user named, creates a store, so a subfolder never gets its own.
+    if !db.exists() && !named && !matches!(&cli.command, Command::Init { .. }) {
+        if project.found {
+            bail!(
+                "{} has memctrl rules but no store yet; run `memctrl init` there (it keeps your rules)",
+                project.dir.display()
+            );
+        }
+        bail!(
+            "no memctrl project in {} or its parent folders (searched up to {}); run `memctrl init` at the project root, or pass --db",
+            std::env::current_dir()?.display(),
+            project.searched_to.display()
+        );
+    }
     if let Some(parent) = db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
     let mut store = MemoryStore::open(&db)?;
     if matches!(&cli.command, Command::Serve) {
-        return mcp::serve(store, cli.rc).await;
+        return mcp::serve(store, project.rc.clone(), Some(project.dir.clone())).await;
     }
     let started = Instant::now();
-    let result = execute(&cli, &mut store, &rules).await?;
+    let result = execute(&cli, &mut store, &rules, &project, &db).await?;
     let operation = command_name(&cli.command);
     if !matches!(
         &cli.command,

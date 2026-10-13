@@ -563,3 +563,68 @@ fn real_python_databases_migrate_with_all_rows_retained() -> anyhow::Result<()> 
     }
     Ok(())
 }
+
+/// The brief shows 8-character ids. Every command takes a unique prefix, and an ambiguous one
+/// is refused with its matches instead of acting on the wrong memory.
+#[test]
+fn id_prefixes_resolve_uniquely_or_report_ambiguity() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let candidate = |content: &str| NewMemory {
+        lifecycle_state: LifecycleState::Candidate,
+        ..mem(content)
+    };
+    store.insert_memory_as(
+        candidate("first twin"),
+        "abcdef12-0000-4000-8000-000000000001",
+        None,
+    )?;
+    store.insert_memory_as(
+        candidate("second twin"),
+        "abcdef12-0000-4000-8000-000000000002",
+        None,
+    )?;
+    store.insert_memory_as(candidate("digits first"), DIGIT_TAIL_ID, None)?;
+    let unique = store.insert_memory(candidate("only one"))?;
+    assert_eq!(store.resolve_id(&unique)?, unique);
+    assert_eq!(store.resolve_id(&unique[..8])?, unique);
+    assert_eq!(store.resolve_id(&unique[..8].to_uppercase())?, unique);
+    assert_eq!(store.resolve_id("00000000-0000")?, DIGIT_TAIL_ID);
+    let ambiguous = store.resolve_id("abcdef12").unwrap_err().to_string();
+    assert!(
+        ambiguous.contains("ambiguous") && ambiguous.contains("abcdef12-0000"),
+        "{ambiguous}"
+    );
+    assert!(store.resolve_id("abc").is_err(), "too short to be a prefix");
+    assert!(store
+        .resolve_id("ffffffff")
+        .unwrap_err()
+        .to_string()
+        .contains("not found"));
+
+    let rules = Rules::default();
+    let revision = store.revision()?;
+    let refused = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_review",
+        &json!({"id": "abcdef12", "action": "accept"}),
+    );
+    assert!(refused.unwrap_err().to_string().contains("ambiguous"));
+    assert_eq!(
+        store.revision()?,
+        revision,
+        "an ambiguous prefix changes nothing"
+    );
+    let reviewed = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_review",
+        &json!({"id": &unique[..8], "action": "accept"}),
+    )?;
+    assert_eq!(reviewed["id"], unique.as_str(), "output names the full id");
+    assert_eq!(
+        store.get_memory(&unique, false)?.unwrap().lifecycle_state,
+        LifecycleState::Accepted
+    );
+    Ok(())
+}
