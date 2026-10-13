@@ -90,6 +90,17 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Library:** `ImportOptions` replaces `default_layer` with `layers` and adds `accept`; `mirror::unmerged` lists entries an export would drop; `fsutil::confined_target` checks a path before reading it; `MemoryStore::insert_memory_as` requires canonical ids; `MemoryStore::accept_imported` promotes an import candidate.
 - **Library:** `memctrl::project` finds projects; `MemoryStore::resolve_id` resolves prefixes; `mcp::serve` takes the project folder; `Rules` has a `project_dir` field; `citations::root_for(&rules)` resolves the citation root with the project folder as a fallback.
 
+## 2.1.1 → 2.1.2 (unreleased)
+
+No schema change; 2.0, 2.1 and 2.1.x keep sharing one database.
+
+- **Reads stop taking the write lock.** Opening a store checks its schema with a read and takes the write lock only when a migration is needed. Searches and the session brief read from a snapshot; access counts, provenance, cache entries and telemetry are written afterwards as best-effort bookkeeping with a 25 ms lock timeout, skipped when another process is writing. With a writer holding the lock, `context --format hook` on a 100k-memory store answers in under a second instead of failing after 30 seconds. Under heavy contention some access counts and provenance records are not recorded.
+- **The query log stays small.** Provenance records hold memory ids, scores and `why`, not memory text (`memctrl show <id>` has the text). The log keeps the newest 10,000 records and nothing older than 30 days, trimmed as new records are written. Logged queries are cut to 1,024 characters. The query cache stores ids and re-reads the memories, so 2.1 and 2.1.2 never read each other's cache entries.
+- **One-time compaction.** The first open by 2.1.2 strips memory text from existing provenance records and removes the old per-memory tree leaves, in small transactions. No rows are deleted. `memctrl maintenance --vacuum` gives the freed space back to the file system; `doctor` reports `reclaimable_bytes`.
+- **64 KiB memory limit.** `add`, `memctrl_add`, triggers and every other write path reject memories over 64 KiB with a hint to split the text or cite a file. Import skips such entries and lists their lines under `skipped.oversized`. Reflection and Heli lessons are cut to fit. Existing larger memories stay readable; `doctor` counts them as `oversized_memories`.
+- **The tree is read-only unless you ask.** `memctrl_tree` and `memctrl tree` show layers, clusters, counts and sample ids, and whether the stored tree is out of date. `rebuild: true` (`memctrl tree --rebuild`) builds it again and stores only root, layer and cluster nodes. `forget` no longer wipes the tree.
+- **Library:** `store::ReadSnapshot`; `MemoryStore::{side_write, best_effort, store_tree, tree_overview, count_oversized, reclaimable_bytes, vacuum}`; `store::logged_query`; `model::{MAX_MEMORY_BYTES, clip_to_limit}`; `tree::{compact, overview}`.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.

@@ -2,7 +2,7 @@
 //! first turn so it never has to remember to ask.
 use crate::model::{ClaimType, Memory, VerificationState};
 use crate::sanitize::validate_identifier;
-use crate::store::{AtomicWrite, MemoryStore};
+use crate::store::{MemoryStore, ReadSnapshot};
 use anyhow::Result;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -425,12 +425,13 @@ pub fn session_brief(
             unique.push(layer.clone());
         }
     }
-    let guard = AtomicWrite::new(&store.conn)?;
+    let snapshot = ReadSnapshot::new(&store.conn)?;
     let mut memories = Vec::new();
     for layer in &unique {
         memories.extend(store.list_memories(Some(layer), false)?);
     }
     let pending = store.count_candidates()?;
+    snapshot.finish()?;
     let brief = build_with(&memories, &unique, budget, stale, pending);
     let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
     let average = if brief.entries.is_empty() {
@@ -438,14 +439,16 @@ pub fn session_brief(
     } else {
         brief.entries.iter().map(|e| e.confidence).sum::<f64>() / brief.entries.len() as f64
     };
-    store.save_provenance_ids(
-        "session context brief",
-        &ids,
-        memories.len(),
-        "context_brief",
-        average,
-    )?;
-    guard.commit()?;
+    // Best effort: the brief is never withheld because another process holds the write lock.
+    store.side_write(|| {
+        store.save_provenance_ids(
+            "session context brief",
+            &ids,
+            memories.len(),
+            "context_brief",
+            average,
+        )
+    });
     Ok(brief)
 }
 

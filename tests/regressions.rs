@@ -55,7 +55,12 @@ fn memories_whose_generated_id_ends_in_digits_stay_reviewable() -> anyhow::Resul
         .get_memory(DIGIT_TAIL_ID, false)?
         .expect("accepted memory");
     assert_eq!(accepted.lifecycle_state, LifecycleState::Accepted);
-    let tree = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    let tree = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_tree",
+        &json!({"rebuild": true}),
+    )?;
     assert!(tree.to_string().contains(DIGIT_TAIL_ID), "{tree}");
     Ok(())
 }
@@ -801,5 +806,205 @@ fn consolidation_takes_the_target_layers_retention() -> anyhow::Result<()> {
     let promoted = store.get_memory(&id, true)?.unwrap();
     assert_eq!(promoted.layer, "project");
     assert_eq!(promoted.expires_at, None, "project memories don't expire");
+    Ok(())
+}
+
+/// The review found the query log and cache copying full memory text on every query: 20 queries
+/// on one 99 KB memory added 3.9 MB. Records now hold ids, scores and reasons.
+#[test]
+fn query_log_stays_small_for_large_memories() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let body = "zq7marker ".repeat(6000);
+    store.insert_memory(mem(&format!("Large design note {body}")))?;
+    for n in 0..20 {
+        let found = memctrl::retriever::retrieve(
+            &mut store,
+            &format!("zq7marker design {}", n % 2),
+            None,
+            5,
+        )?;
+        assert_eq!(
+            found.facts.len(),
+            1,
+            "a cache hit still returns the full fact"
+        );
+        assert!(found.facts[0].contains("zq7marker"));
+    }
+    let logged: i64 = store.conn.query_row(
+        "SELECT COALESCE(SUM(length(sources_json)+length(query)),0) + (SELECT COALESCE(SUM(length(result_json)),0) FROM rust_query_cache) FROM provenance",
+        [],
+        |r| r.get(0),
+    )?;
+    assert!(logged < 20_000, "log and cache hold {logged} bytes");
+    let leaked: i64 = store.conn.query_row(
+        "SELECT (SELECT COUNT(*) FROM provenance WHERE sources_json LIKE '%zq7marker zq7marker%') + (SELECT COUNT(*) FROM rust_query_cache WHERE result_json LIKE '%zq7marker zq7marker%')",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(leaked, 0, "no record copies memory text");
+    Ok(())
+}
+
+/// The log keeps the newest 10,000 records and nothing older than 30 days.
+#[test]
+fn provenance_retention_by_rows_and_age() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    store.insert_memory(mem("Releases are cut from main"))?;
+    store.conn.execute_batch("BEGIN")?;
+    for n in 0..10_050 {
+        store.conn.execute(
+            "INSERT INTO provenance(id,query,timestamp,method,sources_json) VALUES(?1,'q',?2,'test','[]')",
+            params![format!("p{n}"), if n < 10 { "2020-01-01T00:00:00.000000Z".to_string() } else { now() }],
+        )?;
+    }
+    store.conn.execute_batch("COMMIT")?;
+    memctrl::retriever::retrieve(&mut store, "releases main", None, 5)?;
+    let (rows, old): (i64, i64) = store.conn.query_row(
+        "SELECT COUNT(*), SUM(timestamp < '2021') FROM provenance",
+        [],
+        |r| Ok((r.get(0)?, r.get::<_, Option<i64>>(1)?.unwrap_or(0))),
+    )?;
+    assert!(rows <= 10_000, "{rows} rows kept");
+    assert_eq!(old, 0);
+    Ok(())
+}
+
+/// A 5 MB memory pushed a database to 2 GB through the logs. Memories are capped at 64 KiB on
+/// every write path; an oversized import entry is skipped and reported, not fatal.
+#[test]
+fn oversized_memory_rejected_on_every_write_path() -> anyhow::Result<()> {
+    let big = "x".repeat(MAX_MEMORY_BYTES + 1);
+    let mut store = MemoryStore::open(":memory:")?;
+    let error = store.insert_memory(mem(&big)).unwrap_err().to_string();
+    assert!(error.contains("64 KiB"), "{error}");
+    let rules = Rules::default();
+    let refused = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_add",
+        &json!({"content": big, "layer": "project"}),
+    );
+    assert!(refused.unwrap_err().to_string().contains("64 KiB"));
+    let file = format!(
+        "<!-- memctrl export v1. -->\n# Project memory\n\n## Facts and conventions\n\n- {big}\n- Releases are cut from main\n"
+    );
+    let report = memctrl::mirror::import(
+        &store,
+        &file,
+        &memctrl::mirror::ImportOptions::default(),
+        &memctrl::guard::Policy::default(),
+    )?;
+    assert_eq!(report["skipped"]["oversized"], json!([6]), "{report}");
+    assert_eq!(report["candidates"].as_array().unwrap().len(), 1);
+    assert!(clip_to_limit(&big).len() <= MAX_MEMORY_BYTES);
+    Ok(())
+}
+
+/// Opening a 2.1 database strips memory text from its old provenance rows and tree leaves once,
+/// without deleting any row.
+#[test]
+fn compaction_strips_text_from_2_1_rows() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("old.db");
+    {
+        let store = MemoryStore::open(&path)?;
+        let id = store.insert_memory(mem("Secretless design note"))?;
+        store.conn.execute(
+            "INSERT INTO provenance(id,query,timestamp,method,sources_json) VALUES('old','q','2020-01-01T00:00:00.000000Z','lexical_bm25',?1)",
+            [json!([{"memory_id": id, "content": "Secretless design note", "source": "manual", "trace_path": ["x"], "layer": "session", "why": {"matched": ["content"]}}]).to_string()],
+        )?;
+        store.conn.execute(
+            "INSERT INTO tree_nodes(id,parent_id,layer,title,summary,memory_ids) VALUES(?1,NULL,'session','t','Secretless design note','[]')",
+            [format!("mem_{id}")],
+        )?;
+        store
+            .conn
+            .execute("DELETE FROM maintenance_state WHERE key='compact_v1'", [])?;
+    }
+    let store = MemoryStore::open(&path)?;
+    let sources: String = store.conn.query_row(
+        "SELECT sources_json FROM provenance WHERE id='old'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert!(!sources.contains("Secretless"), "{sources}");
+    assert!(sources.contains("memory_id") && sources.contains("layer"));
+    let leaves: i64 = store.conn.query_row(
+        "SELECT COUNT(*) FROM tree_nodes WHERE id LIKE 'mem_%'",
+        [],
+        |r| r.get(0),
+    )?;
+    assert_eq!(leaves, 0);
+    assert!(store.last_maintenance("compact_v1")?.is_some());
+    Ok(())
+}
+
+/// At 100k memories under load, the session-start brief took 11–25 s: every read took the write
+/// lock. Opening, searching and the brief now read without it.
+#[test]
+fn reads_never_wait_for_the_write_lock() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("busy.db");
+    let mut reader = MemoryStore::open(&path)?;
+    reader.insert_memory(NewMemory {
+        layer: "project".into(),
+        ..mem("Releases are cut from main")
+    })?;
+    let writer = MemoryStore::open(&path)?;
+    writer.conn.execute_batch("BEGIN IMMEDIATE")?;
+    let started = std::time::Instant::now();
+    let found = memctrl::retriever::retrieve(&mut reader, "releases main", None, 5)?;
+    assert_eq!(found.facts.len(), 1);
+    let layers = vec!["project".to_string()];
+    let brief = memctrl::context::session_brief(&reader, &layers, 1500, &|_| None)?;
+    assert!(brief.markdown.contains("Releases are cut from main"));
+    let reopened = MemoryStore::open(&path)?;
+    drop(reopened);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "reads waited {:?} for the writer",
+        started.elapsed()
+    );
+    writer.conn.execute_batch("ROLLBACK")?;
+    Ok(())
+}
+
+/// `memctrl_tree` sounded read-only but rebuilt a 52 MB tree on every call and wiped every
+/// agent's cache. Reading is now read-only; a rebuild stores only layers and clusters.
+#[test]
+fn tree_tool_is_read_only_unless_rebuild_requested() -> anyhow::Result<()> {
+    let mut store = MemoryStore::open(":memory:")?;
+    let rules = Rules::default();
+    let id = store.insert_memory(NewMemory {
+        layer: "project".into(),
+        ..mem("We chose SQLx over Diesel for the database layer")
+    })?;
+    store.insert_memory(mem("Working on the login feature"))?;
+    let revision = store.revision()?;
+    let view = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    assert_eq!(store.revision()?, revision, "reading changes nothing");
+    assert!(view["note"].as_str().unwrap().contains("rebuild"));
+    let built = mcp::dispatch(
+        &mut store,
+        &rules,
+        "memctrl_tree",
+        &json!({"rebuild": true}),
+    )?;
+    assert!(built.to_string().contains(&id));
+    assert_eq!(built["stale"], false);
+    let (nodes, longest): (i64, i64) = store.conn.query_row(
+        "SELECT COUNT(*), MAX(length(summary)) FROM tree_nodes",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    assert!(nodes <= 1 + 7 * 2, "{nodes} nodes stored");
+    assert!(longest < 200, "no memory text in the stored tree");
+    store.forget_memory(&id)?;
+    let after: i64 = store
+        .conn
+        .query_row("SELECT COUNT(*) FROM tree_nodes", [], |r| r.get(0))?;
+    assert_eq!(after, nodes, "forget leaves the tree alone");
+    let view = mcp::dispatch(&mut store, &rules, "memctrl_tree", &json!({}))?;
+    assert_eq!(view["stale"], true);
     Ok(())
 }

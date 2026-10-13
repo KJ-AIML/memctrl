@@ -501,8 +501,14 @@ pub fn import_with(
     let mut seen_ids = HashSet::new();
     let mut capped = 0;
     let mut redacted = std::collections::BTreeSet::new();
+    let mut oversized = Vec::new();
     let mut plan = Vec::new();
     for entry in &entries {
+        // Too large to be a memory: skipped and reported, never cut or fatal to the import.
+        if entry.content.len() > crate::model::MAX_MEMORY_BYTES {
+            oversized.push(entry.line);
+            continue;
+        }
         let content = sanitize_text(&entry.content);
         if content != entry.content {
             redacted.extend(crate::sanitize::redactions(&entry.content));
@@ -719,7 +725,7 @@ pub fn import_with(
         "candidates": candidates,
         "unchanged": unchanged,
         "kept_local": kept_local,
-        "skipped": {"forgotten": forgotten, "duplicate_id": duplicate_ids, "duplicate_content": duplicate_content, "other_layers": other_layers},
+        "skipped": {"forgotten": forgotten, "duplicate_id": duplicate_ids, "duplicate_content": duplicate_content, "other_layers": other_layers, "oversized": oversized},
         "verification_capped": capped,
         "quarantined": quarantined,
         "dry_run": options.dry_run,

@@ -300,8 +300,14 @@ enum Command {
     },
     /// Supersede an old memory with its replacement.
     Supersede { old_id: String, new_id: String },
-    /// Build and display the memory tree.
+    /// Show the memory tree (layers, clusters, counts); --rebuild builds it again.
     Tree {
+        #[arg(long, help = "Build the tree again from the current memories")]
+        rebuild: bool,
+        #[arg(long)]
+        layer: Option<String>,
+        #[arg(long, default_value_t = 20, help = "Memory ids listed per cluster")]
+        limit: usize,
         #[command(flatten)]
         llm: LlmOptions,
     },
@@ -392,7 +398,13 @@ enum Command {
     /// Show operation telemetry statistics.
     OtelStats,
     /// Checkpoint SQLite WAL and report store statistics.
-    Maintenance,
+    Maintenance {
+        #[arg(
+            long,
+            help = "Also rewrite the database to reclaim free space (takes the write lock briefly)"
+        )]
+        vacuum: bool,
+    },
     /// Show store statistics.
     Stats,
     /// Start the official MCP SDK stdio server.
@@ -1040,13 +1052,21 @@ async fn execute(
             store.supersede_memory(old_id, new_id, json!({}))?;
             json!({"old_id":old_id,"new_id":new_id,"status":"superseded"})
         }
-        Command::Tree { llm } => {
-            let mut root = tree::build_tree(&store.list_memories(None, false)?);
-            if let Some(client) = llm.client()? {
-                root = client.summarize_tree(&root).await?;
+        Command::Tree {
+            rebuild,
+            layer,
+            limit,
+            llm,
+        } => {
+            validate_layer(layer.as_deref())?;
+            if *rebuild || llm.llm {
+                let mut root = tree::build_tree(&store.list_memories(None, false)?);
+                if let Some(client) = llm.client()? {
+                    root = client.summarize_tree(&root).await?;
+                }
+                store.store_tree(root)?;
             }
-            store.rebuild_tree(&root)?;
-            serde_json::to_value(root)?
+            store.tree_overview(layer.as_deref(), *limit)?
         }
         Command::Forget { memory_id } => {
             let memory_id = &require_memory(store, memory_id)?;
@@ -1121,6 +1141,8 @@ async fn execute(
             }
             report["stray_stores"] = json!(stray);
             report["config_warnings"] = json!(rules.warnings);
+            report["oversized_memories"] = json!(store.count_oversized()?);
+            report["reclaimable_bytes"] = json!(store.reclaimable_bytes()?);
             report["committed_database"] = json!(project::tracked_by_git(db));
             report["stale_memories"] = match project_root(rules) {
                 Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
@@ -1197,10 +1219,14 @@ async fn execute(
             json!({"output":output,"spans":spans.len(),"otlp":otlp})
         }
         Command::OtelStats => telemetry::stats(store)?,
-        Command::Maintenance => {
+        Command::Maintenance { vacuum } => {
             store.rebuild_search_index()?;
             store.checkpoint()?;
-            json!({"status":"checkpointed","stats":store.stats()?})
+            let mut report = json!({"status":"checkpointed","stats":store.stats()?});
+            if *vacuum {
+                report["reclaimed_bytes"] = json!(store.vacuum()?);
+            }
+            report
         }
         Command::Stats => store.stats()?,
         Command::Review {
@@ -1396,12 +1422,9 @@ async fn run(cli: Cli) -> Result<()> {
             | Command::Decay { dry_run: true, .. }
             | Command::Import { dry_run: true, .. }
     ) {
-        telemetry::record(
-            &mut store,
-            operation,
-            started.elapsed().as_secs_f64() * 1000.0,
-            json!({"interface":"cli"}),
-        )?;
+        // Best effort: a command whose result is ready never fails or waits on telemetry.
+        let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+        store.best_effort(|s| telemetry::record(s, operation, elapsed, json!({"interface":"cli"})));
     }
     let encoded = match (&cli.command, &result) {
         (Command::Context { format, .. }, Value::String(markdown)) => match format {
@@ -1454,7 +1477,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Spans { .. } => "spans",
         Command::OtelExport { .. } => "otel-export",
         Command::OtelStats => "otel-stats",
-        Command::Maintenance => "maintenance",
+        Command::Maintenance { .. } => "maintenance",
         Command::Stats => "stats",
         Command::Serve => "serve",
         Command::Review { .. } => "review",

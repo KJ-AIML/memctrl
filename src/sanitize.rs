@@ -101,39 +101,57 @@ fn redact_url_credentials(scheme: &str, rest: &str) -> Option<String> {
     Some(format!("{scheme}[REDACTED_CREDENTIAL]@{}", &rest[at + 1..]))
 }
 fn redact_contextual(text: &str) -> String {
-    let text = key_value().replace_all(text, |c: &regex::Captures<'_>| {
-        let (before, key, separator, value) = (&c[1], &c[2], &c[3], &c[4]);
-        let quoted = value.starts_with(['"', '\'']);
-        // "Session token: rotate weekly" is prose. A plain word, a colon and an ordinary word
-        // need a digit, a symbol or some length before they read as a credential.
-        let prose = separator.contains(':')
-            && !key.contains(['_', '.', '-'])
-            && key.chars().any(|ch| ch.is_ascii_lowercase())
-            && !quoted
-            && value.chars().count() < 12
-            && value.chars().all(|ch| ch.is_alphabetic());
-        if placeholder(value) || prose {
-            return c[0].to_string();
-        }
-        let label = sensitive_label(key).unwrap_or(
-            if key.to_ascii_lowercase().contains("pass")
-                || key.to_ascii_lowercase().ends_with("pwd")
-            {
-                "PASSWORD"
-            } else {
-                "SECRET"
-            },
-        );
-        format!("{before}{key}{separator}[REDACTED_{label}]")
-    });
+    // Every read re-sanitizes stored text, so skip each rule cheaply when the text can't
+    // contain what it looks for.
+    let has_separator = text.contains([':', '=']);
+    let text: std::borrow::Cow<'_, str> = if !has_separator {
+        text.into()
+    } else {
+        key_value().replace_all(text, |c: &regex::Captures<'_>| {
+            let (before, key, separator, value) = (&c[1], &c[2], &c[3], &c[4]);
+            let quoted = value.starts_with(['"', '\'']);
+            // "Session token: rotate weekly" is prose. A plain word, a colon and an ordinary word
+            // need a digit, a symbol or some length before they read as a credential.
+            let prose = separator.contains(':')
+                && !key.contains(['_', '.', '-'])
+                && key.chars().any(|ch| ch.is_ascii_lowercase())
+                && !quoted
+                && value.chars().count() < 12
+                && value.chars().all(|ch| ch.is_alphabetic());
+            if placeholder(value) || prose {
+                return c[0].to_string();
+            }
+            let label = sensitive_label(key).unwrap_or(
+                if key.to_ascii_lowercase().contains("pass")
+                    || key.to_ascii_lowercase().ends_with("pwd")
+                {
+                    "PASSWORD"
+                } else {
+                    "SECRET"
+                },
+            );
+            format!("{before}{key}{separator}[REDACTED_{label}]")
+        })
+    };
     let [header, bearer] = authorization();
-    let text = header.replace_all(&text, |c: &regex::Captures<'_>| {
-        if placeholder(&c[2]) {
-            c[0].to_string()
+    let text: std::borrow::Cow<'_, str> =
+        if has_separator && (text.contains("uthorization") || text.contains("UTHORIZATION")) {
+            header
+                .replace_all(&text, |c: &regex::Captures<'_>| {
+                    if placeholder(&c[2]) {
+                        c[0].to_string()
+                    } else {
+                        format!("{}[REDACTED_TOKEN]", &c[1])
+                    }
+                })
+                .into_owned()
+                .into()
         } else {
-            format!("{}[REDACTED_TOKEN]", &c[1])
-        }
-    });
+            text
+        };
+    if !(text.contains("earer") || text.contains("EARER") || text.contains("://")) {
+        return text.into_owned();
+    }
     let text = bearer.replace_all(&text, |c: &regex::Captures<'_>| {
         let value = &c[2];
         let long =
@@ -185,6 +203,9 @@ fn luhn(digits: &[u32]) -> bool {
 }
 fn redact_personal(text: &str) -> String {
     let [card, phone, international, national_id] = personal_data();
+    if text.bytes().filter(u8::is_ascii_digit).count() < 8 {
+        return text.to_string();
+    }
     let text = card.replace_all(text, |c: &regex::Captures<'_>| {
         let digits: Vec<u32> = c[0].chars().filter_map(|ch| ch.to_digit(10)).collect();
         if (15..=16).contains(&digits.len()) && luhn(&digits) {
@@ -205,6 +226,15 @@ fn redact_personal(text: &str) -> String {
     national_id
         .replace_all(&text, "[REDACTED_NATIONAL_ID]")
         .into_owned()
+}
+/// All fixed patterns at once: one scan finds which ones can match, so the rest are skipped.
+/// Every read re-sanitizes stored text, which made a pass per pattern the cost of a brief.
+fn pattern_set() -> &'static regex::RegexSet {
+    static SET: OnceLock<regex::RegexSet> = OnceLock::new();
+    SET.get_or_init(|| {
+        regex::RegexSet::new(patterns().iter().map(|(pattern, _)| pattern.as_str()))
+            .expect("static redaction regex set")
+    })
 }
 fn uuid_pattern() -> &'static Regex {
     static UUID: OnceLock<Regex> = OnceLock::new();
@@ -235,11 +265,17 @@ fn redact_raw(input: &str) -> String {
     }
     shielded.push_str(&input[last..]);
     let shielded = redact_personal(&redact_contextual(&shielded));
-    let redacted = patterns().iter().fold(shielded, |text, (pattern, label)| {
-        pattern
-            .replace_all(&text, format!("[REDACTED_{label}]"))
-            .into_owned()
-    });
+    let candidates = pattern_set().matches(&shielded);
+    let redacted = patterns()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| candidates.matched(*index))
+        .map(|(_, rule)| rule)
+        .fold(shielded, |text, (pattern, label)| {
+            pattern
+                .replace_all(&text, format!("[REDACTED_{label}]"))
+                .into_owned()
+        });
     uuids
         .iter()
         .enumerate()

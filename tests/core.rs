@@ -134,7 +134,7 @@ fn semantic_redaction_preserves_diagnostic_counts_and_git_revision_fields() {
     assert_ne!(value["client_secret"], "simple");
 }
 #[test]
-fn provenance_stores_source_memory_details() -> anyhow::Result<()> {
+fn provenance_stores_memory_ids_and_reasons_not_text() -> anyhow::Result<()> {
     let store = MemoryStore::open(":memory:")?;
     let id = store.insert_memory(mem("specific architecture fact"))?;
     let result = RetrievalResult {
@@ -151,8 +151,9 @@ fn provenance_stores_source_memory_details() -> anyhow::Result<()> {
     let source = &provenance[0]["sources"][0];
     assert_eq!(source["match_reason"], "keyword_tree");
     assert_eq!(source["memory_id"], id);
-    assert_eq!(source["source"], "manual");
-    assert_eq!(source["content"], "specific architecture fact");
+    // The text lives in the memory (`memctrl show`); copying it into every record grew
+    // databases by megabytes per query.
+    assert!(source.get("content").is_none() && source.get("source").is_none());
     assert_eq!(source["layer"], "session");
     assert_eq!(source["confidence"], 1.0);
     Ok(())

@@ -211,10 +211,20 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             json!({"status":"fired", "event":event, "affected":ids.len(), "memory_ids":ids})
         }
         "memctrl_tree" => {
-            let memories = store.list_memories(None, false)?;
-            let tree = crate::tree::build_tree(&memories);
-            store.rebuild_tree(&tree)?;
-            serde_json::to_value(tree)?
+            // Reading never writes; rebuilding is explicit and stores only the compact tree.
+            let layer = optional_string(args, "layer")?;
+            if let Some(l) = layer {
+                validate_identifier(l, "layer")?;
+            }
+            let count = match args.get("limit") {
+                None => 20,
+                Some(_) => limit(args)?,
+            };
+            if args.get("rebuild").and_then(Value::as_bool) == Some(true) {
+                let memories = store.list_memories(None, false)?;
+                store.store_tree(crate::tree::build_tree(&memories))?;
+            }
+            store.tree_overview(layer, count)?
         }
         "memctrl_audit" => json!({"logs":store.audit(limit(args)?)?}),
         "memctrl_candidates" => {
@@ -311,8 +321,8 @@ fn tools() -> Vec<Tool> {
         ),
         (
             "memctrl_tree",
-            "Get the full memory tree",
-            json!({}),
+            "Overview of the memory tree: layers, clusters, counts and sample ids. Read-only unless rebuild is true",
+            json!({"rebuild":{"type":"boolean"},"layer":{"type":"string"},"limit":{"type":"integer"}}),
             vec![],
         ),
         (

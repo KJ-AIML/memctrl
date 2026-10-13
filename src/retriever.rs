@@ -8,6 +8,7 @@ use crate::store::{AtomicWrite, MemoryStore};
 use anyhow::Result;
 use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 const STOP: &str = "the and for are but not you all can had her was one our out day get has him his how its may new now old see two who boy did she use way many oil sit set run eat far sea eye ago off too any say man try ask end why let put own tell very when much would there their what said each which will about could other after first never these think where being every great might shall still those while this that with have from they know want been good come made find give work life even here look down most long last only over such take than them well were time year also back just like into because people some make really thing things should through does doing done is be do must ought";
@@ -247,7 +248,51 @@ pub fn retrieve(
     retrieve_with(store, query, layer, top_k, &options)
 }
 
-/// Cached, writer-locked retrieval that records access and provenance.
+/// What the cache keeps: ids and explanations, never memory text. A hit re-reads the memories
+/// in the same snapshot, so it is small and can't serve text that changed.
+#[derive(Serialize, Deserialize)]
+struct Cached {
+    memory_ids: Vec<String>,
+    why: Vec<crate::model::Why>,
+    trace: Vec<String>,
+    confidence: f64,
+}
+impl Cached {
+    fn of(result: &RetrievalResult) -> Self {
+        Self {
+            memory_ids: result.memory_ids.clone(),
+            why: result.why.clone(),
+            trace: result.trace.clone(),
+            confidence: result.confidence,
+        }
+    }
+    /// The full result, or `None` when any memory is no longer eligible.
+    fn load(self, store: &MemoryStore) -> Result<Option<RetrievalResult>> {
+        let mut result = RetrievalResult {
+            memory_ids: self.memory_ids,
+            why: self.why,
+            trace: self.trace,
+            confidence: self.confidence,
+            ..Default::default()
+        };
+        for id in &result.memory_ids {
+            let Some(memory) = store.get_memory(id, false)? else {
+                return Ok(None);
+            };
+            result.facts.push(sanitize_text(&memory.content));
+            result.sources.push(sanitize_text(&memory.source));
+        }
+        Ok(Some(result))
+    }
+}
+
+/// Cache entries larger than this aren't stored (a `limit` of thousands of ids).
+const MAX_CACHED_BYTES: usize = 32 * 1024;
+
+/// Cached retrieval that records access and provenance. The search runs in a read snapshot,
+/// without the write lock; access counts, provenance and the cache entry are written afterwards
+/// as best-effort bookkeeping, skipped when another writer is busy or the database is read-only,
+/// so a query never waits on or fails for them.
 pub fn retrieve_with(
     store: &mut MemoryStore,
     query: &str,
@@ -259,50 +304,61 @@ pub fn retrieve_with(
         validate_identifier(layer, "layer")?;
     }
     let store: &MemoryStore = store;
-    under_writer_lock(store, || {
-        let revision = store.revision()?;
-        let mut eligible = store.eligible_ids(layer)?;
-        eligible.sort_unstable();
-        let eligible: Vec<&str> = eligible.iter().map(String::as_str).collect();
-        // Eligibility may change with time alone. Binding the eligible set prevents
-        // both stale inclusion and stale omission at validity/expiration boundaries.
-        // A fingerprint keeps the key small however large the store grows.
-        let key = serde_json::to_string(&(
-            RETRIEVAL_VERSION,
-            sanitize_text(query),
-            layer,
-            top_k,
-            eligible.len(),
-            fingerprint(&eligible),
-            options.fingerprint(),
-        ))?;
-        let timestamp = Utc::now().timestamp_millis() as f64 / 1000.0;
-        let cached: Option<String> = store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?;
-        let result = if let Some(cached) = cached {
-            serde_json::from_str(&cached)?
-        } else if eligible.is_empty() {
-            RetrievalResult {
-                trace: vec!["no_eligible_memories".into()],
-                ..Default::default()
-            }
-        } else {
-            lexical_retrieve(store, &sanitize_text(query), layer, top_k, options)?
-        };
+    let snapshot = crate::store::ReadSnapshot::new(&store.conn)?;
+    let revision = store.revision()?;
+    let mut eligible = store.eligible_ids(layer)?;
+    eligible.sort_unstable();
+    let eligible: Vec<&str> = eligible.iter().map(String::as_str).collect();
+    // Eligibility may change with time alone. Binding the eligible set prevents
+    // both stale inclusion and stale omission at validity/expiration boundaries.
+    // A fingerprint keeps the key small however large the store grows.
+    let key = serde_json::to_string(&(
+        RETRIEVAL_VERSION,
+        CACHE_FORMAT,
+        sanitize_text(query),
+        layer,
+        top_k,
+        eligible.len(),
+        fingerprint(&eligible),
+        options.fingerprint(),
+    ))?;
+    let timestamp = Utc::now().timestamp_millis() as f64 / 1000.0;
+    let cached: Option<String> = store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?;
+    let hit = match cached.map(|json| serde_json::from_str::<Cached>(&json)) {
+        Some(Ok(entry)) => entry.load(store)?,
+        _ => None,
+    };
+    let fresh = hit.is_none();
+    let result = match hit {
+        Some(result) => result,
+        None if eligible.is_empty() => RetrievalResult {
+            trace: vec!["no_eligible_memories".into()],
+            ..Default::default()
+        },
+        None => lexical_retrieve(store, &sanitize_text(query), layer, top_k, options)?,
+    };
+    let searched = eligible.len();
+    snapshot.finish()?;
+    store.side_write(|| {
         for id in &result.memory_ids {
             store.record_access(id)?;
         }
-        store.save_provenance(query, &result, eligible.len(), METHOD)?;
-        // Access columns are excluded from the revision triggers, and the writer lock
-        // proves no content changed, so tagging this revision is snapshot safe.
-        let after_access = store.revision()?;
-        store.conn.execute("INSERT INTO rust_query_cache(key,result_json,revision,cached_at) VALUES(?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET result_json=excluded.result_json,revision=excluded.revision,cached_at=excluded.cached_at", params![key, serde_json::to_string(&result)?, after_access, timestamp])?;
+        store.save_provenance(query, &result, searched, METHOD)?;
+        // Publish only if nothing changed since the snapshot; access columns don't bump the
+        // revision, so an unchanged revision proves the result still describes the store.
+        let current = store.revision()?;
+        let entry = serde_json::to_string(&Cached::of(&result))?;
+        if fresh && current == revision && entry.len() <= MAX_CACHED_BYTES {
+            store.conn.execute("INSERT INTO rust_query_cache(key,result_json,revision,cached_at) VALUES(?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET result_json=excluded.result_json,revision=excluded.revision,cached_at=excluded.cached_at", params![key, entry, current, timestamp])?;
+        }
         store.conn.execute(
             "DELETE FROM rust_query_cache WHERE revision<>?1 OR cached_at<?2",
-            params![after_access, timestamp - 300.0],
+            params![current, timestamp - 300.0],
         )?;
         store.conn.execute("DELETE FROM rust_query_cache WHERE key NOT IN (SELECT key FROM rust_query_cache ORDER BY cached_at DESC,key LIMIT 256)", [])?;
-        Ok(result)
-    })
+        Ok(())
+    });
+    Ok(result)
 }
 
 /// Publishes memories chosen by an LLM. The model ran on an earlier snapshot, so eligibility is
@@ -344,6 +400,9 @@ pub fn publish_selection(
 
 /// Part of every cache key: bump when scoring changes so upgrades never serve old results.
 const RETRIEVAL_VERSION: &str = "lexical-v1";
+/// Part of every cache key: what an entry holds (ids only). 2.1 entries held full results and
+/// never match these keys, in either direction.
+const CACHE_FORMAT: &str = "ids-v1";
 /// Provenance method recorded for `retrieve`.
 pub const METHOD: &str = "lexical_bm25";
 

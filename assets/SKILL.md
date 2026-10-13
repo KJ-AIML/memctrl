@@ -91,4 +91,4 @@ When memctrl runs as an MCP server (`memctrl serve`), the same operations are av
 - `memctrl_add(content, layer, source?, claim_type?, tags?, cite?)`
 - `memctrl_stale(layer?)`
 - `memctrl_candidates(layer?, limit?)` and `memctrl_review(id, action, reason?)`
-- `memctrl_trigger(event, context?)`, `memctrl_tree()` and `memctrl_audit(limit?)`
+- `memctrl_trigger(event, context?)`, `memctrl_tree(rebuild?, layer?, limit?)` (read-only unless `rebuild` is true) and `memctrl_audit(limit?)`

@@ -377,7 +377,7 @@ pub fn persist_proposals_with(
             }
             let mut lesson = NewMemory {
                 layer: "project".into(),
-                content: sanitize_text(&content),
+                content: crate::model::clip_to_limit(&sanitize_text(&content)),
                 source: "heli-distillation".into(),
                 confidence: 0.7,
                 tags: vec!["distilled".into(), "heli-history".into()],
