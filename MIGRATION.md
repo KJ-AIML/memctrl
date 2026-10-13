@@ -62,9 +62,11 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **`forget` is remembered.** It records a tombstone (id and content digest) so `import` can't bring the memory back. `clear` resets tombstones along with everything else.
 - **`memctrl init`** also writes `.memctrl/.gitignore`, so the database stays out of git when `.memctrl/memory.md` is committed. `memctrl maintenance` rebuilds the search indexes.
 
-## 2.1 → 2.1.1 (unreleased)
+## 2.1 → 2.2
 
-2.1.1 fixes the findings of a real-world review. No schema change: 2.0, 2.1 and 2.1.1 keep sharing one database. Entries are added here as each fix lands.
+2.2 fixes the findings of a real-world review of 2.1.0 (five testers, real use cases, every serious finding reproduced) and reworks team sharing. The schema stays at version 4, with additive columns and indexes only: 2.0, 2.1 and 2.2 keep sharing one database in both directions. Three groups of changes follow: trust and correctness, team sharing, then storage and search.
+
+### Trust and correctness
 
 - **Commands work from any subfolder.** memctrl walks up from the working directory to the nearest `.memoryrc` (stopping at the repository root, and never climbing into your home folder from below) and uses that project's rules and store. Without a `.memoryrc`, a store at the repository root or in the working directory is used, so projects set up without `init` keep working. `--rc` still names a rules file explicitly. The default `export --out` and `install --project` use the project folder too.
 - **Only `memctrl init` creates a store**, or a database path you name (`--db`, `MEMCTRL_DB_PATH`, `db_path`). Other commands fail with a hint instead of creating an empty store wherever they run; `context` stays silent. `init` keeps an existing `.memoryrc` (for example one a teammate committed) unless you pass `--force`, and it refuses inside another project.
@@ -90,7 +92,7 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Library:** `ImportOptions` replaces `default_layer` with `layers` and adds `accept`; `mirror::unmerged` lists entries an export would drop; `fsutil::confined_target` checks a path before reading it; `MemoryStore::insert_memory_as` requires canonical ids; `MemoryStore::accept_imported` promotes an import candidate.
 - **Library:** `memctrl::project` finds projects; `MemoryStore::resolve_id` resolves prefixes; `mcp::serve` takes the project folder; `Rules` has a `project_dir` field; `citations::root_for(&rules)` resolves the citation root with the project folder as a fallback.
 
-## Team sharing v2 (unreleased)
+### Team sharing
 
 `.memctrl/memory.md` moves to export format v2. memctrl now reads v1 and v2 and writes v2. Databases change only by three additive columns on `memory_tombstones`, so 2.0 and 2.1 can still open them.
 
@@ -102,9 +104,7 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Compatibility.** memctrl 2.1.0 can't read a v2 file ("not a memctrl export"), and a 2.1.0 `export` overwrites it, dropping its retraction records. Run `memctrl check --base origin/main` in CI to catch that; any teammate on this version restores the records with their next export. The first export after upgrading rewrites the file once, in the new order; commit that change on its own.
 - **Library:** `mirror::{render_merged, check, CheckReport, Retracted}`; `MemoryStore::{record_tombstone, tombstone_records}` and `store::Tombstone`.
 
-## 2.1.1 → 2.1.2 (unreleased)
-
-No schema change; 2.0, 2.1 and 2.1.x keep sharing one database.
+### Storage, reads and search
 
 - **Reads stop taking the write lock.** Opening a store checks its schema with a read and takes the write lock only when a migration is needed. Searches and the session brief read from a snapshot; access counts, provenance, cache entries and telemetry are written afterwards as best-effort bookkeeping with a 25 ms lock timeout, skipped when another process is writing. With a writer holding the lock, `context --format hook` on a 100k-memory store answers in under a second instead of failing after 30 seconds. Under heavy contention some access counts and provenance records are not recorded.
 - **The query log stays small.** Provenance records hold memory ids, scores and `why`, not memory text (`memctrl show <id>` has the text). The log keeps the newest 10,000 records and nothing older than 30 days, trimmed as new records are written. Logged queries are cut to 1,024 characters. The query cache stores ids and re-reads the memories, so 2.1 and 2.1.2 never read each other's cache entries.
