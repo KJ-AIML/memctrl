@@ -640,3 +640,21 @@ fn subfolders_use_the_project_store_and_config_and_never_create_one() {
         .collect();
     assert_eq!(listed, ["src/.memctrl/memories.db"]);
 }
+
+/// Accepting a disputed memory resolves the dispute (back to unverified, never supported), so
+/// it leaves "Check before trusting".
+#[test]
+fn accept_resolves_a_dispute() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let id = success(&dir, &["add", "CI runs on Node 20", "--layer", "project"])["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    success(&dir, &["dispute", &id]);
+    let accepted = success(&dir, &["accept", &id[..8]]);
+    assert_eq!(accepted["cleared"], "disputed");
+    let memory = &success(&dir, &["show", &id])["memory"];
+    assert_eq!(memory["verification_state"], "unverified");
+    assert_eq!(memory["lifecycle_state"], "accepted");
+}

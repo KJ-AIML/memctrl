@@ -395,7 +395,10 @@ enum Action {
         anchors: Vec<Anchor>,
     },
     /// An earlier import's candidate for this exact entry, accepted now.
-    Promote(String),
+    Promote {
+        id: String,
+        content: String,
+    },
     Unchanged,
     KeptLocal,
     Skipped(Skip),
@@ -425,6 +428,19 @@ pub fn import(
     text: &str,
     options: &ImportOptions,
     policy: &Policy,
+) -> Result<Value> {
+    import_with(store, text, options, policy, &mut |_| Ok(true))
+}
+
+/// `import`, asking `approve` before anything is accepted. With `accept`, it receives the text
+/// of every entry the import would accept (after planning, before writing); returning false
+/// cancels the import and changes nothing.
+pub fn import_with(
+    store: &MemoryStore,
+    text: &str,
+    options: &ImportOptions,
+    policy: &Policy,
+    approve: &mut dyn FnMut(&[String]) -> Result<bool>,
 ) -> Result<Value> {
     ensure!(
         !options.layers.is_empty(),
@@ -540,7 +556,10 @@ pub fn import(
                         Action::KeptLocal
                     } else if options.accept && promotable(&local) {
                         pending.remove(&content);
-                        Action::Promote(id)
+                        Action::Promote {
+                            id,
+                            content: content.clone(),
+                        }
                     } else {
                         Action::Unchanged
                     }
@@ -566,7 +585,10 @@ pub fn import(
                 }
             }
             None if blocked => match options.accept.then(|| pending.remove(&content)) {
-                Some(Some(id)) => Action::Promote(id),
+                Some(Some(id)) => Action::Promote {
+                    id,
+                    content: content.clone(),
+                },
                 _ => Action::Unchanged,
             },
             None => Action::Candidate {
@@ -592,6 +614,23 @@ pub fn import(
         }
         plan.push((entry.line, action));
     }
+    if options.accept {
+        let accepting: Vec<String> = plan
+            .iter()
+            .filter_map(|(_, action)| match action {
+                Action::Keep { memory, .. } | Action::Candidate { memory, .. }
+                    if memory.lifecycle_state == LifecycleState::Accepted =>
+                {
+                    Some(memory.content.clone())
+                }
+                Action::Promote { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect();
+        if !accepting.is_empty() && !approve(&accepting)? {
+            bail!("import cancelled; nothing was changed");
+        }
+    }
     let (mut imported, mut candidates, mut quarantined) = (Vec::new(), Vec::new(), 0);
     let (mut unchanged, mut kept_local) = (0, 0);
     let (mut forgotten, mut duplicate_ids, mut duplicate_content, mut other_layers) = (0, 0, 0, 0);
@@ -604,7 +643,7 @@ pub fn import(
             Action::Skipped(Skip::DuplicateId) => duplicate_ids += 1,
             Action::Skipped(Skip::DuplicateContent) => duplicate_content += 1,
             Action::Skipped(Skip::Layer) => other_layers += 1,
-            Action::Promote(id) => {
+            Action::Promote { id, .. } => {
                 store.accept_imported(&id).map_err(context)?;
                 imported.push(id);
             }

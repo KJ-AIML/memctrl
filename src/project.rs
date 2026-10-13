@@ -68,6 +68,33 @@ pub fn locate(cwd: &Path, home: Option<&Path>) -> Project {
     }
 }
 
+/// True when git tracks `db`. A committed database holds whatever anyone with push access wrote,
+/// already accepted, and the write guard never saw it; memory is shared through memory.md
+/// instead, where every entry is reviewed on import.
+pub fn tracked_by_git(db: &Path) -> bool {
+    let (Some(dir), Some(name)) = (db.parent(), db.file_name()) else {
+        return false;
+    };
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    let in_repository = dir
+        .canonicalize()
+        .is_ok_and(|d| d.ancestors().any(|a| a.join(".git").exists()));
+    in_repository
+        && std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["ls-files", "--error-unmatch", "--"])
+            .arg(name)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+}
+
 /// `locate` from the process's working directory and home.
 pub fn locate_here() -> std::io::Result<Project> {
     let cwd = std::env::current_dir()?;

@@ -7,7 +7,8 @@ use memctrl::{
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     project::{self, Project},
     reflection, retriever,
-    rules::{Rules, DEFAULT_RULES},
+    review::{self, Release},
+    rules::{Rules, UserConfig, DEFAULT_RULES},
     sanitize::{sanitize_text, sanitize_value, validate_identifier},
     store::MemoryStore,
     telemetry, tree,
@@ -523,6 +524,12 @@ fn confinement(path: &Path, rules: &Rules) -> Result<Option<PathBuf>> {
         None
     })
 }
+/// True when a person can answer a prompt: stdin and stderr are both a terminal. An agent's
+/// shell tool, a pipe or a script has no terminal.
+fn at_terminal() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
+}
 /// A path as the user would type it: relative to the working directory when it is inside it.
 fn shown(path: &Path) -> String {
     std::env::current_dir()
@@ -669,6 +676,7 @@ async fn execute(
         } => {
             validate_layer(Some(layer))?;
             validate_identifier(source, "source")?;
+            review::check_tags(tags)?;
             ensure!(
                 cite.is_empty() || !llm.llm,
                 "--cite applies to one memory; add cited memories without --llm"
@@ -848,7 +856,44 @@ async fn execute(
                 trust_verification: *trust_verification,
                 accept: *accept,
             };
-            let mut report = mirror::import(store, &text, &options, &rules.guard)?;
+            let mut report = if options.accept && !options.dry_run {
+                // Accepting is the person's review step: plan without holding the lock while
+                // asking, then import only what was confirmed.
+                let mut accepting = Vec::new();
+                let preview = mirror::ImportOptions {
+                    dry_run: true,
+                    ..options.clone()
+                };
+                mirror::import_with(store, &text, &preview, &rules.guard, &mut |entries| {
+                    accepting = entries.to_vec();
+                    Ok(true)
+                })?;
+                if !accepting.is_empty() {
+                    ensure!(
+                        at_terminal(),
+                        "import --accept would accept {} entries, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review",
+                        accepting.len()
+                    );
+                    ensure!(
+                        review::confirm_import(
+                            &shown(file),
+                            &accepting,
+                            &mut std::io::stdin().lock(),
+                            &mut std::io::stderr()
+                        )?,
+                        "import cancelled; nothing was changed"
+                    );
+                }
+                mirror::import_with(store, &text, &options, &rules.guard, &mut |entries| {
+                    ensure!(
+                        entries.iter().all(|e| accepting.contains(e)),
+                        "the store or the file changed while you were confirming; run the import again"
+                    );
+                    Ok(true)
+                })?
+            } else {
+                mirror::import(store, &text, &options, &rules.guard)?
+            };
             report["file"] = json!(file);
             report
         }
@@ -912,12 +957,31 @@ async fn execute(
             };
             json!({"memory":store.get_memory(memory_id,true)?,"relations":store.relations(memory_id)?,"evidence":store.evidence(memory_id)?,"citations":cited})
         }
-        Command::Accept { memory_id } => mcp::dispatch(
-            store,
-            rules,
-            "memctrl_review",
-            &json!({"id":memory_id,"action":"accept"}),
-        )?,
+        Command::Accept { memory_id } => {
+            let id = require_memory(store, memory_id)?;
+            let memory = store.get_memory(&id, true)?.context("memory not found")?;
+            let release = if review::held_for_review(&memory).is_empty() {
+                Release::Refuse
+            } else {
+                // Held by the guard or an import: only a person at a terminal releases it.
+                ensure!(
+                    at_terminal(),
+                    "{} is held for review; only a person can release it: run `memctrl accept {}` yourself in a terminal",
+                    &id[..8.min(id.len())],
+                    &id[..8.min(id.len())]
+                );
+                ensure!(
+                    review::confirm(
+                        &memory,
+                        &mut std::io::stdin().lock(),
+                        &mut std::io::stderr()
+                    )?,
+                    "cancelled; it is still a candidate"
+                );
+                Release::Confirmed
+            };
+            review::accept(store, &id, release)?
+        }
         Command::Reject { memory_id, reason } => {
             let mut args = json!({"id":memory_id,"action":"reject"});
             if let Some(reason) = reason {
@@ -1030,6 +1094,8 @@ async fn execute(
                 report["stray_stores_note"] = json!("stores an earlier memctrl created in subfolders; this project no longer reads them. To keep their memories: memctrl --db <stray> export --out stray.md --layer project --layer user, then memctrl import stray.md");
             }
             report["stray_stores"] = json!(stray);
+            report["config_warnings"] = json!(rules.warnings);
+            report["committed_database"] = json!(project::tracked_by_git(db));
             report["stale_memories"] = match project_root(rules) {
                 Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
                     .as_array()
@@ -1156,12 +1222,16 @@ async fn execute(
 }
 async fn run(cli: Cli) -> Result<()> {
     let project = project(&cli)?;
+    let user = UserConfig::load()?;
     // Init must be able to replace malformed rules explicitly; every other command fails closed.
     // Init without --force keeps an existing rules file, so its db_path still applies.
     let mut rules = match &cli.command {
         Command::Init { force } if *force || !project.rc.exists() => Rules::default(),
-        _ => Rules::load(&project.rc)?,
+        _ => Rules::load_with(&project.rc, &user)?,
     };
+    for warning in &rules.warnings {
+        eprintln!("{}", json!({"warning": sanitize_text(warning)}));
+    }
     rules.project_dir = Some(project.dir.clone());
     let (db, named) = database(&cli, &rules, &project);
     // Evaluation runs on an in-memory store and never opens or creates the real database.
@@ -1251,6 +1321,28 @@ async fn run(cli: Cli) -> Result<()> {
             std::env::current_dir()?.display(),
             project.searched_to.display()
         );
+    }
+    // A database committed to git is never loaded into a session or searched for an agent.
+    if db.exists()
+        && !matches!(
+            &cli.command,
+            Command::Init { .. } | Command::Doctor { .. } | Command::Stats
+        )
+        && project::tracked_by_git(&db)
+        && !user.trusts(&db)
+    {
+        let message = format!(
+            "{} is committed to git, so anyone with push access could have written its memories; memctrl won't load it. Run `git rm --cached {}` and share memory through memory.md (export/import), or list this repository under [trust] repos in {}",
+            shown(&db),
+            shown(&db),
+            user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
+        );
+        if matches!(&cli.command, Command::Context { write: None, .. }) {
+            // The session-start hook stays silent rather than failing every session.
+            eprintln!("{}", json!({"warning": sanitize_text(&message)}));
+            return Ok(());
+        }
+        bail!(message);
     }
     if let Some(parent) = db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;

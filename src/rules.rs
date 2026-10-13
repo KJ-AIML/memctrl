@@ -8,7 +8,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_RULES: &str = r#"[layers]
 project = "architecture decisions, tech stack, ADRs, why we chose X"
@@ -69,6 +69,9 @@ pub struct Rules {
     /// The project folder the command runs in (set by the caller, never read from the file).
     #[serde(skip)]
     pub project_dir: Option<std::path::PathBuf>,
+    /// Settings from the rules file that were ignored because they would loosen defenses.
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 impl Default for Rules {
@@ -129,22 +132,270 @@ impl Default for Rules {
             citations_root: None,
             guard: crate::guard::Policy::default(),
             project_dir: None,
+            warnings: Vec::new(),
         }
     }
 }
 
-impl Rules {
-    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
+/// Settings only you make, in `$XDG_CONFIG_HOME/memctrl/config.toml` or
+/// `~/.config/memctrl/config.toml` (`%APPDATA%\memctrl\config.toml` on Windows). A repository's
+/// `.memoryrc` arrives with every clone, so it can only tighten what this file allows:
+///
+/// ```toml
+/// [guard]
+/// mode = "flag"                      # the least protective mode a repository may use
+/// trusted_sources = ["manual", "user", "cli"]
+/// [trust]
+/// repos = ["~/code/my-team-repo"]    # repositories whose .memoryrc applies in full
+/// ```
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct UserConfig {
+    pub guard_mode: Option<crate::guard::Mode>,
+    pub trusted_sources: Option<Vec<String>>,
+    /// Repository roots whose `.memoryrc` (and committed database) are trusted, resolved.
+    pub trusted_repos: Vec<PathBuf>,
+    /// Where the file is (or would be).
+    pub path: Option<PathBuf>,
+}
+
+impl UserConfig {
+    pub fn default_path() -> Option<PathBuf> {
+        let dir = if cfg!(windows) {
+            std::env::var_os("APPDATA").map(PathBuf::from)
+        } else {
+            std::env::var_os("XDG_CONFIG_HOME")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        };
+        dir.map(|dir| dir.join("memctrl").join("config.toml"))
+    }
+
+    /// Your config, or defaults when there is none. An invalid file is an error.
+    pub fn load() -> Result<Self> {
+        match Self::default_path() {
+            Some(path) => Self::load_from(&path),
+            None => Ok(Self::default()),
+        }
+    }
+
+    pub fn load_from(path: &Path) -> Result<Self> {
+        let mut config = Self {
+            path: Some(path.to_path_buf()),
+            ..Self::default()
+        };
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(Self::default())
-            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(config),
             Err(error) => return Err(error.into()),
         };
-        let raw: toml::Value = toml::from_str(&text).context("invalid .memoryrc TOML")?;
-        let mut rules = Self::default();
+        let raw: toml::Value =
+            toml::from_str(&text).with_context(|| format!("invalid TOML in {}", path.display()))?;
+        if let Some(guard) = raw.get("guard") {
+            let guard = guard.as_table().context("guard must be a table")?;
+            if let Some(mode) = guard.get("mode") {
+                config.guard_mode = Some(parse_mode(mode)?);
+            }
+            if let Some(sources) = guard.get("trusted_sources") {
+                config.trusted_sources = Some(parse_sources(sources)?);
+            }
+        }
+        if let Some(repos) = raw.get("trust").and_then(|t| t.get("repos")) {
+            let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+            for repo in repos
+                .as_array()
+                .context("trust.repos must be an array of paths")?
+            {
+                let repo = repo
+                    .as_str()
+                    .context("trust.repos entries must be strings")?;
+                let repo = match (repo.strip_prefix("~/"), &home) {
+                    (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+                    _ => PathBuf::from(repo),
+                };
+                if !repo.is_absolute() {
+                    bail!(
+                        "trust.repos entries must be absolute paths: {}",
+                        repo.display()
+                    );
+                }
+                config
+                    .trusted_repos
+                    .push(repo.canonicalize().unwrap_or(repo));
+            }
+        }
+        Ok(config)
+    }
+
+    /// True when the repository that holds `path` is listed under `[trust] repos`.
+    pub fn trusts(&self, path: &Path) -> bool {
+        !self.trusted_repos.is_empty() && self.trusted_repos.contains(&repository_root(path))
+    }
+
+    fn describe(&self) -> String {
+        self.path
+            .as_ref()
+            .map_or("your user config".into(), |p| p.display().to_string())
+    }
+}
+
+/// The repository a file belongs to: the nearest ancestor of its folder containing `.git`, else
+/// the folder itself. Resolved, so it compares with `[trust] repos`.
+pub fn repository_root(path: &Path) -> PathBuf {
+    let dir = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    dir.ancestors()
+        .find(|d| d.join(".git").exists())
+        .map_or(dir.clone(), Path::to_path_buf)
+}
+
+fn parse_mode(value: &toml::Value) -> Result<crate::guard::Mode> {
+    Ok(
+        match value.as_str().context("guard.mode must be a string")? {
+            "off" => crate::guard::Mode::Off,
+            "flag" => crate::guard::Mode::Flag,
+            "strict" => crate::guard::Mode::Strict,
+            _ => bail!("guard.mode must be \"off\", \"flag\" or \"strict\""),
+        },
+    )
+}
+
+fn parse_sources(value: &toml::Value) -> Result<Vec<String>> {
+    value
+        .as_array()
+        .context("guard.trusted_sources must be an array of strings")?
+        .iter()
+        .map(|v| {
+            let source = v
+                .as_str()
+                .context("guard.trusted_sources entries must be strings")?;
+            validate_identifier(source, "trusted source")?;
+            Ok(source.to_string())
+        })
+        .collect()
+}
+
+/// A consolidation trigger that moves memories out of `user`, which holds personal notes and is
+/// never exported, into a layer that is.
+fn moves_personal_notes(action: &str) -> bool {
+    let pattern = Regex::new(r"(?i)^\s*(?:consolidate|summarize)\s+(\w+)\s*-+>\s*(\w+)\s*$")
+        .expect("valid regex");
+    pattern
+        .captures(action)
+        .is_some_and(|c| c[1].eq_ignore_ascii_case("user") && !c[2].eq_ignore_ascii_case("user"))
+}
+
+impl Rules {
+    /// Loads a rules file under your user config (see `UserConfig`).
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        Self::load_with(path, &UserConfig::load()?)
+    }
+
+    /// Loads a rules file. Unless `user` trusts its repository, settings that would loosen
+    /// defenses are ignored and recorded in `warnings`.
+    pub fn load_with(path: impl AsRef<Path>, user: &UserConfig) -> Result<Self> {
+        let path = path.as_ref();
+        let mut base = Self::default();
+        if let Some(mode) = user.guard_mode {
+            base.guard.mode = mode;
+        }
+        if let Some(sources) = &user.trusted_sources {
+            base.guard.trusted_sources = sources.clone();
+        }
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(base),
+            Err(error) => return Err(error.into()),
+        };
+        let mut rules = Self::parse(path, &text, base.clone())?;
+        if !user.trusts(path) {
+            rules.only_tighten(&base, path, user);
+        }
+        Ok(rules)
+    }
+
+    /// A repository's rules may only tighten `base`: the guard stays at least as strict,
+    /// trusted sources only narrow, `forget.never` only grows, paths stay inside the
+    /// repository, and no trigger moves personal notes into a shared layer.
+    fn only_tighten(&mut self, base: &Rules, path: &Path, user: &UserConfig) {
+        let mut ignored = Vec::new();
+        if self.guard.mode < base.guard.mode {
+            ignored.push(format!("[guard] mode = {:?}", self.guard.mode));
+            self.guard.mode = base.guard.mode;
+        }
+        let extra: Vec<String> = self
+            .guard
+            .trusted_sources
+            .iter()
+            .filter(|s| !base.guard.trusted_sources.contains(s))
+            .cloned()
+            .collect();
+        if !extra.is_empty() {
+            ignored.push(format!("[guard] trusted_sources {extra:?}"));
+            self.guard
+                .trusted_sources
+                .retain(|s| base.guard.trusted_sources.contains(s));
+        }
+        let missing: Vec<String> = base
+            .forget_never
+            .iter()
+            .filter(|w| !self.forget_never.contains(w))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            ignored.push(format!("removing {missing:?} from [forget] never"));
+            self.forget_never.extend(missing);
+        }
+        let repo = repository_root(path);
+        if let Some(root) = &self.citations_root {
+            if root.canonicalize().is_ok_and(|r| !r.starts_with(&repo)) {
+                ignored.push(format!(
+                    "[citations] root = {:?} (outside the repository)",
+                    root
+                ));
+                self.citations_root = None;
+            }
+        }
+        if let Some(db) = &self.db_path {
+            let db_path = Path::new(db);
+            if db_path.is_absolute()
+                || db_path
+                    .components()
+                    .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+            {
+                ignored.push(format!(
+                    "[memctrl] db_path = {db:?} (outside the repository)"
+                ));
+                self.db_path = None;
+            }
+        }
+        let leaks: Vec<String> = self
+            .triggers
+            .iter()
+            .filter(|(_, action)| moves_personal_notes(action))
+            .map(|(key, _)| key.clone())
+            .collect();
+        for key in leaks {
+            ignored.push(format!(
+                "[triggers] {key} (it moves personal user-layer notes into a shared layer)"
+            ));
+            self.triggers.remove(&key);
+        }
+        for setting in ignored {
+            self.warnings.push(format!(
+                "ignored {setting} from {}: a repository's .memoryrc can only tighten memctrl's defenses. To allow it, set it in {}, or list this repository under [trust] repos there",
+                path.display(),
+                user.describe()
+            ));
+        }
+    }
+
+    fn parse(path: &Path, text: &str, base: Rules) -> Result<Self> {
+        let raw: toml::Value = toml::from_str(text).context("invalid .memoryrc TOML")?;
+        let mut rules = base;
         if let Some(layers) = raw.get("layers") {
             for (key, value) in layers.as_table().context("layers must be a table")? {
                 validate_identifier(key, "layer")?;
@@ -277,26 +528,10 @@ impl Rules {
         if let Some(guard) = raw.get("guard") {
             let guard = guard.as_table().context("guard must be a table")?;
             if let Some(mode) = guard.get("mode") {
-                rules.guard.mode = match mode.as_str().context("guard.mode must be a string")? {
-                    "off" => crate::guard::Mode::Off,
-                    "flag" => crate::guard::Mode::Flag,
-                    "strict" => crate::guard::Mode::Strict,
-                    _ => bail!("guard.mode must be \"off\", \"flag\" or \"strict\""),
-                };
+                rules.guard.mode = parse_mode(mode)?;
             }
             if let Some(sources) = guard.get("trusted_sources") {
-                rules.guard.trusted_sources = sources
-                    .as_array()
-                    .context("guard.trusted_sources must be an array of strings")?
-                    .iter()
-                    .map(|v| {
-                        let source = v
-                            .as_str()
-                            .context("guard.trusted_sources entries must be strings")?;
-                        validate_identifier(source, "trusted source")?;
-                        Ok(source.to_string())
-                    })
-                    .collect::<Result<_>>()?;
+                rules.guard.trusted_sources = parse_sources(sources)?;
             }
         }
         if let Some(root) = raw.get("citations").and_then(|v| v.get("root")) {

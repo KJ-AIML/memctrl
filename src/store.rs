@@ -468,6 +468,39 @@ CREATE INDEX IF NOT EXISTS idx_citations_memory ON memory_citations(memory_id);"
             )? > 0)
         })
     }
+    /// Accepts a memory: a candidate becomes active and a dispute is resolved back to
+    /// `unverified` (never `supported`: accepting is not evidence). An import's `import:new` tag
+    /// is dropped so the next export renders the entry unchanged. True when a dispute was cleared.
+    pub fn accept_memory(&self, id: &str) -> Result<bool> {
+        self.atomic(|| {
+            let memory = self.get_memory(id, true)?.context("memory not found")?;
+            if memory.verification_state == VerificationState::Refuted {
+                bail!("refuted memory cannot be accepted")
+            }
+            let disputed = memory.verification_state == VerificationState::Disputed;
+            let verification = if disputed {
+                VerificationState::Unverified
+            } else {
+                memory.verification_state
+            };
+            let tags: Vec<String> = memory
+                .tags
+                .into_iter()
+                .filter(|t| t != "import:new")
+                .collect();
+            self.conn.execute(
+                "UPDATE memories SET lifecycle_state=?,verification_state=?,tags=?,updated_at=? WHERE id=?",
+                params![
+                    LifecycleState::Accepted.to_string(),
+                    verification.to_string(),
+                    serde_json::to_string(&tags)?,
+                    now(),
+                    id
+                ],
+            )?;
+            Ok(disputed)
+        })
+    }
     /// Accepts a candidate that an import created from an entry the person has now reviewed,
     /// dropping its `import:new` tag so the next export renders the entry exactly as before.
     pub fn accept_imported(&self, id: &str) -> Result<bool> {
