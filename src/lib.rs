@@ -16,6 +16,7 @@ pub mod model;
 pub mod project;
 pub mod reflection;
 pub mod retriever;
+pub mod review;
 pub mod rules;
 pub mod sanitize;
 pub mod search;

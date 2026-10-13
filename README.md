@@ -101,7 +101,9 @@ Windows: download `memctrl-x86_64-pc-windows-msvc.zip` from [Releases](https://g
 > [!WARNING]
 > **Known issues in 2.1.0.** A real-world review found these; fixes are in progress for 2.1.1.
 > - **Team sharing is experimental until 2.2.** An entry in `.memctrl/memory.md` that carries metadata imports as accepted, so read memory.md changes in pull requests like code. `refute`, `supersede` and `forget` don't reach teammates, and `export` rewrites the file from your store: run `import` before `export`.
-> - **Review candidates yourself.** An agent can accept its own quarantined memory with `memctrl accept`. Don't let it.
+> - **Review candidates yourself.** An agent can accept its own quarantined memory with `memctrl accept`. In Claude Code, add `"Bash(memctrl accept:*)"` and `"Bash(memctrl import --accept:*)"` to `permissions.deny` in your settings.
+> - **Don't commit `.memctrl/memories.db`.** A committed database is loaded as-is in every clone, already accepted. Share memory through `memory.md`.
+> - **A cloned repository's `.memoryrc` is trusted in full.** It can switch the guard off (`[guard] mode = "off"`) or point `db_path` and `[citations] root` outside the repository. Check it before running memctrl in a repository you don't control.
 > - **Run memctrl from the project root.** In a subfolder, 2.1.0 creates a separate, empty store.
 > - **After `refresh`, check the citation** with `memctrl show <id>`: if the code moved and changed, it can be re-anchored at the old line numbers.
 > - **Keep secrets out of memory.** Keys with a prefix (`DB_PASSWORD=…`, `STRIPE_API_KEY=…`) and several vendor token formats are not redacted.

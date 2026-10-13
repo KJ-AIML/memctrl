@@ -33,7 +33,8 @@ impl Flag {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered from least to most protective, so settings can be compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
     /// No inspection.
@@ -134,6 +135,20 @@ fn patterns() -> &'static [(Regex, &'static str)] {
 
 fn codepoint(c: char) -> String {
     format!("U+{:04X}", c as u32)
+}
+
+/// The text with every invisible, control or formatting character spelled out as `<U+XXXX>`,
+/// so a person reviewing it sees what an agent would read.
+pub fn reveal(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if default_ignorable(c) || (c.is_control() && c != '\n' && c != '\t') {
+                format!("<{}>", codepoint(c))
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// Unicode Default_Ignorable_Code_Point: characters that render as nothing.

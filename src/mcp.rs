@@ -119,6 +119,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                 None => ClaimType::default(),
             };
             let tags = strings(args, "tags")?;
+            crate::review::check_tags(&tags)?;
             let specs = strings(args, "cite")?;
             let mut memory = NewMemory {
                 content: content.into(),
@@ -238,7 +239,12 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
                         memory.verification_state != VerificationState::Refuted,
                         "cannot accept refuted memory"
                     );
-                    store.update_lifecycle(id, LifecycleState::Accepted)?;
+                    // An agent never releases what the guard or an import held for review.
+                    return Ok(sanitize_value(&crate::review::accept(
+                        store,
+                        id,
+                        crate::review::Release::Refuse,
+                    )?));
                 }
                 "reject" => {
                     store.update_lifecycle(id, LifecycleState::Rejected)?;
