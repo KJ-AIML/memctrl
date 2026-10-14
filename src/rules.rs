@@ -79,6 +79,9 @@ pub struct Rules {
     /// Settings from the rules file that were ignored because they would loosen defenses.
     #[serde(skip)]
     pub warnings: Vec<String>,
+    /// Semantic search from your user config's `[semantic]` (never from `.memoryrc`).
+    #[serde(skip)]
+    pub semantic: Option<crate::semantic::Engine>,
 }
 
 impl Default for Rules {
@@ -142,6 +145,7 @@ impl Default for Rules {
             guard: crate::guard::Policy::default(),
             project_dir: None,
             warnings: Vec::new(),
+            semantic: None,
         }
     }
 }
@@ -156,6 +160,8 @@ impl Default for Rules {
 /// trusted_sources = ["manual", "user", "cli"]
 /// [trust]
 /// repos = ["~/code/my-team-repo"]    # repositories whose .memoryrc applies in full
+/// [semantic]
+/// model = "embeddinggemma"           # optional semantic search (see `semantic::Settings`)
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UserConfig {
@@ -163,6 +169,8 @@ pub struct UserConfig {
     pub trusted_sources: Option<Vec<String>>,
     /// Repository roots whose `.memoryrc` (and committed database) are trusted, resolved.
     pub trusted_repos: Vec<PathBuf>,
+    /// `[semantic]`: only you can turn on sending memory text to an embedding model.
+    pub semantic: Option<crate::semantic::Settings>,
     /// Where the file is (or would be).
     pub path: Option<PathBuf>,
 }
@@ -232,6 +240,10 @@ impl UserConfig {
                     .trusted_repos
                     .push(repo.canonicalize().unwrap_or(repo));
             }
+        }
+        if let Some(semantic) = raw.get("semantic") {
+            config.semantic = crate::semantic::Settings::parse(semantic)
+                .with_context(|| format!("invalid [semantic] in {}", path.display()))?;
         }
         Ok(config)
     }
@@ -317,6 +329,15 @@ impl Rules {
         }
         if let Some(sources) = &user.trusted_sources {
             base.guard.trusted_sources = sources.clone();
+        }
+        let off = std::env::var("MEMCTRL_SEMANTIC").is_ok_and(|v| v.eq_ignore_ascii_case("off"));
+        if let Some(settings) = user.semantic.as_ref().filter(|_| !off) {
+            match crate::semantic::Engine::new(settings) {
+                Ok(engine) => base.semantic = Some(engine),
+                Err(error) => base
+                    .warnings
+                    .push(format!("semantic search is off: {error:#}")),
+            }
         }
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
@@ -416,6 +437,14 @@ impl Rules {
     fn parse(path: &Path, text: &str, base: Rules) -> Result<Self> {
         let raw: toml::Value = toml::from_str(text).context("invalid .memoryrc TOML")?;
         let mut rules = base;
+        if raw.get("semantic").is_some() {
+            rules.warnings.push(format!(
+                "ignored [semantic] in {}: semantic search sends memory text and prompts to a model server, so only your user config ({}) can turn it on",
+                path.display(),
+                UserConfig::default_path()
+                    .map_or("~/.config/memctrl/config.toml".into(), |p| p.display().to_string())
+            ));
+        }
         if let Some(layers) = raw.get("layers") {
             for (key, value) in layers.as_table().context("layers must be a table")? {
                 validate_identifier(key, "layer")?;

@@ -21,6 +21,7 @@ pub mod review;
 pub mod rules;
 pub mod sanitize;
 pub mod search;
+pub mod semantic;
 pub mod span;
 pub mod store;
 pub mod telemetry;

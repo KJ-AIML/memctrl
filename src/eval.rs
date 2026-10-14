@@ -4,7 +4,7 @@
 //! context, and latency.
 use crate::context::{approx_tokens, build};
 use crate::model::{ClaimType, NewMemory, VerificationState};
-use crate::retriever::{keyword_retrieve, lexical_retrieve, SearchOptions};
+use crate::retriever::{hybrid_retrieve, keyword_retrieve, lexical_retrieve, SearchOptions};
 use crate::store::MemoryStore;
 use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
@@ -58,12 +58,18 @@ pub enum Retriever {
     Lexical,
     /// The 1.x keyword scorer, as a baseline.
     Legacy,
+    /// Lexical fused with matches by meaning (what `query` uses when `[semantic]` is on).
+    Semantic,
+    /// What the prompt hook would add for each query (with semantic search when it's on).
+    Recall,
 }
 impl Retriever {
     fn name(self) -> &'static str {
         match self {
             Self::Lexical => "lexical",
             Self::Legacy => "legacy",
+            Self::Semantic => "semantic",
+            Self::Recall => "recall",
         }
     }
 }
@@ -178,6 +184,25 @@ pub fn run(
     }
     let memories = store.list_memories(None, false)?;
     let tree = crate::tree::build_tree(&memories);
+    let engine = if retrievers.contains(&Retriever::Semantic) {
+        Some(options.semantic.as_ref().context(
+            "the semantic retriever needs semantic search; add [semantic] to your user config",
+        )?)
+    } else {
+        None
+    };
+    if let Some(engine) = engine.or(options
+        .semantic
+        .as_ref()
+        .filter(|_| retrievers.contains(&Retriever::Recall)))
+    {
+        engine.index(&store, None)?;
+    }
+    let mut layers: Vec<String> = suite.memories.iter().map(|m| m.layer.clone()).collect();
+    layers.sort();
+    layers.dedup();
+    let policy = crate::guard::Policy::default();
+    let shown = std::collections::HashSet::new();
     let mut results = serde_json::Map::new();
     for &retriever in retrievers {
         let mut total = Tally::default();
@@ -189,6 +214,31 @@ pub fn run(
             let result = match retriever {
                 Retriever::Lexical => lexical_retrieve(&store, &case.query, None, top_k, options)?,
                 Retriever::Legacy => keyword_retrieve(&case.query, &tree, &memories, top_k),
+                Retriever::Semantic => {
+                    let engine = engine.expect("set up above");
+                    let prepared = engine.prepare(&store, &[&case.query], None);
+                    if let Some(error) = &prepared.error {
+                        anyhow::bail!("semantic search failed: {error}");
+                    }
+                    hybrid_retrieve(&store, &case.query, None, top_k, options, &prepared)?
+                }
+                Retriever::Recall => {
+                    let found = crate::recall::recall(
+                        &store,
+                        &case.query,
+                        &layers,
+                        top_k,
+                        options,
+                        &policy,
+                        &|_| HashMap::new(),
+                        &shown,
+                    )?;
+                    crate::model::RetrievalResult {
+                        memory_ids: found.entries.iter().map(|e| e.id.clone()).collect(),
+                        facts: found.entries.into_iter().map(|e| e.content).collect(),
+                        ..Default::default()
+                    }
+                }
             };
             latencies.push(started.elapsed().as_secs_f64() * 1000.0);
             let got: Vec<String> = result
