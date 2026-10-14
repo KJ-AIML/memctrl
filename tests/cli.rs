@@ -522,10 +522,113 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         .as_str()
         .unwrap();
     assert!(command.ends_with("context --format hook"), "{command}");
+    let recall = settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap();
+    assert!(recall.ends_with("recall --format hook"), "{recall}");
     assert!(
         failure(&dir, &["install", "--tool", "codex", "--project", "--hook"])
             .contains("only available for Claude Code")
     );
+}
+
+/// Runs a hook command the way Claude Code does: the event's JSON on stdin.
+fn hook(dir: &TempDir, args: &[&str], input: &Value) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_memctrl"))
+        .current_dir(dir.path())
+        .env_remove("MEMCTRL_DB_PATH")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("run memctrl");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.to_string().as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// Agents don't search on their own, so the prompt hook brings what the brief left out, once
+/// per session, and stays silent when nothing matches or no store exists.
+#[test]
+fn the_prompt_hook_recalls_what_the_brief_left_out_once_per_session() {
+    let dir = TempDir::new().unwrap();
+    let prompt = |text: &str| json!({"session_id": "s-1", "hook_event_name": "UserPromptSubmit", "prompt": text});
+    let silent = hook(
+        &dir,
+        &["recall", "--format", "hook"],
+        &prompt("rotate the JWT signing key"),
+    );
+    assert!(
+        silent.status.success() && silent.stdout.is_empty(),
+        "no store: nothing"
+    );
+    assert!(!dir.path().join(".memctrl").exists(), "and nothing created");
+
+    success(&dir, &["init"]);
+    let rotation = success(
+        &dir,
+        &[
+            "add",
+            "When rotating the JWT signing key, send the new public key to the mobile team via #platform",
+            "--layer",
+            "project",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // A one-token brief has room for nothing, so recall is the only way the memory arrives.
+    let start = hook(
+        &dir,
+        &["context", "--format", "hook", "--budget", "1"],
+        &json!({"session_id": "s-1", "hook_event_name": "SessionStart", "source": "startup"}),
+    );
+    assert!(start.status.success());
+    assert!(dir.path().join(".memctrl/sessions/s-1").exists());
+
+    let request = "We need to rotate the JWT signing key. Give me the exact steps.";
+    let first = hook(&dir, &["recall", "--format", "hook"], &prompt(request));
+    assert!(first.status.success());
+    let output: Value = serde_json::from_slice(&first.stdout).expect("hook JSON");
+    assert_eq!(
+        output["hookSpecificOutput"]["hookEventName"],
+        "UserPromptSubmit"
+    );
+    let context = output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        context.contains("#platform") && context.contains(&rotation[..8]),
+        "{context}"
+    );
+
+    let again = hook(&dir, &["recall", "--format", "hook"], &prompt(request));
+    assert!(again.stdout.is_empty(), "already shown in this session");
+    let other = json!({"session_id": "s-2", "prompt": request});
+    assert!(!hook(&dir, &["recall", "--format", "hook"], &other)
+        .stdout
+        .is_empty());
+    let chat = hook(
+        &dir,
+        &["recall", "--format", "hook"],
+        &prompt("thanks, looks good"),
+    );
+    assert!(chat.stdout.is_empty());
+    // A path-like session id is never used as a file name.
+    let odd = json!({"session_id": "../../x", "prompt": request});
+    assert!(hook(&dir, &["recall", "--format", "hook"], &odd)
+        .status
+        .success());
+    assert!(!dir.path().join("x").exists());
+
+    let plain = success(&dir, &["recall", request, "--format", "json"]);
+    assert_eq!(plain["entries"][0]["id"], rotation.as_str());
+    assert!(plain["entries"][0]["matched"].as_array().unwrap().len() >= 2);
 }
 
 #[test]

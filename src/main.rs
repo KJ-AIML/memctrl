@@ -6,7 +6,7 @@ use memctrl::{
     mcp, mirror,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
     project::{self, Project},
-    reflection, retriever,
+    recall, reflection, retriever,
     review::{self, Release},
     rules::{Rules, UserConfig, DEFAULT_RULES},
     sanitize::{sanitize_text, sanitize_value, validate_identifier},
@@ -104,7 +104,7 @@ enum ContextFormat {
     Markdown,
     /// Machine-readable entries plus the Markdown.
     Json,
-    /// Claude Code SessionStart hook output (additionalContext).
+    /// Claude Code hook output (additionalContext), reading the hook's JSON from stdin.
     Hook,
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -148,6 +148,20 @@ enum Command {
             help = "Write the brief between memctrl markers in this file (e.g. AGENTS.md) instead of printing it"
         )]
         write: Option<PathBuf>,
+    },
+    /// The memories that match a prompt, minus what this session already saw (for a prompt hook).
+    Recall {
+        #[arg(help = "Prompt text (with --format hook: read from the hook's JSON on stdin)")]
+        prompt: Option<String>,
+        #[arg(long, default_value_t = recall::DEFAULT_LIMIT)]
+        limit: usize,
+        #[arg(
+            long = "layer",
+            help = "Layer to include (repeatable; default: project and user)"
+        )]
+        layers: Vec<String>,
+        #[arg(long, value_enum, default_value_t = ContextFormat::Markdown)]
+        format: ContextFormat,
     },
     /// Store a memory (or explicitly request LLM extraction).
     Add {
@@ -765,10 +779,44 @@ fn install(
             installer::settings_file(project_scope),
             &installer::hook_command(&executable),
         )?;
+        let (_, recall_changed) = installer::install_recall_hook(
+            &root,
+            installer::settings_file(project_scope),
+            &installer::recall_hook_command(&executable),
+        )?;
         output["hook"] = json!(settings);
-        output["hook_changed"] = json!(changed);
+        output["hook_changed"] = json!(changed || recall_changed);
     }
     Ok(output)
+}
+
+/// The JSON Claude Code passes a hook on stdin. A hook command run by hand has a terminal, and
+/// a caller that never closes stdin must not hang a session, so reading gives up after `wait`.
+fn hook_input(wait: std::time::Duration) -> Value {
+    use std::io::{IsTerminal, Read};
+    if std::io::stdin().is_terminal() {
+        return Value::Null;
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = std::io::stdin()
+            .lock()
+            .take(4 << 20)
+            .read_to_end(&mut bytes);
+        let _ = sender.send(bytes);
+    });
+    receiver
+        .recv_timeout(wait)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// This session's record of memories already in its context, from the hook's `session_id`.
+fn session_record(input: &Value, db: &Path) -> Option<PathBuf> {
+    let dir = db.parent().filter(|p| !p.as_os_str().is_empty())?;
+    recall::session_file(dir, input.get("session_id")?.as_str()?)
 }
 async fn execute(
     cli: &Cli,
@@ -812,6 +860,19 @@ async fn execute(
                 &|m| notes.get(&m.id).cloned(),
                 &rules.guard,
             )?;
+            if *format == ContextFormat::Hook && write.is_none() {
+                // The prompt hook skips what the brief already put in this session's context.
+                let input = hook_input(std::time::Duration::from_millis(500));
+                if let Some(record) = session_record(&input, db) {
+                    let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
+                    if let Err(error) = recall::remember(&record, &ids, true) {
+                        eprintln!(
+                            "{}",
+                            json!({"warning": sanitize_text(&format!("cannot record the session brief: {error:#}"))})
+                        );
+                    }
+                }
+            }
             if let Some(path) = write {
                 let existing = match std::fs::read_to_string(path) {
                     Ok(text) => text,
@@ -833,6 +894,80 @@ async fn execute(
                 serde_json::to_value(&brief)?
             } else {
                 Value::String(brief.markdown)
+            }
+        }
+        Command::Recall {
+            prompt,
+            limit,
+            layers,
+            format,
+        } => {
+            let layers: Vec<String> = if layers.is_empty() {
+                context::DEFAULT_LAYERS
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect()
+            } else {
+                for layer in layers {
+                    validate_identifier(layer, "layer")?;
+                }
+                layers.clone()
+            };
+            let input = if *format == ContextFormat::Hook {
+                hook_input(std::time::Duration::from_secs(2))
+            } else {
+                Value::Null
+            };
+            let text = prompt
+                .clone()
+                .or_else(|| {
+                    input
+                        .get("prompt")
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                })
+                .unwrap_or_default();
+            let record = session_record(&input, db);
+            let shown = record.as_deref().map(recall::shown_in).unwrap_or_default();
+            let root = project_root(rules).ok();
+            let stale = |ids: &[String]| -> std::collections::HashMap<String, String> {
+                let Some(root) = root.as_deref() else {
+                    return Default::default();
+                };
+                citations::check_memories(store, root, ids)
+                    .map(|checked| {
+                        checked
+                            .into_iter()
+                            .filter_map(|(id, list)| {
+                                citations::stale_note(&list).map(|note| (id, note))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let found = recall::recall(
+                store,
+                &text,
+                &layers,
+                *limit,
+                &retriever::SearchOptions::from_rules(rules),
+                &rules.guard,
+                &stale,
+                &shown,
+            )?;
+            if let Some(record) = record.filter(|_| !found.entries.is_empty()) {
+                let ids: Vec<String> = found.entries.iter().map(|e| e.id.clone()).collect();
+                if let Err(error) = recall::remember(&record, &ids, false) {
+                    eprintln!(
+                        "{}",
+                        json!({"warning": sanitize_text(&format!("cannot record recalled memories: {error:#}"))})
+                    );
+                }
+            }
+            if *format == ContextFormat::Json {
+                serde_json::to_value(&found)?
+            } else {
+                Value::String(found.markdown)
             }
         }
         Command::Add {
@@ -1476,6 +1611,16 @@ async fn run(cli: Cli) -> Result<()> {
     }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
+    if let Command::Recall { format, .. } = &cli.command {
+        if !db.exists() {
+            if *format == ContextFormat::Json {
+                std::io::stdout()
+                    .lock()
+                    .write_all(b"{\"entries\":[],\"store\":\"missing\"}\n")?;
+            }
+            return Ok(());
+        }
+    }
     if let Command::Context { format, write, .. } = &cli.command {
         if !db.exists() {
             if write.is_some() {
@@ -1528,8 +1673,11 @@ async fn run(cli: Cli) -> Result<()> {
             shown(&db),
             user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
         );
-        if matches!(&cli.command, Command::Context { write: None, .. }) {
-            // The session-start hook stays silent rather than failing every session.
+        if matches!(
+            &cli.command,
+            Command::Context { write: None, .. } | Command::Recall { .. }
+        ) {
+            // The session-start and prompt hooks stay silent rather than failing every session.
             eprintln!("{}", json!({"warning": sanitize_text(&message)}));
             return Ok(());
         }
@@ -1574,6 +1722,16 @@ async fn run(cli: Cli) -> Result<()> {
             }
             _ => markdown.clone(),
         },
+        (Command::Recall { format, .. }, Value::String(markdown)) => match format {
+            // Nothing matched: the prompt goes on unchanged.
+            _ if markdown.is_empty() => String::new(),
+            ContextFormat::Hook => {
+                json!({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":markdown}})
+                    .to_string()
+                    + "\n"
+            }
+            _ => markdown.clone(),
+        },
         _ => serde_json::to_string(&sanitize_value(&result))? + "\n",
     };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
@@ -1584,6 +1742,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Init { .. } => "init",
         Command::Install { .. } => "install",
         Command::Context { .. } => "context",
+        Command::Recall { .. } => "recall",
         Command::Cite { .. } => "cite",
         Command::Stale { .. } => "stale",
         Command::Refresh { .. } => "refresh",
