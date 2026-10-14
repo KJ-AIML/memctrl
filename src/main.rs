@@ -790,6 +790,98 @@ fn install(
     Ok(output)
 }
 
+/// `memctrl recall`, kept out of `execute` so its locals don't enlarge that function's frame
+/// (Windows gives the main thread 1 MB of stack).
+fn recall_command(
+    store: &MemoryStore,
+    rules: &Rules,
+    db: &Path,
+    prompt: Option<&str>,
+    limit: usize,
+    layers: &[String],
+    format: ContextFormat,
+) -> Result<Value> {
+    let layers: Vec<String> = if layers.is_empty() {
+        context::DEFAULT_LAYERS
+            .iter()
+            .map(|l| l.to_string())
+            .collect()
+    } else {
+        for layer in layers {
+            validate_identifier(layer, "layer")?;
+        }
+        layers.to_vec()
+    };
+    let input = if format == ContextFormat::Hook {
+        hook_input(std::time::Duration::from_secs(2))
+    } else {
+        Value::Null
+    };
+    let text = prompt
+        .map(String::from)
+        .or_else(|| {
+            input
+                .get("prompt")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
+        .unwrap_or_default();
+    let record = session_record(&input, db);
+    let shown = record.as_deref().map(recall::shown_in).unwrap_or_default();
+    let root = project_root(rules).ok();
+    let stale = |ids: &[String]| -> std::collections::HashMap<String, String> {
+        let Some(root) = root.as_deref() else {
+            return Default::default();
+        };
+        citations::check_memories(store, root, ids)
+            .map(|checked| {
+                checked
+                    .into_iter()
+                    .filter_map(|(id, list)| citations::stale_note(&list).map(|note| (id, note)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let found = recall::recall(
+        store,
+        &text,
+        &layers,
+        limit,
+        &retriever::SearchOptions::from_rules(rules),
+        &rules.guard,
+        &stale,
+        &shown,
+    )?;
+    if let Some(record) = record.filter(|_| !found.entries.is_empty()) {
+        let ids: Vec<String> = found.entries.iter().map(|e| e.id.clone()).collect();
+        if let Err(error) = recall::remember(&record, &ids, false) {
+            eprintln!(
+                "{}",
+                json!({"warning": sanitize_text(&format!("cannot record recalled memories: {error:#}"))})
+            );
+        }
+    }
+    Ok(if format == ContextFormat::Json {
+        serde_json::to_value(&found)?
+    } else {
+        Value::String(found.markdown)
+    })
+}
+
+/// Notes which memories the brief put in this session's context, so the prompt hook skips them.
+fn record_brief(brief: &context::Brief, db: &Path) {
+    let input = hook_input(std::time::Duration::from_millis(500));
+    if let Some(record) = session_record(&input, db) {
+        let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
+        if let Err(error) = recall::remember(&record, &ids, true) {
+            eprintln!(
+                "{}",
+                json!({"warning": sanitize_text(&format!("cannot record the session brief: {error:#}"))})
+            );
+        }
+    }
+}
+
 /// The JSON Claude Code passes a hook on stdin. A hook command run by hand has a terminal, and
 /// a caller that never closes stdin must not hang a session, so reading gives up after `wait`.
 fn hook_input(wait: std::time::Duration) -> Value {
@@ -861,17 +953,7 @@ async fn execute(
                 &rules.guard,
             )?;
             if *format == ContextFormat::Hook && write.is_none() {
-                // The prompt hook skips what the brief already put in this session's context.
-                let input = hook_input(std::time::Duration::from_millis(500));
-                if let Some(record) = session_record(&input, db) {
-                    let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
-                    if let Err(error) = recall::remember(&record, &ids, true) {
-                        eprintln!(
-                            "{}",
-                            json!({"warning": sanitize_text(&format!("cannot record the session brief: {error:#}"))})
-                        );
-                    }
-                }
+                record_brief(&brief, db);
             }
             if let Some(path) = write {
                 let existing = match std::fs::read_to_string(path) {
@@ -901,75 +983,7 @@ async fn execute(
             limit,
             layers,
             format,
-        } => {
-            let layers: Vec<String> = if layers.is_empty() {
-                context::DEFAULT_LAYERS
-                    .iter()
-                    .map(|l| l.to_string())
-                    .collect()
-            } else {
-                for layer in layers {
-                    validate_identifier(layer, "layer")?;
-                }
-                layers.clone()
-            };
-            let input = if *format == ContextFormat::Hook {
-                hook_input(std::time::Duration::from_secs(2))
-            } else {
-                Value::Null
-            };
-            let text = prompt
-                .clone()
-                .or_else(|| {
-                    input
-                        .get("prompt")
-                        .and_then(Value::as_str)
-                        .map(String::from)
-                })
-                .unwrap_or_default();
-            let record = session_record(&input, db);
-            let shown = record.as_deref().map(recall::shown_in).unwrap_or_default();
-            let root = project_root(rules).ok();
-            let stale = |ids: &[String]| -> std::collections::HashMap<String, String> {
-                let Some(root) = root.as_deref() else {
-                    return Default::default();
-                };
-                citations::check_memories(store, root, ids)
-                    .map(|checked| {
-                        checked
-                            .into_iter()
-                            .filter_map(|(id, list)| {
-                                citations::stale_note(&list).map(|note| (id, note))
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            let found = recall::recall(
-                store,
-                &text,
-                &layers,
-                *limit,
-                &retriever::SearchOptions::from_rules(rules),
-                &rules.guard,
-                &stale,
-                &shown,
-            )?;
-            if let Some(record) = record.filter(|_| !found.entries.is_empty()) {
-                let ids: Vec<String> = found.entries.iter().map(|e| e.id.clone()).collect();
-                if let Err(error) = recall::remember(&record, &ids, false) {
-                    eprintln!(
-                        "{}",
-                        json!({"warning": sanitize_text(&format!("cannot record recalled memories: {error:#}"))})
-                    );
-                }
-            }
-            if *format == ContextFormat::Json {
-                serde_json::to_value(&found)?
-            } else {
-                Value::String(found.markdown)
-            }
-        }
+        } => recall_command(store, rules, db, prompt.as_deref(), *limit, layers, *format)?,
         Command::Add {
             content,
             layer,
@@ -1691,7 +1705,8 @@ async fn run(cli: Cli) -> Result<()> {
         return mcp::serve(store, project.rc.clone(), Some(project.dir.clone())).await;
     }
     let started = Instant::now();
-    let result = execute(&cli, &mut store, &rules, &project, &db).await?;
+    // Boxed: the future of a function this large would otherwise sit on the main thread's stack.
+    let result = Box::pin(execute(&cli, &mut store, &rules, &project, &db)).await?;
     let operation = command_name(&cli.command);
     if !matches!(
         &cli.command,
@@ -1784,8 +1799,25 @@ fn command_name(command: &Command) -> &'static str {
         Command::Agent { .. } => "agent",
     }
 }
-#[tokio::main]
-async fn main() {
+fn main() {
+    // Debug builds of the argument parser alone use close to 1 MB of stack, all that Windows
+    // gives the main thread, so the command runs on a thread with room to spare.
+    let worker = std::thread::Builder::new()
+        .name("memctrl".into())
+        .stack_size(16 << 20)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("start the async runtime")
+                .block_on(cli_main())
+        })
+        .expect("start the command thread");
+    if worker.join().is_err() {
+        std::process::exit(101);
+    }
+}
+async fn cli_main() {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error) => {
@@ -1799,7 +1831,7 @@ async fn main() {
             std::process::exit(code);
         }
     };
-    if let Err(error) = run(cli).await {
+    if let Err(error) = Box::pin(run(cli)).await {
         // The whole chain ("entry at line 6: memory id must be a UUID: …"), still sanitized.
         eprintln!("{}", json!({"error":sanitize_text(&format!("{error:#}"))}));
         std::process::exit(1);
