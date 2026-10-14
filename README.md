@@ -159,6 +159,43 @@ Requests are longer than questions, so recall searches a sentence at a time and 
 
 - Vague questions ("summarize the project", "ภาพรวมของโปรเจกต์นี้") return nothing instead of noise. Generic words like *project*, *information* and *summary*, in any language, help ranking but can't make a memory match on their own; `why` labels them `(generic)`. Add your own with `generic_words = [...]` under `[retrieval]`. The brief is the answer to "what should I know".
 
+### Search by meaning (optional)
+
+Words miss a question worded unlike the memory: "which JWT library" never finds "we verify tokens with jose". Point memctrl at an embedding model you run, and `query`, the MCP server and the prompt hook also match by meaning.
+
+```toml
+# ~/.config/memctrl/config.toml
+[semantic]
+model = "embeddinggemma"                  # ollama pull embeddinggemma
+base_url = "http://localhost:11434/v1"    # the default (Ollama); LM Studio is http://localhost:1234/v1
+```
+
+```bash
+memctrl semantic status    # settings, whether the model answers, how many memories have vectors
+memctrl semantic index     # embed existing memories (a search embeds up to 16 new ones itself)
+memctrl semantic tune      # measure thresholds for a model memctrl has no values for
+memctrl semantic clear     # delete every stored vector
+```
+
+- **Added to word matches, not replacing them.** `query` fuses the lexical ranking with the memories closest in meaning (reciprocal rank fusion). A memory found by meaning alone must clear the model's similarity threshold, so a vague question can still get nothing. `why` labels these matches `similar meaning (0.62)`.
+- **The prompt hook is stricter.** Nobody asked, so a memory joins a request on meaning alone only above the model's recall threshold. None of 15 unrelated everyday prompts reached it in the benchmark store.
+- **Measured thresholds** ship for EmbeddingGemma (0.455, recall 0.56) and multilingual-e5-small (0.849, recall 0.85). For another model, `memctrl semantic tune` measures both on the built-in suite and prints the lines to add; semantic search stays off until you do. The prefixes a model expects (EmbeddingGemma, e5, nomic, mxbai, Qwen3) follow from its name, and `query_prefix` and `document_prefix` override them.
+- **Only you turn it on.** A repository's `.memoryrc` can't enable it or choose the server. A server off this machine needs `allow_remote = true` and HTTPS (with the key in the variable `api_key_env` names), because the hook sends every request to it. Only memories get stored vectors; a query's or prompt's vector is used once and dropped. Memory vectors live in the store's `semantic_vectors` table, and deleting or editing a memory drops its vector, whichever memctrl version does it.
+- **When the model is down,** searches fall back to lexical results and say so in `trace` (`semantic_unavailable`). `MEMCTRL_SEMANTIC=off` turns it off for one command. With a local model, a search takes about 10 ms longer.
+
+On the comparison suites, with EmbeddingGemma 300M running locally:
+
+| | Words only | + meaning |
+| --- | ---: | ---: |
+| `query`, real-dev: answer in the top 5 | 92% | **95%** |
+| `query`, Thai held-out: answer in the top 5 | 92% | **100%** |
+| `query`, built-in: answer in the top 5 | 93% | **95%** |
+| `query`, vague questions answered with nothing (built-in, Thai held-out, English) | 92%, 92%, 92% | 85%, 85%, 92% |
+| Prompt hook, real-dev questions: answer added | 82% | **85%** |
+| Prompt hook, vague questions: nothing added (built-in, Thai, English) | 100%, 100%, 92% | 100%, 100%, 92% |
+
+Each drop in "answered with nothing" is one question. In the agent benchmark, the prompt hook added the same memories to all 16 tasks with or without meaning, because those requests share words with their memories. Reproduce with `memctrl eval --retriever semantic` and `--retriever recall`.
+
 ### Memories that cite code
 
 A memory can cite the code it describes. memctrl hashes the cited lines and checks them whenever the memory is used, with no git, network or model involved.
@@ -261,7 +298,7 @@ The same author wrote that suite and the retriever, so treat these as regression
 | Held-out vague questions, never used for tuning | 0.77 | **0.92** |
 | English mirror: vague and off-topic questions correctly empty | 0.50 | **0.92** |
 
-Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team.
+Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team, and [search by meaning](#search-by-meaning-optional) closes more.
 
 Retrieval scores don't say whether the agent then does the work right, so we measured that too. Claude Code worked 16 tasks on a real project, each with a trap only the project's history reveals, in fresh sessions ([method and per-task results](docs/benchmarks/agent-benchmark.md)):
 
@@ -283,6 +320,7 @@ With a few dozen notes, a CLAUDE.md is hard to beat. As memory grows, memctrl ke
 | Save a decision | `memctrl add "We chose X because Y" --layer project --claim-type decision` |
 | Save a fact about code | `memctrl add "…" --layer project --cite src/file.rs:12-40` |
 | Find something | `memctrl query "pool size postgres"` |
+| Search by meaning too | `[semantic]` in your user config, then `memctrl semantic status` |
 | See the brief | `memctrl context` |
 | See what a request recalls | `memctrl recall "<request>"` |
 | Review held writes | `memctrl candidates`, then `memctrl accept <id>` (in a terminal) or `memctrl reject <id>` |
@@ -305,7 +343,7 @@ Layers decide how long a memory lives: `project` has no default expiry, `user` l
 Settings that loosen defenses (guard mode, trusted sources, paths outside the repository) belong in your user config, `~/.config/memctrl/config.toml`; from a repository's `.memoryrc` they are ignored with a warning unless you trust the repository there.
 
 - `project` facts have no default expiry; `session` defaults to seven days and `user` to 90 days.
-- Retrieval needs no network, model or embeddings. Reads never take the write lock: searches and the brief answer while another process writes, and their bookkeeping (access counts, provenance, cache) is skipped rather than waited for. Cache entries hold ids, bound to a snapshot, query, layer, limit and settings.
+- Retrieval needs no network, model or embeddings unless you turn on [search by meaning](#search-by-meaning-optional). Reads never take the write lock: searches and the brief answer while another process writes, and their bookkeeping (access counts, provenance, cache) is skipped rather than waited for. Cache entries hold ids, bound to a snapshot, query, layer, limit and settings.
 - Full-text indexes are maintained by triggers for every writer, and `memctrl maintenance` rebuilds them. Other programs that write to the database need SQLite with FTS5 (macOS's `/usr/bin/sqlite3` doesn't have it); see [MIGRATION.md](MIGRATION.md).
 
 </details>
@@ -371,7 +409,8 @@ The server uses the official Rust MCP SDK over stdio, and stdout carries only pr
 
 ## Limits
 
-- **Search matches words, not meaning.** A paraphrase that shares no words with the memory won't find it. Add aliases, or ask with the names, paths and errors the memory uses. Recall has the same limit, and a memory that shares only one phrase with a long request can stay below its threshold.
+- **Without a model, search matches words, not meaning.** A paraphrase that shares no words with the memory won't find it: add aliases, ask with the names, paths and errors the memory uses, or turn on search by meaning.
+- **Some links are inference, not wording or meaning.** "Add a BODY_LIMIT_BYTES env var" and "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold, and EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold. A rule like that belongs in the brief or in CLAUDE.md.
 - **The prompt hook is Claude Code's.** Other hosts get the brief through AGENTS.md; run `memctrl recall "<request>"` yourself, or call it from your host's prompt hook.
 - **Freshness covers cited memories only**, and it compares against your working tree, not a specific commit.
 - **The guard is a tripwire.** Review candidates yourself before accepting them.

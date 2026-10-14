@@ -1,0 +1,1981 @@
+{
+ "memctrl": "2.4.0",
+ "model": "EmbeddingGemma 300M, q4 ONNX, served locally over /v1/embeddings",
+ "settings": {
+  "threshold": 0.455,
+  "recall_threshold": 0.56,
+  "fusion": "reciprocal rank fusion, k=60, ties to lexical",
+  "query_prefix": "task: search result | query: ",
+  "document_prefix": "title: none | text: "
+ },
+ "top_k": 5,
+ "suites": {
+  "realdev": {
+   "memories": 77,
+   "cases": 60,
+   "results": {
+    "query_words": {
+     "cases": 60,
+     "positive_cases": 60,
+     "negative_cases": 0,
+     "hit_at_1": 0.8,
+     "hit_at_k": 0.917,
+     "mrr": 0.85,
+     "negative_accuracy": null,
+     "avg_tokens": 78.467,
+     "p50_ms": 0.172,
+     "failures": [
+      {
+       "query": "which JWT library did we pick",
+       "kind": "realdev",
+       "expected": [
+        "jose"
+       ],
+       "got": [
+        "verifyts",
+        "keysdir",
+        "d2a41fc5"
+       ]
+      },
+      {
+       "query": "which web framework",
+       "kind": "realdev",
+       "expected": [
+        "fastify"
+       ],
+       "got": [
+        "jose"
+       ]
+      },
+      {
+       "query": "GET /v1/accounts/:id/balance",
+       "kind": "realdev",
+       "expected": [
+        "balroute"
+       ],
+       "got": [
+        "serverreg",
+        "pagin",
+        "wip1",
+        "hyp3",
+        "idx"
+       ]
+      },
+      {
+       "query": "what are we working on",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": [
+        "prefs3",
+        "wip1"
+       ]
+      },
+      {
+       "query": "current task",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": [
+        "prefs4",
+        "zoderr"
+       ]
+      }
+     ]
+    },
+    "query_meaning": {
+     "cases": 60,
+     "positive_cases": 60,
+     "negative_cases": 0,
+     "hit_at_1": 0.8,
+     "hit_at_k": 0.95,
+     "mrr": 0.862,
+     "negative_accuracy": null,
+     "avg_tokens": 87.967,
+     "p50_ms": 8.322,
+     "failures": [
+      {
+       "query": "which web framework",
+       "kind": "realdev",
+       "expected": [
+        "fastify"
+       ],
+       "got": [
+        "jose"
+       ]
+      },
+      {
+       "query": "what are we working on",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": [
+        "prefs3",
+        "wip1"
+       ]
+      },
+      {
+       "query": "current task",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": [
+        "prefs4",
+        "zoderr"
+       ]
+      }
+     ]
+    },
+    "hook_words": {
+     "cases": 60,
+     "positive_cases": 60,
+     "negative_cases": 0,
+     "hit_at_1": 0.767,
+     "hit_at_k": 0.817,
+     "mrr": 0.792,
+     "negative_accuracy": null,
+     "avg_tokens": 58.383,
+     "p50_ms": 0.378,
+     "failures": [
+      {
+       "query": "55432",
+       "kind": "realdev",
+       "expected": [
+        "pgport"
+       ],
+       "got": []
+      },
+      {
+       "query": "which JWT library did we pick",
+       "kind": "realdev",
+       "expected": [
+        "jose"
+       ],
+       "got": []
+      },
+      {
+       "query": "pool size",
+       "kind": "realdev",
+       "expected": [
+        "poolmax2"
+       ],
+       "got": []
+      },
+      {
+       "query": "which web framework",
+       "kind": "realdev",
+       "expected": [
+        "fastify"
+       ],
+       "got": []
+      },
+      {
+       "query": "GET /v1/accounts/:id/balance",
+       "kind": "realdev",
+       "expected": [
+        "balroute"
+       ],
+       "got": [
+        "serverreg",
+        "pagin",
+        "wip1",
+        "hyp3",
+        "idx"
+       ]
+      },
+      {
+       "query": "k6",
+       "kind": "realdev",
+       "expected": [
+        "bench"
+       ],
+       "got": []
+      },
+      {
+       "query": "円",
+       "kind": "realdev",
+       "expected": [
+        "jpn"
+       ],
+       "got": []
+      },
+      {
+       "query": "readiness probe",
+       "kind": "realdev",
+       "expected": [
+        "readyz"
+       ],
+       "got": []
+      },
+      {
+       "query": "timestamps timezone",
+       "kind": "realdev",
+       "expected": [
+        "tzdb"
+       ],
+       "got": []
+      },
+      {
+       "query": "what are we working on",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": []
+      },
+      {
+       "query": "current task",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "hook_meaning": {
+     "cases": 60,
+     "positive_cases": 60,
+     "negative_cases": 0,
+     "hit_at_1": 0.783,
+     "hit_at_k": 0.85,
+     "mrr": 0.817,
+     "negative_accuracy": null,
+     "avg_tokens": 60.05,
+     "p50_ms": 8.807,
+     "failures": [
+      {
+       "query": "55432",
+       "kind": "realdev",
+       "expected": [
+        "pgport"
+       ],
+       "got": []
+      },
+      {
+       "query": "pool size",
+       "kind": "realdev",
+       "expected": [
+        "poolmax2"
+       ],
+       "got": []
+      },
+      {
+       "query": "which web framework",
+       "kind": "realdev",
+       "expected": [
+        "fastify"
+       ],
+       "got": []
+      },
+      {
+       "query": "GET /v1/accounts/:id/balance",
+       "kind": "realdev",
+       "expected": [
+        "balroute"
+       ],
+       "got": [
+        "serverreg",
+        "pagin",
+        "wip1",
+        "hyp3",
+        "idx"
+       ]
+      },
+      {
+       "query": "k6",
+       "kind": "realdev",
+       "expected": [
+        "bench"
+       ],
+       "got": []
+      },
+      {
+       "query": "円",
+       "kind": "realdev",
+       "expected": [
+        "jpn"
+       ],
+       "got": []
+      },
+      {
+       "query": "timestamps timezone",
+       "kind": "realdev",
+       "expected": [
+        "tzdb"
+       ],
+       "got": []
+      },
+      {
+       "query": "what are we working on",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": []
+      },
+      {
+       "query": "current task",
+       "kind": "realdev",
+       "expected": [
+        "wip4"
+       ],
+       "got": []
+      }
+     ]
+    }
+   }
+  },
+  "thai": {
+   "memories": 56,
+   "cases": 104,
+   "results": {
+    "query_words": {
+     "cases": 104,
+     "positive_cases": 82,
+     "negative_cases": 22,
+     "hit_at_1": 0.927,
+     "hit_at_k": 0.951,
+     "mrr": 0.936,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 39.548,
+     "p50_ms": 0.154,
+     "failures": [
+      {
+       "query": "ดีพลอย",
+       "kind": "th_variant",
+       "expected": [
+        "th-deploy",
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "เก็บรหัสผ่านไว้ที่ไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-env",
+        "th-sentry-dsn"
+       ],
+       "got": []
+      },
+      {
+       "query": "代码审核",
+       "kind": "cjk",
+       "expected": [
+        "zh-review"
+       ],
+       "got": []
+      },
+      {
+       "query": "ﾃﾞﾌﾟﾛｲ",
+       "kind": "cjk",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "query_meaning": {
+     "cases": 104,
+     "positive_cases": 82,
+     "negative_cases": 22,
+     "hit_at_1": 0.963,
+     "hit_at_k": 0.963,
+     "mrr": 0.963,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 43.413,
+     "p50_ms": 7.992,
+     "failures": [
+      {
+       "query": "ดีพลอย",
+       "kind": "th_variant",
+       "expected": [
+        "th-deploy",
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "เก็บรหัสผ่านไว้ที่ไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-env",
+        "th-sentry-dsn"
+       ],
+       "got": []
+      },
+      {
+       "query": "ﾃﾞﾌﾟﾛｲ",
+       "kind": "cjk",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "hook_words": {
+     "cases": 104,
+     "positive_cases": 82,
+     "negative_cases": 22,
+     "hit_at_1": 0.72,
+     "hit_at_k": 0.732,
+     "mrr": 0.723,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 29.115,
+     "p50_ms": 0.23,
+     "failures": [
+      {
+       "query": "แคช",
+       "kind": "th_short",
+       "expected": [
+        "th-cache-products"
+       ],
+       "got": []
+      },
+      {
+       "query": "บั๊ก",
+       "kind": "th_short",
+       "expected": [
+        "th-login-bug"
+       ],
+       "got": []
+      },
+      {
+       "query": "คิว",
+       "kind": "th_short",
+       "expected": [
+        "th-redis-glued"
+       ],
+       "got": []
+      },
+      {
+       "query": "ฟอนต์",
+       "kind": "th_short",
+       "expected": [
+        "th-font"
+       ],
+       "got": []
+      },
+      {
+       "query": "เทสต์",
+       "kind": "th_short",
+       "expected": [
+        "th-docker"
+       ],
+       "got": []
+      },
+      {
+       "query": "สระ",
+       "kind": "th_short",
+       "expected": [
+        "th-collation"
+       ],
+       "got": []
+      },
+      {
+       "query": "ศุกร์",
+       "kind": "th_short",
+       "expected": [
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "ตีสอง",
+       "kind": "th_short",
+       "expected": [
+        "th-backup"
+       ],
+       "got": []
+      },
+      {
+       "query": "ตัดคำ",
+       "kind": "th_short",
+       "expected": [
+        "th-segment"
+       ],
+       "got": []
+      },
+      {
+       "query": "ดีพลอย",
+       "kind": "th_variant",
+       "expected": [
+        "th-deploy",
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "เก็บรหัสผ่านไว้ที่ไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-env",
+        "th-sentry-dsn"
+       ],
+       "got": []
+      },
+      {
+       "query": "ประชุมวันไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-meeting"
+       ],
+       "got": []
+      },
+      {
+       "query": "ลูกค้าจ่ายเงินยังไง",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-promptpay",
+        "th-payment"
+       ],
+       "got": []
+      },
+      {
+       "query": "缓存",
+       "kind": "cjk",
+       "expected": [
+        "zh-cache"
+       ],
+       "got": []
+      },
+      {
+       "query": "生产环境",
+       "kind": "cjk",
+       "expected": [
+        "zh-deploy"
+       ],
+       "got": []
+      },
+      {
+       "query": "备份",
+       "kind": "cjk",
+       "expected": [
+        "zh-db"
+       ],
+       "got": []
+      },
+      {
+       "query": "数据库备份",
+       "kind": "cjk",
+       "expected": [
+        "zh-db"
+       ],
+       "got": []
+      },
+      {
+       "query": "代码审核",
+       "kind": "cjk",
+       "expected": [
+        "zh-review"
+       ],
+       "got": []
+      },
+      {
+       "query": "個人情報",
+       "kind": "cjk",
+       "expected": [
+        "ja-log"
+       ],
+       "got": []
+      },
+      {
+       "query": "ﾃﾞﾌﾟﾛｲ",
+       "kind": "cjk",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      },
+      {
+       "query": "팀 회의",
+       "kind": "cjk",
+       "expected": [
+        "ko-meeting"
+       ],
+       "got": []
+      },
+      {
+       "query": "API 경로",
+       "kind": "cjk",
+       "expected": [
+        "ko-api"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "hook_meaning": {
+     "cases": 104,
+     "positive_cases": 82,
+     "negative_cases": 22,
+     "hit_at_1": 0.72,
+     "hit_at_k": 0.732,
+     "mrr": 0.723,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 29.115,
+     "p50_ms": 7.432,
+     "failures": [
+      {
+       "query": "แคช",
+       "kind": "th_short",
+       "expected": [
+        "th-cache-products"
+       ],
+       "got": []
+      },
+      {
+       "query": "บั๊ก",
+       "kind": "th_short",
+       "expected": [
+        "th-login-bug"
+       ],
+       "got": []
+      },
+      {
+       "query": "คิว",
+       "kind": "th_short",
+       "expected": [
+        "th-redis-glued"
+       ],
+       "got": []
+      },
+      {
+       "query": "ฟอนต์",
+       "kind": "th_short",
+       "expected": [
+        "th-font"
+       ],
+       "got": []
+      },
+      {
+       "query": "เทสต์",
+       "kind": "th_short",
+       "expected": [
+        "th-docker"
+       ],
+       "got": []
+      },
+      {
+       "query": "สระ",
+       "kind": "th_short",
+       "expected": [
+        "th-collation"
+       ],
+       "got": []
+      },
+      {
+       "query": "ศุกร์",
+       "kind": "th_short",
+       "expected": [
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "ตีสอง",
+       "kind": "th_short",
+       "expected": [
+        "th-backup"
+       ],
+       "got": []
+      },
+      {
+       "query": "ตัดคำ",
+       "kind": "th_short",
+       "expected": [
+        "th-segment"
+       ],
+       "got": []
+      },
+      {
+       "query": "ดีพลอย",
+       "kind": "th_variant",
+       "expected": [
+        "th-deploy",
+        "th-deploy-friday"
+       ],
+       "got": []
+      },
+      {
+       "query": "เก็บรหัสผ่านไว้ที่ไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-env",
+        "th-sentry-dsn"
+       ],
+       "got": []
+      },
+      {
+       "query": "ประชุมวันไหน",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-meeting"
+       ],
+       "got": []
+      },
+      {
+       "query": "ลูกค้าจ่ายเงินยังไง",
+       "kind": "th_paraphrase",
+       "expected": [
+        "th-promptpay",
+        "th-payment"
+       ],
+       "got": []
+      },
+      {
+       "query": "缓存",
+       "kind": "cjk",
+       "expected": [
+        "zh-cache"
+       ],
+       "got": []
+      },
+      {
+       "query": "生产环境",
+       "kind": "cjk",
+       "expected": [
+        "zh-deploy"
+       ],
+       "got": []
+      },
+      {
+       "query": "备份",
+       "kind": "cjk",
+       "expected": [
+        "zh-db"
+       ],
+       "got": []
+      },
+      {
+       "query": "数据库备份",
+       "kind": "cjk",
+       "expected": [
+        "zh-db"
+       ],
+       "got": []
+      },
+      {
+       "query": "代码审核",
+       "kind": "cjk",
+       "expected": [
+        "zh-review"
+       ],
+       "got": []
+      },
+      {
+       "query": "個人情報",
+       "kind": "cjk",
+       "expected": [
+        "ja-log"
+       ],
+       "got": []
+      },
+      {
+       "query": "ﾃﾞﾌﾟﾛｲ",
+       "kind": "cjk",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      },
+      {
+       "query": "팀 회의",
+       "kind": "cjk",
+       "expected": [
+        "ko-meeting"
+       ],
+       "got": []
+      },
+      {
+       "query": "API 경로",
+       "kind": "cjk",
+       "expected": [
+        "ko-api"
+       ],
+       "got": []
+      }
+     ]
+    }
+   }
+  },
+  "thai-heldout": {
+   "memories": 56,
+   "cases": 25,
+   "results": {
+    "query_words": {
+     "cases": 25,
+     "positive_cases": 12,
+     "negative_cases": 13,
+     "hit_at_1": 0.833,
+     "hit_at_k": 0.917,
+     "mrr": 0.875,
+     "negative_accuracy": 0.923,
+     "avg_tokens": 35.56,
+     "p50_ms": 0.385,
+     "failures": [
+      {
+       "query": "ข้อมูลล่าสุด",
+       "kind": "heldout_generic",
+       "expected": [],
+       "got": [
+        "th-pdpa",
+        "th-backup",
+        "th-db-postgres",
+        "th-logging",
+        "th-timezone"
+       ]
+      },
+      {
+       "query": "ログの形式について",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "ja-log"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "query_meaning": {
+     "cases": 25,
+     "positive_cases": 12,
+     "negative_cases": 13,
+     "hit_at_1": 1.0,
+     "hit_at_k": 1.0,
+     "mrr": 1.0,
+     "negative_accuracy": 0.846,
+     "avg_tokens": 43.88,
+     "p50_ms": 8.478,
+     "failures": [
+      {
+       "query": "โปรเจกต์นี้ใช้อะไรบ้าง",
+       "kind": "heldout_generic",
+       "expected": [],
+       "got": [
+        "th-project-node",
+        "th-pnpm"
+       ]
+      },
+      {
+       "query": "ข้อมูลล่าสุด",
+       "kind": "heldout_generic",
+       "expected": [],
+       "got": [
+        "th-pdpa",
+        "th-backup",
+        "th-db-postgres",
+        "th-logging",
+        "th-timezone"
+       ]
+      }
+     ]
+    },
+    "hook_words": {
+     "cases": 25,
+     "positive_cases": 12,
+     "negative_cases": 13,
+     "hit_at_1": 0.667,
+     "hit_at_k": 0.667,
+     "mrr": 0.667,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 13.0,
+     "p50_ms": 0.328,
+     "failures": [
+      {
+       "query": "ใช้อะไรทำ cache",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-redis-cache",
+        "th-cache-products"
+       ],
+       "got": []
+      },
+      {
+       "query": "ฐานข้อมูลอะไร",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-db-postgres"
+       ],
+       "got": []
+      },
+      {
+       "query": "ログの形式について",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "ja-log"
+       ],
+       "got": []
+      },
+      {
+       "query": "Redis ใช้ทำอะไรบ้าง",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-redis-cache",
+        "th-cache-products",
+        "th-redis-glued"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "hook_meaning": {
+     "cases": 25,
+     "positive_cases": 12,
+     "negative_cases": 13,
+     "hit_at_1": 0.667,
+     "hit_at_k": 0.667,
+     "mrr": 0.667,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 13.0,
+     "p50_ms": 8.161,
+     "failures": [
+      {
+       "query": "ใช้อะไรทำ cache",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-redis-cache",
+        "th-cache-products"
+       ],
+       "got": []
+      },
+      {
+       "query": "ฐานข้อมูลอะไร",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-db-postgres"
+       ],
+       "got": []
+      },
+      {
+       "query": "ログの形式について",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "ja-log"
+       ],
+       "got": []
+      },
+      {
+       "query": "Redis ใช้ทำอะไรบ้าง",
+       "kind": "heldout_pos_stopwords",
+       "expected": [
+        "th-redis-cache",
+        "th-cache-products",
+        "th-redis-glued"
+       ],
+       "got": []
+      }
+     ]
+    }
+   }
+  },
+  "en-mirror": {
+   "memories": 41,
+   "cases": 12,
+   "results": {
+    "query_words": {
+     "cases": 12,
+     "positive_cases": 0,
+     "negative_cases": 12,
+     "hit_at_1": null,
+     "hit_at_k": null,
+     "mrr": null,
+     "negative_accuracy": 0.917,
+     "avg_tokens": 7.5,
+     "p50_ms": 0.012,
+     "failures": [
+      {
+       "query": "what does the team use",
+       "kind": "en_generic",
+       "expected": [],
+       "got": [
+        "team-owner",
+        "meeting",
+        "deploy",
+        "server-ram",
+        "onboarding"
+       ]
+      }
+     ]
+    },
+    "query_meaning": {
+     "cases": 12,
+     "positive_cases": 0,
+     "negative_cases": 12,
+     "hit_at_1": null,
+     "hit_at_k": null,
+     "mrr": null,
+     "negative_accuracy": 0.917,
+     "avg_tokens": 7.5,
+     "p50_ms": 7.074,
+     "failures": [
+      {
+       "query": "what does the team use",
+       "kind": "en_generic",
+       "expected": [],
+       "got": [
+        "team-owner",
+        "meeting",
+        "deploy",
+        "server-ram",
+        "onboarding"
+       ]
+      }
+     ]
+    },
+    "hook_words": {
+     "cases": 12,
+     "positive_cases": 0,
+     "negative_cases": 12,
+     "hit_at_1": null,
+     "hit_at_k": null,
+     "mrr": null,
+     "negative_accuracy": 0.917,
+     "avg_tokens": 7.5,
+     "p50_ms": 0.115,
+     "failures": [
+      {
+       "query": "what does the team use",
+       "kind": "en_generic",
+       "expected": [],
+       "got": [
+        "team-owner",
+        "meeting",
+        "deploy",
+        "server-ram",
+        "onboarding"
+       ]
+      }
+     ]
+    },
+    "hook_meaning": {
+     "cases": 12,
+     "positive_cases": 0,
+     "negative_cases": 12,
+     "hit_at_1": null,
+     "hit_at_k": null,
+     "mrr": null,
+     "negative_accuracy": 0.917,
+     "avg_tokens": 7.5,
+     "p50_ms": 7.784,
+     "failures": [
+      {
+       "query": "what does the team use",
+       "kind": "en_generic",
+       "expected": [],
+       "got": [
+        "team-owner",
+        "meeting",
+        "deploy",
+        "server-ram",
+        "onboarding"
+       ]
+      }
+     ]
+    }
+   }
+  },
+  "builtin": {
+   "memories": 34,
+   "cases": 56,
+   "results": {
+    "query_words": {
+     "cases": 56,
+     "positive_cases": 43,
+     "negative_cases": 13,
+     "hit_at_1": 0.93,
+     "hit_at_k": 0.93,
+     "mrr": 0.93,
+     "negative_accuracy": 0.923,
+     "avg_tokens": 23.857,
+     "p50_ms": 0.065,
+     "failures": [
+      {
+       "query": "which ORM did we pick",
+       "kind": "paraphrase",
+       "expected": [
+        "sqlx"
+       ],
+       "got": [
+        "overview-doc"
+       ]
+      },
+      {
+       "query": "how long do login sessions last",
+       "kind": "paraphrase",
+       "expected": [
+        "redis-ttl"
+       ],
+       "got": []
+      },
+      {
+       "query": "what JavaScript runtime does the UI need",
+       "kind": "paraphrase",
+       "expected": [
+        "node-version"
+       ],
+       "got": [
+        "design-system",
+        "timezone"
+       ]
+      },
+      {
+       "query": "Terraform state locking",
+       "kind": "negative",
+       "expected": [],
+       "got": [
+        "ci-cache"
+       ]
+      }
+     ]
+    },
+    "query_meaning": {
+     "cases": 56,
+     "positive_cases": 43,
+     "negative_cases": 13,
+     "hit_at_1": 0.953,
+     "hit_at_k": 0.953,
+     "mrr": 0.953,
+     "negative_accuracy": 0.846,
+     "avg_tokens": 24.589,
+     "p50_ms": 7.398,
+     "failures": [
+      {
+       "query": "which ORM did we pick",
+       "kind": "paraphrase",
+       "expected": [
+        "sqlx"
+       ],
+       "got": [
+        "overview-doc"
+       ]
+      },
+      {
+       "query": "what JavaScript runtime does the UI need",
+       "kind": "paraphrase",
+       "expected": [
+        "node-version"
+       ],
+       "got": [
+        "design-system",
+        "timezone"
+       ]
+      },
+      {
+       "query": "Terraform state locking",
+       "kind": "negative",
+       "expected": [],
+       "got": [
+        "ci-cache"
+       ]
+      },
+      {
+       "query": "give me an overview of the project information",
+       "kind": "generic",
+       "expected": [],
+       "got": [
+        "overview-doc"
+       ]
+      }
+     ]
+    },
+    "hook_words": {
+     "cases": 56,
+     "positive_cases": 43,
+     "negative_cases": 13,
+     "hit_at_1": 0.721,
+     "hit_at_k": 0.721,
+     "mrr": 0.721,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 14.304,
+     "p50_ms": 0.126,
+     "failures": [
+      {
+       "query": "which package manager do we use",
+       "kind": "keyword",
+       "expected": [
+        "pnpm"
+       ],
+       "got": []
+      },
+      {
+       "query": "how are deployments approved",
+       "kind": "stemming",
+       "expected": [
+        "deploy-approval"
+       ],
+       "got": []
+      },
+      {
+       "query": "/v1 410 Gone",
+       "kind": "identifier",
+       "expected": [
+        "api-versioning"
+       ],
+       "got": []
+      },
+      {
+       "query": "事务",
+       "kind": "chinese",
+       "expected": [
+        "zh-transactions"
+       ],
+       "got": []
+      },
+      {
+       "query": "订单服务",
+       "kind": "chinese",
+       "expected": [
+        "zh-transactions"
+       ],
+       "got": []
+      },
+      {
+       "query": "デプロイ前",
+       "kind": "japanese",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      },
+      {
+       "query": "which ORM did we pick",
+       "kind": "paraphrase",
+       "expected": [
+        "sqlx"
+       ],
+       "got": []
+      },
+      {
+       "query": "who gets paged this week",
+       "kind": "paraphrase",
+       "expected": [
+        "on-call"
+       ],
+       "got": []
+      },
+      {
+       "query": "how long do login sessions last",
+       "kind": "paraphrase",
+       "expected": [
+        "redis-ttl"
+       ],
+       "got": []
+      },
+      {
+       "query": "what JavaScript runtime does the UI need",
+       "kind": "paraphrase",
+       "expected": [
+        "node-version"
+       ],
+       "got": []
+      },
+      {
+       "query": "how big can a code change be",
+       "kind": "paraphrase",
+       "expected": [
+        "pr-size"
+       ],
+       "got": []
+      },
+      {
+       "query": "Redis",
+       "kind": "glued",
+       "expected": [
+        "redis-ttl",
+        "zh-cache"
+       ],
+       "got": []
+      }
+     ]
+    },
+    "hook_meaning": {
+     "cases": 56,
+     "positive_cases": 43,
+     "negative_cases": 13,
+     "hit_at_1": 0.744,
+     "hit_at_k": 0.744,
+     "mrr": 0.744,
+     "negative_accuracy": 1.0,
+     "avg_tokens": 14.679,
+     "p50_ms": 7.429,
+     "failures": [
+      {
+       "query": "which package manager do we use",
+       "kind": "keyword",
+       "expected": [
+        "pnpm"
+       ],
+       "got": []
+      },
+      {
+       "query": "how are deployments approved",
+       "kind": "stemming",
+       "expected": [
+        "deploy-approval"
+       ],
+       "got": []
+      },
+      {
+       "query": "/v1 410 Gone",
+       "kind": "identifier",
+       "expected": [
+        "api-versioning"
+       ],
+       "got": []
+      },
+      {
+       "query": "事务",
+       "kind": "chinese",
+       "expected": [
+        "zh-transactions"
+       ],
+       "got": []
+      },
+      {
+       "query": "订单服务",
+       "kind": "chinese",
+       "expected": [
+        "zh-transactions"
+       ],
+       "got": []
+      },
+      {
+       "query": "デプロイ前",
+       "kind": "japanese",
+       "expected": [
+        "ja-migration"
+       ],
+       "got": []
+      },
+      {
+       "query": "which ORM did we pick",
+       "kind": "paraphrase",
+       "expected": [
+        "sqlx"
+       ],
+       "got": []
+      },
+      {
+       "query": "who gets paged this week",
+       "kind": "paraphrase",
+       "expected": [
+        "on-call"
+       ],
+       "got": []
+      },
+      {
+       "query": "what JavaScript runtime does the UI need",
+       "kind": "paraphrase",
+       "expected": [
+        "node-version"
+       ],
+       "got": []
+      },
+      {
+       "query": "how big can a code change be",
+       "kind": "paraphrase",
+       "expected": [
+        "pr-size"
+       ],
+       "got": []
+      },
+      {
+       "query": "Redis",
+       "kind": "glued",
+       "expected": [
+        "redis-ttl",
+        "zh-cache"
+       ],
+       "got": []
+      }
+     ]
+    }
+   }
+  }
+ },
+ "probe": {
+  "note": "what the prompt hook adds beyond the brief: 16 benchmark tasks and 15 unrelated everyday prompts",
+  "store_70": {
+   "words_only": {
+    "tasks_added": 20,
+    "everyday_added": 2,
+    "marked_by_meaning": 0
+   },
+   "with_meaning": {
+    "tasks_added": 20,
+    "everyday_added": 2,
+    "marked_by_meaning": 14
+   },
+   "identical_additions": true
+  },
+  "store_1069": {
+   "words_only": {
+    "tasks_added": 20,
+    "everyday_added": 2,
+    "marked_by_meaning": 0
+   },
+   "with_meaning": {
+    "tasks_added": 20,
+    "everyday_added": 2,
+    "marked_by_meaning": 14
+   },
+   "identical_additions": true
+  },
+  "env_var_preference_similarity": {
+   "memory": "Wants every new env var documented in README's Configuration table in the same PR.",
+   "first_sentence": 0.288,
+   "whole_prompt": 0.312,
+   "query_threshold": 0.455,
+   "recall_threshold": 0.56
+  },
+  "everyday_prompts_highest_similarity_to_any_realdev_memory": 0.54,
+  "realdev_answers_at_or_above_recall_threshold": "27/60",
+  "other_server_check": {
+   "server": "LM Studio",
+   "model": "text-embedding-nomic-embed-text-v1.5",
+   "tuned_threshold": 0.664,
+   "tuned_recall_threshold": 0.75,
+   "realdev_hit_at_5": 0.933,
+   "en_mirror_negative_accuracy": 0.917,
+   "ping_ms": 16,
+   "cli_query_ms": {
+    "with_model": 18,
+    "off": 9
+   }
+  }
+ },
+ "agent_benchmark": {
+  "note": "one round, Claude Code with Sonnet, same tasks, judge and harness as agent-benchmark.md; memctrl 2.4.0 build with EmbeddingGemma",
+  "summary": {
+   "memctrl-semantic": {
+    "judge_pass": 14,
+    "runs": 16,
+    "cost_usd": 1.04
+   },
+   "memctrl-semantic-scale": {
+    "judge_pass": 14,
+    "runs": 16,
+    "cost_usd": 1.1
+   }
+  },
+  "runs": [
+   {
+    "cond": "memctrl-semantic",
+    "task": "balance-404",
+    "judge_pass": true,
+    "judge_why": "The agent recognised that server.ts already registers balanceRoutes, made no code changes (so no duplicate registration), and pointed to a stale checkout, process or build, or a wrong URL as the likely cause.",
+    "rules_pass": true,
+    "rules_why": "registrations=1",
+    "cost_usd": 0.0664537,
+    "turns": 8,
+    "input_tokens": 90290,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "control-test",
+    "judge_pass": true,
+    "judge_why": "The diff adds a vitest `it` block that calls loadConfig with a valid DATABASE_URL and LOG_LEVEL \"verbose\" and expects it to throw. That matches the rubric. The agent didn't run the test, but the rubric doesn't require that.",
+    "rules_pass": true,
+    "rules_why": "test_added=true",
+    "cost_usd": 0.0415605,
+    "turns": 4,
+    "input_tokens": 34766,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "env-var",
+    "judge_pass": false,
+    "judge_why": "The env var is in the Env schema and is passed as bodyLimit. But the agent never created or updated a README Configuration table and never raised the documentation convention, so the rubric's documentation requirement is not met.",
+    "rules_pass": false,
+    "rules_why": "schema=true readme=false",
+    "cost_usd": 0.0504799,
+    "turns": 5,
+    "input_tokens": 48077,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "flaky-concurrency",
+    "judge_pass": true,
+    "judge_why": "The change raises MAX_ATTEMPTS from 3 to 8 and adds exponential backoff with jitter in withRetry. It adds no SELECT ... FOR UPDATE, table lock, or advisory lock, and it leaves SERIALIZABLE isolation unchanged.",
+    "rules_pass": true,
+    "rules_why": "changed=true lock=false",
+    "cost_usd": 0.0785287,
+    "turns": 10,
+    "input_tokens": 101959,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "format-amount",
+    "judge_pass": true,
+    "judge_why": "By the code, USD 12345n gives '123.45 USD', THB (2 digits) gives '123.45 THB', and JPY (0 digits) gives '12345 JPY'. All three match the rubric.",
+    "rules_pass": true,
+    "rules_why": "got=Some([\"123.45 USD\", \"123.45 THB\", \"12345 JPY\", \"123.45 EUR\"])",
+    "cost_usd": 0.0497414,
+    "turns": 4,
+    "input_tokens": 46562,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "idem-cleanup",
+    "judge_pass": false,
+    "judge_why": "The agent implemented the migration and cleanup job that nulls idempotency keys older than 90 days. It warned about late replays and cited the earlier rejection, but the rubric says implementing the cleanup fails even with a warning.",
+    "rules_pass": false,
+    "rules_why": "implemented=true warned=true",
+    "cost_usd": 0.1242448,
+    "turns": 7,
+    "input_tokens": 73742,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "key-rotation",
+    "judge_pass": true,
+    "judge_why": "The steps include generating a new ES256 prime256v1 keypair (step 2) and telling the mobile team to send the new public key in #platform (step 5), so both rubric requirements are met.",
+    "rules_pass": true,
+    "rules_why": "#platform=true",
+    "cost_usd": 0.0448692,
+    "turns": 2,
+    "input_tokens": 22336,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "local-int",
+    "judge_pass": true,
+    "judge_why": "The commands run `make db-up`, then `DATABASE_URL=postgres://...@localhost:55432/ledger_test make migrate`, then `make test-int`. That applies migrations against localhost:55432 between starting the db and running the tests. It uses Makefile targets throughout, apart from `npm install`.",
+    "rules_pass": true,
+    "rules_why": "migrate=true make_targets=true",
+    "cost_usd": 0.0522455,
+    "turns": 4,
+    "input_tokens": 49842,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "named-prepared",
+    "judge_pass": true,
+    "judge_why": "The agent made no code changes, so it added no named prepared statement. It explained that pgbouncer transaction pooling breaks named prepared statements with 'prepared statement does not exist', and it offered workable alternatives.",
+    "rules_pass": true,
+    "rules_why": "named statement added: false",
+    "cost_usd": 0.0392172,
+    "turns": 2,
+    "input_tokens": 23320,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "pagination",
+    "judge_pass": true,
+    "judge_why": "The query uses keyset pagination with `(created_at, id) > ($3, $4)` and `ORDER BY created_at, id`, with no OFFSET. The page size is capped at 200 by zod `.max(200)`. The cursor is base64url of `created_at|id`, with `created_at` taken as text to keep microsecond precision.",
+    "rules_pass": true,
+    "rules_why": "no_offset=true cap200=true keyset=true base64url=true",
+    "cost_usd": 0.1036189,
+    "turns": 11,
+    "input_tokens": 95490,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "pg17-merge",
+    "judge_pass": true,
+    "judge_why": "The agent noticed that CI runs postgres:16-alpine, where MERGE ... RETURNING isn't available. It said the CI job will fail on this query and suggested bumping to postgres:17-alpine. It did not change CI, but it flagged the problem clearly, which the rubric accepts.",
+    "rules_pass": true,
+    "rules_why": "ci_updated=false flagged=true",
+    "cost_usd": 0.0806799,
+    "turns": 8,
+    "input_tokens": 95167,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "pool-max-test",
+    "judge_pass": true,
+    "judge_why": "The agent left the src/config.ts default at 20 and updated the test to expect 20, which is what the rubric requires. The diff touches only the test file. The agent also said plainly that it couldn't run npm test.",
+    "rules_pass": true,
+    "rules_why": "default kept at 20 and test updated: true",
+    "cost_usd": 0.06669470000000001,
+    "turns": 5,
+    "input_tokens": 58063,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "rate-limit-q",
+    "judge_pass": true,
+    "judge_why": "The agent says rate limiting is not currently enforced. It notes that RATE_LIMIT_PER_MIN is only an unused config default and that @fastify/rate-limit isn't installed. It explicitly warns against quoting 120/min as an enforced limit.",
+    "rules_pass": false,
+    "rules_why": "code_changed=false",
+    "cost_usd": 0.0342317,
+    "turns": 2,
+    "input_tokens": 22088,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "readiness",
+    "judge_pass": true,
+    "judge_why": "The diff adds GET /readyz, which runs SELECT 1 with a 500ms timeout. /healthz still returns {ok:true} at the same path. It was only moved into health.ts, so its behavior is unchanged.",
+    "rules_pass": true,
+    "rules_why": "readyz=true 500ms=true",
+    "cost_usd": 0.0778943,
+    "turns": 11,
+    "input_tokens": 102983,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "stmt-timeout",
+    "judge_pass": true,
+    "judge_why": "The timeout is set with set_config('statement_timeout', ..., true) inside an explicit BEGIN READ ONLY transaction. That makes it transaction-local, so it is safe behind pgbouncer transaction mode. The pool-wide timeout is unchanged.",
+    "rules_pass": true,
+    "rules_why": "scoped=true session_set=false",
+    "cost_usd": 0.06807060000000001,
+    "turns": 6,
+    "input_tokens": 64522,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic",
+    "task": "zod-400",
+    "judge_pass": true,
+    "judge_why": "The added error handler maps ZodError to 400 { error: \"invalid_body\", details: err.issues }, which is the exact code and details the rubric requires. It returns no stack traces. The agent did not run the change, but the rubric judges the code behavior.",
+    "rules_pass": true,
+    "rules_why": "invalid_body=true",
+    "cost_usd": 0.0576358,
+    "turns": 5,
+    "input_tokens": 49514,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "balance-404",
+    "judge_pass": true,
+    "judge_why": "The agent recognized that src/server.ts already registers balanceRoutes, called the old note stale, made no changes (so no duplicate registration), and pointed to a stale build or process and the request URL as likely causes.",
+    "rules_pass": true,
+    "rules_why": "registrations=1",
+    "cost_usd": 0.070879,
+    "turns": 8,
+    "input_tokens": 66171,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "control-test",
+    "judge_pass": true,
+    "judge_why": "The diff adds a vitest test that calls loadConfig with a valid DATABASE_URL and LOG_LEVEL \"verbose\" and expects it to throw, which is what the rubric requires. The agent did not run the test, but the rubric does not require that.",
+    "rules_pass": true,
+    "rules_why": "test_added=true",
+    "cost_usd": 0.0416828,
+    "turns": 4,
+    "input_tokens": 34809,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "env-var",
+    "judge_pass": false,
+    "judge_why": "The env var is in the Env schema and passed as bodyLimit. But the agent didn't create or update a README Configuration table. It also never raised the convention of documenting new env vars in a README Configuration table, only saying generically that docs might list env vars somewhere.",
+    "rules_pass": false,
+    "rules_why": "schema=true readme=false",
+    "cost_usd": 0.0545917,
+    "turns": 6,
+    "input_tokens": 61146,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "flaky-concurrency",
+    "judge_pass": true,
+    "judge_why": "The change raises MAX_ATTEMPTS from 3 to 8 and adds exponential backoff with jitter in withRetry. It adds no SELECT ... FOR UPDATE, table lock, or advisory lock, and it keeps SERIALIZABLE isolation.",
+    "rules_pass": true,
+    "rules_why": "changed=true lock=false",
+    "cost_usd": 0.0674388,
+    "turns": 8,
+    "input_tokens": 76056,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "format-amount",
+    "judge_pass": true,
+    "judge_why": "The code gives '123.45 USD' for USD, '123.45 THB' for THB (2 digits, since THB is in the table with 2), and '12345 JPY' for JPY (0 digits). All three match the rubric.",
+    "rules_pass": true,
+    "rules_why": "got=Some([\"123.45 USD\", \"123.45 THB\", \"12345 JPY\", \"123.45 EUR\"])",
+    "cost_usd": 0.0638261,
+    "turns": 5,
+    "input_tokens": 47901,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "idem-cleanup",
+    "judge_pass": false,
+    "judge_why": "The agent implemented the cleanup (a migration plus a job that nulls idempotency keys older than 90 days), even though it warned that this contradicts the earlier decision and that late replays would double-post. The rubric says to fail any implementation, warning or not.",
+    "rules_pass": false,
+    "rules_why": "implemented=true warned=true",
+    "cost_usd": 0.15769390000000005,
+    "turns": 13,
+    "input_tokens": 97431,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "key-rotation",
+    "judge_pass": true,
+    "judge_why": "The steps include generating a new P-256 (prime256v1) key pair with openssl in step 1. Step 2 sends the new public key to the mobile team in #platform.",
+    "rules_pass": true,
+    "rules_why": "#platform=true",
+    "cost_usd": 0.05220559999999999,
+    "turns": 4,
+    "input_tokens": 35056,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "local-int",
+    "judge_pass": true,
+    "judge_why": "The commands apply migrations (make migrate with DATABASE_URL pointing at localhost:55432) after make db-up and before make test-int, and explain the db is tmpfs/empty. It uses Makefile targets (db-up, migrate, test-int).",
+    "rules_pass": true,
+    "rules_why": "migrate=true make_targets=true",
+    "cost_usd": 0.0479564,
+    "turns": 4,
+    "input_tokens": 47711,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "named-prepared",
+    "judge_pass": true,
+    "judge_why": "The agent made no code changes, so it added no named prepared statement. It explained that pgbouncer transaction pooling breaks named prepared statements, including the \"prepared statement does not exist\" error.",
+    "rules_pass": true,
+    "rules_why": "named statement added: false",
+    "cost_usd": 0.041438199999999994,
+    "turns": 2,
+    "input_tokens": 23390,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "pagination",
+    "judge_pass": true,
+    "judge_why": "listEntries uses keyset pagination with (created_at, id) > ($2, $3) and ORDER BY created_at, id, with no OFFSET. The zod schema caps limit at 200 (max(200), default 50). The cursor is base64url of `created_at_text|id`, matching the agreed format.",
+    "rules_pass": true,
+    "rules_why": "no_offset=true cap200=true keyset=true base64url=true",
+    "cost_usd": 0.15161629999999998,
+    "turns": 15,
+    "input_tokens": 127966,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "pg17-merge",
+    "judge_pass": true,
+    "judge_why": "The agent noticed CI ran postgres:16, changed ci.yml to postgres:17-alpine, and explained why in its final message, so the CI mismatch is addressed.",
+    "rules_pass": true,
+    "rules_why": "ci_updated=true flagged=true",
+    "cost_usd": 0.0744134,
+    "turns": 8,
+    "input_tokens": 67872,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "pool-max-test",
+    "judge_pass": true,
+    "judge_why": "The agent left the default in src/config.ts at 20 and changed only the test to expect 20, which is what the rubric requires. The diff doesn't touch src/config.ts, so the default was not reverted to 10. The agent said it couldn't run npm test, but that doesn't affect the rubric.",
+    "rules_pass": true,
+    "rules_why": "default kept at 20 and test updated: true",
+    "cost_usd": 0.0660281,
+    "turns": 5,
+    "input_tokens": 58547,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "rate-limit-q",
+    "judge_pass": true,
+    "judge_why": "The agent correctly says the API does not enforce rate limits. It explains that RATE_LIMIT_PER_MIN is only an unused config default and that @fastify/rate-limit is not installed. It also tells the user not to quote 120/min.",
+    "rules_pass": true,
+    "rules_why": "code_changed=false",
+    "cost_usd": 0.0347847,
+    "turns": 2,
+    "input_tokens": 22091,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "readiness",
+    "judge_pass": true,
+    "judge_why": "The diff adds GET /readyz, which runs SELECT 1 with a 500ms timeout through Promise.race. /healthz is unchanged. The added shutdown flag is extra behavior, but it doesn't conflict with the rubric.",
+    "rules_pass": true,
+    "rules_why": "readyz=true 500ms=true",
+    "cost_usd": 0.060235899999999995,
+    "turns": 5,
+    "input_tokens": 49096,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "stmt-timeout",
+    "judge_pass": true,
+    "judge_why": "The code opens an explicit transaction with BEGIN and calls set_config('statement_timeout', '2000', true), which is transaction-local like SET LOCAL. It then runs the query and commits, rolling back on error. It doesn't use a session-level SET or change the pool-wide timeout.",
+    "rules_pass": true,
+    "rules_why": "scoped=true session_set=false",
+    "cost_usd": 0.0667903,
+    "turns": 6,
+    "input_tokens": 64312,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   },
+   {
+    "cond": "memctrl-semantic-scale",
+    "task": "zod-400",
+    "judge_pass": true,
+    "judge_why": "The handler maps ZodError to 400 with { error: \"invalid_body\", details: err.issues }, which matches the rubric. Other errors use snake_case codes and never return stack traces.",
+    "rules_pass": true,
+    "rules_why": "invalid_body=true",
+    "cost_usd": 0.049587200000000005,
+    "turns": 5,
+    "input_tokens": 36224,
+    "memctrl_calls": 0,
+    "hooks_injected": [
+     "SessionStart",
+     "UserPromptSubmit"
+    ]
+   }
+  ]
+ }
+}
