@@ -80,19 +80,70 @@ pub fn tracked_by_git(db: &Path) -> bool {
     } else {
         dir
     };
-    let in_repository = dir
-        .canonicalize()
-        .is_ok_and(|d| d.ancestors().any(|a| a.join(".git").exists()));
-    in_repository
-        && std::process::Command::new("git")
-            .arg("-C")
-            .arg(dir)
-            .args(["ls-files", "--error-unmatch", "--"])
-            .arg(name)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+    let Ok(dir_abs) = dir.canonicalize() else {
+        return false;
+    };
+    let Some(root) = dir_abs.ancestors().find(|a| a.join(".git").exists()) else {
+        return false;
+    };
+    // Starting git costs a few milliseconds on every command, so read the index first: when it
+    // plainly doesn't list the database, nothing tracks it.
+    if index_lists(root, &dir_abs.join(name)) == Some(false) {
+        return false;
+    }
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["ls-files", "--error-unmatch", "--"])
+        .arg(name)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Whether `<root>/.git/index` contains `path`, read without git. `None` means "can't tell":
+/// a worktree or submodule (`.git` is a file), a split index, or index version 4, which
+/// prefix-compresses paths so they aren't stored whole. Versions 2 and 3 store every tracked
+/// path in full, so a path that isn't in the bytes isn't tracked.
+fn index_lists(root: &Path, path: &Path) -> Option<bool> {
+    let git_dir = root.join(".git");
+    if !git_dir.is_dir() {
+        return None;
+    }
+    let rel = path.strip_prefix(root).ok()?;
+    let mut needle = Vec::new();
+    for (i, part) in rel.components().enumerate() {
+        if i > 0 {
+            needle.push(b'/');
+        }
+        needle.extend_from_slice(part.as_os_str().to_str()?.as_bytes());
+    }
+    // Git may store a non-ASCII name in another Unicode normalization than the filesystem.
+    if !needle.is_ascii() {
+        return None;
+    }
+    let index = match std::fs::read(git_dir.join("index")) {
+        Ok(index) => index,
+        // No index yet: nothing has ever been added.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(false),
+        Err(_) => return None,
+    };
+    if index.len() < 12 || &index[..4] != b"DIRC" || !matches!(index[4..8], [0, 0, 0, 2 | 3]) {
+        return None;
+    }
+    let shared = std::fs::read_dir(&git_dir)
+        .ok()?
+        .any(|e| e.is_ok_and(|e| e.file_name().to_string_lossy().starts_with("sharedindex.")));
+    if shared {
+        return None;
+    }
+    // Case-insensitive, so a case-insensitive filesystem can only cause a fallback to git.
+    Some(
+        index
+            .windows(needle.len())
+            .any(|w| w.eq_ignore_ascii_case(&needle)),
+    )
 }
 
 /// `locate` from the process's working directory and home.
@@ -219,5 +270,37 @@ mod tests {
         assert!(!locate(&home.join("notes/today"), Some(&home)).found);
         // Home itself is a project when you run memctrl there.
         assert!(locate(&home, Some(&home)).found);
+    }
+
+    #[test]
+    fn the_index_is_read_without_git_only_when_it_can_answer() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().canonicalize().unwrap();
+        let db = repo.join(DEFAULT_DB);
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        assert_eq!(index_lists(&repo, &db), Some(false), "no index yet");
+
+        let index = |version: u8, body: &[u8]| {
+            let mut bytes = b"DIRC\0\0\0".to_vec();
+            bytes.push(version);
+            bytes.extend_from_slice(&[0, 0, 0, 1]);
+            bytes.extend_from_slice(body);
+            std::fs::write(repo.join(".git/index"), bytes).unwrap();
+        };
+        index(2, b"\0src/main.rs\0");
+        assert_eq!(index_lists(&repo, &db), Some(false));
+        index(2, b"\0.MEMCTRL/memories.db\0");
+        assert_eq!(index_lists(&repo, &db), Some(true), "case never hides it");
+        // Version 4 compresses paths, so a missing path proves nothing.
+        index(4, b"\0src/main.rs\0");
+        assert_eq!(index_lists(&repo, &db), None);
+        index(2, b"\0src/main.rs\0");
+        touch(&repo.join(".git/sharedindex.0123"));
+        assert_eq!(index_lists(&repo, &db), None, "split index");
+
+        // A worktree's .git is a file pointing elsewhere.
+        let worktree = repo.join("wt");
+        touch(&worktree.join(".git"));
+        assert_eq!(index_lists(&worktree, &worktree.join(DEFAULT_DB)), None);
     }
 }

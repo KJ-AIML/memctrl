@@ -30,7 +30,8 @@ without into onto over under about as is are was were be been being am do does d
 have has had having i me my we our us you your he she it its they them their this that these \
 those there here what which who whom whose when where why how can could should would will shall \
 may might must not no nor so than too very just also only own same such some any each every all \
-both few more most other again further once please tell know want need";
+both few more most other again further once please tell know want need \
+don doesn didn isn aren wasn weren won wouldn shouldn couldn haven hasn hadn ll ve re";
 
 fn stop_words() -> &'static HashSet<&'static str> {
     static WORDS: OnceLock<HashSet<&'static str>> = OnceLock::new();
@@ -276,7 +277,7 @@ impl ParsedQuery {
     }
     /// Units as the coverage gate counts them: a long spaceless run holds several words, so it
     /// counts as one unit per four trigrams, as English already counts each word.
-    fn gate_units(&self) -> usize {
+    pub fn gate_units(&self) -> usize {
         self.terms.len()
             + self
                 .runs

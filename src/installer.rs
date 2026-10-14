@@ -104,25 +104,37 @@ fn on_path() -> Option<std::path::PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
-/// The hook command: plain `memctrl` when that resolves to this same executable (so upgrades
-/// and package-manager paths keep working), otherwise the quoted absolute path.
-pub fn hook_command(executable: &Path) -> String {
+/// How hooks start memctrl: plain `memctrl` when that resolves to this same executable (so
+/// upgrades and package-manager paths keep working), otherwise the quoted absolute path.
+fn hook_program(executable: &Path) -> String {
     let same = on_path()
         .and_then(|found| found.canonicalize().ok())
         .zip(executable.canonicalize().ok())
         .is_some_and(|(found, current)| found == current);
-    let program = if same {
+    if same {
         "memctrl".to_string()
     } else {
         shell_quote(&executable.to_string_lossy())
-    };
-    format!("{program} context --format hook")
+    }
 }
 
-fn is_memctrl_brief_hook(hook: &Value) -> bool {
+/// The session-start hook command, which injects the brief.
+pub fn hook_command(executable: &Path) -> String {
+    format!("{} {BRIEF_ARGS}", hook_program(executable))
+}
+
+/// The prompt hook command, which adds the memories that match each prompt.
+pub fn recall_hook_command(executable: &Path) -> String {
+    format!("{} {RECALL_ARGS}", hook_program(executable))
+}
+
+const BRIEF_ARGS: &str = "context --format hook";
+const RECALL_ARGS: &str = "recall --format hook";
+
+fn is_memctrl_hook(hook: &Value, args: &str) -> bool {
     hook.get("command")
         .and_then(Value::as_str)
-        .is_some_and(|c| c.contains("memctrl") && c.contains("context --format hook"))
+        .is_some_and(|c| c.contains("memctrl") && c.contains(args))
 }
 
 /// Adds (or updates) a Claude Code SessionStart hook that injects `memctrl context`. The hook has
@@ -130,11 +142,27 @@ fn is_memctrl_brief_hook(hook: &Value) -> bool {
 /// Idempotent: an existing memctrl hook is updated in place, everything else is preserved in its
 /// original key order, and a file that isn't valid JSON is never rewritten.
 pub fn install_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
+    install_event_hook(root, settings, "SessionStart", BRIEF_ARGS, command)
+}
+
+/// Adds (or updates) the UserPromptSubmit hook that runs `memctrl recall` on each prompt, the
+/// same way `install_hook` handles the session-start hook.
+pub fn install_recall_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
+    install_event_hook(root, settings, "UserPromptSubmit", RECALL_ARGS, command)
+}
+
+fn install_event_hook(
+    root: &Path,
+    settings: &str,
+    event: &str,
+    args: &str,
+    command: &str,
+) -> Result<(PathBuf, bool)> {
     let destination = scoped_destination(root, settings)?;
     let mut settings: Value = match std::fs::read_to_string(&destination) {
         Ok(text) if !text.trim().is_empty() => serde_json::from_str(&text).with_context(|| {
             format!(
-                "{} is not valid JSON; add this SessionStart hook manually: {command}",
+                "{} is not valid JSON; add this {event} hook manually: {command}",
                 destination.display()
             )
         })?,
@@ -149,15 +177,16 @@ pub fn install_hook(root: &Path, settings: &str, command: &str) -> Result<(PathB
     let hooks = hooks
         .as_object_mut()
         .context("settings.json \"hooks\" must be an object")?;
-    let session = hooks.entry("SessionStart").or_insert_with(|| json!([]));
-    let groups = session
+    let groups = hooks
+        .entry(event)
+        .or_insert_with(|| json!([]))
         .as_array_mut()
-        .context("settings.json \"hooks.SessionStart\" must be an array")?;
+        .with_context(|| format!("settings.json \"hooks.{event}\" must be an array"))?;
     let mut found = false;
     let mut changed = false;
     for group in groups.iter_mut() {
         if let Some(list) = group.get_mut("hooks").and_then(Value::as_array_mut) {
-            for hook in list.iter_mut().filter(|h| is_memctrl_brief_hook(h)) {
+            for hook in list.iter_mut().filter(|h| is_memctrl_hook(h, args)) {
                 found = true;
                 if hook.get("command").and_then(Value::as_str) != Some(command) {
                     hook["command"] = json!(command);
@@ -227,6 +256,31 @@ mod tests {
         // Original key order survives the rewrite.
         let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["permissions", "hooks", "model"]);
+    }
+
+    #[test]
+    fn the_prompt_hook_installs_next_to_the_brief_hook() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = ".claude/settings.local.json";
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        install_hook(dir.path(), file, "memctrl context --format hook").unwrap();
+        let (_, changed) =
+            install_recall_hook(dir.path(), file, "memctrl recall --format hook").unwrap();
+        assert!(changed);
+        let (_, changed) =
+            install_recall_hook(dir.path(), file, "memctrl recall --format hook").unwrap();
+        assert!(!changed, "second install must be a no-op");
+        let value: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(file)).unwrap()).unwrap();
+        assert_eq!(value["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            value["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(
+            value["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
+            "memctrl recall --format hook"
+        );
     }
 
     #[test]

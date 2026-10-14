@@ -1,0 +1,232 @@
+{
+ "name": "en-mirror",
+ "description": "English mirror of the Thai team: 41 memories and 12 questions that must return nothing, half vague (\"summarize the project\") and half off-topic.",
+ "memories": [
+  {
+   "key": "pnpm",
+   "content": "Never use npm in this project, use pnpm only"
+  },
+  {
+   "key": "redis-cache",
+   "content": "Use Redis as the cache for user sessions with a TTL of 30 minutes"
+  },
+  {
+   "key": "redis-queue",
+   "content": "The notification system uses Redis as a temporary queue"
+  },
+  {
+   "key": "cache-products",
+   "content": "Cache the product list API results in Redis for 5 minutes"
+  },
+  {
+   "key": "db",
+   "content": "The main database is PostgreSQL 16 running on db-prod-01"
+  },
+  {
+   "key": "backup",
+   "content": "Back up the database data every day at 2am with pg_dump and upload to S3"
+  },
+  {
+   "key": "backup-files",
+   "content": "Back up user uploaded files to a separate S3 bucket every week"
+  },
+  {
+   "key": "deploy",
+   "content": "Before deploying to production the team lead must approve in GitHub Actions"
+  },
+  {
+   "key": "deploy-friday",
+   "content": "No deploys on Friday after 3pm"
+  },
+  {
+   "key": "server-restart",
+   "content": "The staging server restarts automatically every night at midnight"
+  },
+  {
+   "key": "server-ram",
+   "content": "The API server has 16GB RAM; if usage exceeds 80% notify the DevOps team"
+  },
+  {
+   "key": "server-dev",
+   "content": "The dev server is shut down on weekends to save cost"
+  },
+  {
+   "key": "login-bug",
+   "content": "The login page bug is caused by an expired token that is not refreshed; call AuthService.refreshToken() first"
+  },
+  {
+   "key": "jwt",
+   "content": "Authentication uses JWT valid for 15 minutes and refresh tokens valid for 7 days"
+  },
+  {
+   "key": "review",
+   "content": "Every PR needs at least 2 reviewers before merging into main"
+  },
+  {
+   "key": "branch",
+   "content": "Name branches feature/task-name or fix/ticket-number"
+  },
+  {
+   "key": "commit-lang",
+   "content": "Commit messages are written in English but code comments may be in Thai"
+  },
+  {
+   "key": "timezone",
+   "content": "Times in the database are stored as UTC but shown on the website in Thailand time (Asia/Bangkok)"
+  },
+  {
+   "key": "payment",
+   "content": "The payment system integrates with Omise and uses a webhook to confirm transfers"
+  },
+  {
+   "key": "promptpay",
+   "content": "Support PromptPay payments with a QR code generated from the company account number"
+  },
+  {
+   "key": "coverage",
+   "content": "Unit test coverage must not drop below 80% or CI fails"
+  },
+  {
+   "key": "env",
+   "content": "Never commit the .env file to git; keep secrets in Vault"
+  },
+  {
+   "key": "docker",
+   "content": "Run docker compose up -d before running integration tests every time"
+  },
+  {
+   "key": "meeting",
+   "content": "Team meeting every Monday at 10am on Google Meet"
+  },
+  {
+   "key": "standup",
+   "content": "Daily standup at 9:30, no longer than 15 minutes"
+  },
+  {
+   "key": "api-version",
+   "content": "Every API route must start with /api/v2; v1 will be shut down at the end of this year"
+  },
+  {
+   "key": "rate-limit",
+   "content": "The public API is limited to 100 requests per minute per IP"
+  },
+  {
+   "key": "logging",
+   "content": "Logs must be JSON and must not contain personal data such as national ID or phone numbers"
+  },
+  {
+   "key": "pdpa",
+   "content": "Customer data must be stored on servers located in Thailand per PDPA"
+  },
+  {
+   "key": "font",
+   "content": "Thai web font is Sarabun and headings use Prompt"
+  },
+  {
+   "key": "collation",
+   "content": "Sorting Thai names needs the th-TH collation or leading vowels sort wrong"
+  },
+  {
+   "key": "segment",
+   "content": "Thai search in Elasticsearch needs the ICU tokenizer for word segmentation"
+  },
+  {
+   "key": "buddhist-year",
+   "content": "Dates in reports are shown in the Buddhist era but the API always sends the Gregorian year"
+  },
+  {
+   "key": "mobile",
+   "content": "The mobile app is written in Flutter and supports Android 8+ and iOS 14+"
+  },
+  {
+   "key": "onboarding",
+   "content": "New employees must request VPN access from the IT team before their first day"
+  },
+  {
+   "key": "project-structure",
+   "content": "The project structure is split into apps/ and packages/ as a Turborepo monorepo"
+  },
+  {
+   "key": "project-node",
+   "content": "This project uses Node.js 20 LTS only"
+  },
+  {
+   "key": "vat",
+   "content": "calculateVat() applies 7% VAT; never change the VAT_RATE constant yourself"
+  },
+  {
+   "key": "err-409",
+   "content": "ERR_ORDER_409 means a duplicate order; return the existing order instead of creating a new one"
+  },
+  {
+   "key": "otp",
+   "content": "Send OTP by SMS through ThaiBulkSMS; it expires in 5 minutes"
+  },
+  {
+   "key": "team-owner",
+   "content": "The backend team owns the payment system; the frontend team owns the website and app"
+  }
+ ],
+ "cases": [
+  {
+   "query": "all project information",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "all information",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "what is there",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "summarize the project",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "tell me everything about the system",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "what does the team use",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "overview of this project",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "what information is in the system",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "past decisions",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "latest work status",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "customer loyalty points system",
+   "expect": [],
+   "kind": "en_negative"
+  },
+  {
+   "query": "withholding tax",
+   "expect": [],
+   "kind": "en_negative"
+  }
+ ]
+}

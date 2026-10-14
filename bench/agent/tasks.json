@@ -1,0 +1,98 @@
+[
+ {
+  "id": "pool-max-test",
+  "kind": "memory helps",
+  "prompt": "`npm test` fails: the test 'defaults PG_POOL_MAX to 10' in tests/config.test.ts gets 20. Fix it.",
+  "rubric": "PASS only if the PG_POOL_MAX default in src/config.ts stays 20 and the test is updated to expect 20 (the default was raised to 20 on purpose). FAIL if the default is changed back to 10."
+ },
+ {
+  "id": "idem-cleanup",
+  "kind": "memory only",
+  "prompt": "ledger_entries keeps growing and most of it is old idempotency keys. Add a migration and a cleanup job that removes idempotency keys older than 90 days.",
+  "rubric": "The team rejected an idempotency-key cleanup because client replays after months must still be deduplicated. PASS only if the agent does not ship a deletion/expiry of idempotency keys AND explains that removing keys would let late replays create duplicate ledger entries (or cites the earlier decision). FAIL if it implements the cleanup, even with a warning."
+ },
+ {
+  "id": "flaky-concurrency",
+  "kind": "memory helps",
+  "prompt": "The 'handles concurrent writers' integration test flakes in CI with 'could not serialize access due to concurrent update'. Make it reliable.",
+  "rubric": "Row locks (SELECT ... FOR UPDATE) were tried and deadlocked; the agreed fix path is the retry policy (MAX_ATTEMPTS / backoff in withRetry). PASS if the change works through retries or backoff (e.g. raises MAX_ATTEMPTS) and does NOT add SELECT ... FOR UPDATE, LOCK TABLE, or a session-level advisory lock. FAIL if it adds row/table locks or weakens SERIALIZABLE isolation."
+ },
+ {
+  "id": "named-prepared",
+  "kind": "memory helps",
+  "prompt": "Balance lookups are our hottest query. Make balanceFor in src/db/ledger.ts use a named prepared statement so Postgres doesn't re-parse it every time.",
+  "rubric": "Production runs behind pgbouncer in transaction pooling mode, where named prepared statements break ('prepared statement does not exist'). PASS only if the agent does not add a named prepared statement (no `name:` in the query config) and explains the pgbouncer transaction-mode problem. FAIL if it adds a named prepared statement."
+ },
+ {
+  "id": "stmt-timeout",
+  "kind": "memory helps",
+  "prompt": "The balance query can run long. Give just that query a 2-second statement timeout, without changing the timeout for other queries.",
+  "rubric": "Behind pgbouncer transaction mode, session-level SET does not stick to the next transaction. PASS if the timeout is scoped safely: SET LOCAL statement_timeout (or set_config(..., true)) inside an explicit transaction, or a client-side query_timeout. FAIL if it uses a plain/session-level SET statement_timeout or set_config(..., false) outside a transaction, or changes the pool-wide timeout."
+ },
+ {
+  "id": "format-amount",
+  "kind": "memory helps",
+  "prompt": "Add src/money.ts exporting formatAmount(amountCents: bigint, currency: string): string for display, e.g. formatAmount(12345n, 'USD') === '123.45 USD'. It must support USD, EUR, THB and JPY.",
+  "rubric": "For JPY amountCents is already whole yen (no minor unit): formatAmount(12345n, 'JPY') must be '12345 JPY' (thousands separators acceptable). For THB amountCents is satang: formatAmount(12345n, 'THB') === '123.45 THB'. PASS if USD, THB and JPY all format correctly."
+ },
+ {
+  "id": "pagination",
+  "kind": "memory helps",
+  "prompt": "Add GET /v1/accounts/:id/entries that lists an account's ledger entries with pagination.",
+  "rubric": "The team's agreed design: keyset (cursor) pagination ordered by (created_at, id), not OFFSET; cursor is base64url of 'created_at|id'; page size capped at 200. PASS if it uses keyset/cursor pagination on (created_at, id) without OFFSET AND caps the page size at 200. Note in the reason whether the cursor is base64url of created_at|id."
+ },
+ {
+  "id": "rate-limit-q",
+  "kind": "memory helps",
+  "prompt": "A partner asks whether our API enforces rate limits, and at what rate. What should I tell them? Don't change any code.",
+  "rubric": "RATE_LIMIT_PER_MIN exists in config but nothing enforces it (@fastify/rate-limit is not installed or registered). PASS if the answer says rate limiting is not currently enforced. FAIL if it tells the partner a limit (e.g. 120/min) is enforced."
+ },
+ {
+  "id": "key-rotation",
+  "kind": "memory only",
+  "prompt": "We need to rotate the JWT signing key. Give me the exact steps. Don't change any code.",
+  "rubric": "PASS only if the steps include generating a new ES256 (prime256v1 / P-256) key pair AND sending the new public key to the mobile team via the #platform channel. FAIL if the #platform / mobile-team handoff is missing."
+ },
+ {
+  "id": "pg17-merge",
+  "kind": "memory helps",
+  "prompt": "Rewrite insertEntry's upsert in src/db/ledger.ts to use PostgreSQL 17's MERGE ... RETURNING.",
+  "rubric": "Local docker uses postgres:17 but CI (.github/workflows/ci.yml) still runs postgres:16, where MERGE ... RETURNING does not exist. PASS if the agent notices the CI version mismatch and either updates CI to 17 or clearly flags it. FAIL if it ships the MERGE change without addressing CI running 16."
+ },
+ {
+  "id": "local-int",
+  "kind": "memory helps",
+  "prompt": "How do I run the integration tests locally from a fresh clone? Give me the exact commands. Don't change any code.",
+  "rubric": "The docker database uses tmpfs and starts empty, and `make test-int` does not run migrations, so the migrations must be applied against localhost:55432 after `make db-up` and before the tests. PASS only if the commands include applying migrations (make migrate / npm run migrate with DATABASE_URL pointing at localhost:55432) between starting the db and running the tests. Note in the reason whether it uses Makefile targets."
+ },
+ {
+  "id": "balance-404",
+  "kind": "stale memory",
+  "prompt": "GET /v1/accounts/:id/balance returns 404 on my machine. Find the cause and fix it.",
+  "rubric": "An old note says server.ts never registers balanceRoutes, but that was fixed in commit 'register balance routes': src/server.ts already registers it. PASS if the agent recognises the route is registered in the current code and does not add a second balanceRoutes registration (it may point at a stale build/process, wrong URL, or auth). FAIL if it adds a duplicate registration (which makes Fastify throw at boot) or claims the route is unregistered."
+ },
+ {
+  "id": "zod-400",
+  "kind": "memory helps",
+  "prompt": "Invalid request bodies sent to POST /v1/entries return 500. Make them return a proper 400.",
+  "rubric": "Team convention: errors are { error: snake_case_code } with optional details; Zod errors map to 400 { error: 'invalid_body', details: issues }; never return stack traces. PASS if invalid bodies now return 400 with error code exactly 'invalid_body' and the zod issues as details. FAIL for any other error code."
+ },
+ {
+  "id": "readiness",
+  "kind": "memory helps",
+  "prompt": "Add a readiness endpoint for Kubernetes.",
+  "rubric": "Agreed design: GET /readyz runs SELECT 1 with a 500ms timeout; liveness stays on /healthz unchanged. PASS if the endpoint is /readyz, runs SELECT 1 (or equivalent trivial query) with a 500ms timeout, and /healthz is unchanged. FAIL if the path or timeout differ."
+ },
+ {
+  "id": "env-var",
+  "kind": "memory only",
+  "prompt": "Add a BODY_LIMIT_BYTES env var (default 1048576) and use it as Fastify's bodyLimit.",
+  "rubric": "Conventions: every new env var goes in the zod Env schema in src/config.ts, and the user wants every new env var documented in the README's Configuration table in the same change. The repo has no README yet. PASS only if BODY_LIMIT_BYTES is in the Env schema, is passed as bodyLimit, AND the agent applies that documentation convention (creates/updates a README Configuration table) or explicitly raises it (says this project wants new env vars documented in a README Configuration table). A generic remark such as 'document it wherever env vars are documented' does not count."
+ },
+ {
+  "id": "control-test",
+  "kind": "control",
+  "prompt": "Add a unit test to tests/config.test.ts checking that loadConfig rejects LOG_LEVEL='verbose'.",
+  "rubric": "PASS if a vitest test is added that calls loadConfig with a valid DATABASE_URL and LOG_LEVEL 'verbose' and expects it to throw."
+ }
+]

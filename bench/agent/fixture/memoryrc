@@ -1,0 +1,23 @@
+[layers]
+project = "architecture decisions, tech stack, ADRs, why we chose X"
+session = "current task, WIP, what was done this session"
+user = "preferences, working style, patterns, personal rules"
+[triggers]
+on_commit = "consolidate session -> project"
+on_session_end = "summarize session -> user"
+'on_file "docs/ADR-*.md"' = "extract -> project"
+'on_file "*.md"' = "extract -> project if contains decision"
+[forget]
+never = ["passwords", "keys", "PII", "secrets", "api_key", "token", "secret", "password"]
+after_days = { session = 7, user = 90 }
+[extract]
+confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
+[retrieval]
+# Words that should find each other. Built-ins cover db/database, prod/production, k8s/kubernetes...
+builtin_aliases = true
+aliases = []   # e.g. [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
+[guard]
+# Hidden characters or instruction-like text make a new memory a candidate for review.
+# "strict" also holds everything from sources not listed below; "off" disables the guard.
+mode = "flag"
+trusted_sources = ["manual", "user", "cli"]

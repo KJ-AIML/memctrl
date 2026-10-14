@@ -13,11 +13,14 @@ memctrl keeps durable project knowledge in a local SQLite store. Each memory car
 
 ## At session start
 
-If the Claude Code hook is installed (`memctrl install --tool claude --hook`), a brief of the highest-trust memories is already in your context under "Project memory (memctrl)". Otherwise, load it yourself:
+If the Claude Code hooks are installed (`memctrl install --tool claude --hook`), a brief of the highest-trust memories is already in your context under "Project memory (memctrl)", and the memories that match each request arrive with it under "Project memory for this request". Otherwise, load the brief yourself, and search before you change anything the brief doesn't cover:
 
 ```bash
 memctrl context
+memctrl recall "<the request, in its own words>"
 ```
+
+A recorded decision is what the team agreed. If a request goes against one, say so before acting on it.
 
 Entries under **Check before trusting** are disputed, or their cited code changed after they were saved. Confirm them against the code before relying on them.
 
