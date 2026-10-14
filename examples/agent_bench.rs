@@ -74,6 +74,10 @@ enum Step {
         /// Also build claude-md-scale and memctrl-scale: plus 1,000 unrelated memories.
         #[arg(long)]
         scale: bool,
+        /// Also build memctrl-semantic (and memctrl-semantic-scale with --scale): the memctrl
+        /// setups with this user config, whose [semantic] points at a running embedding server.
+        #[arg(long)]
+        semantic: Option<PathBuf>,
     },
     /// Run every task in every starting point once, as round REP.
     Run {
@@ -111,7 +115,12 @@ enum Step {
     },
     /// What the prompt hook adds for each task and for unrelated prompts. Run it inside a copy
     /// of a memctrl template: queries in the template itself change what later runs see.
-    Probe { memctrl: PathBuf },
+    Probe {
+        memctrl: PathBuf,
+        /// User config folder (XDG_CONFIG_HOME), e.g. WORK/xdg-memctrl-semantic.
+        #[arg(long)]
+        config_home: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -121,7 +130,14 @@ fn main() -> Result<()> {
             memctrl,
             baseline,
             scale,
-        } => setup(&work, &memctrl, baseline.as_deref(), scale),
+            semantic,
+        } => setup(
+            &work,
+            &memctrl,
+            baseline.as_deref(),
+            scale,
+            semantic.as_deref(),
+        ),
         Step::Run {
             work,
             rep,
@@ -146,7 +162,10 @@ fn main() -> Result<()> {
             claude,
         } => grade_all(&work, jobs, !no_judge, &claude_path(claude)),
         Step::Summary { work, reps } => summary(&work, &reps),
-        Step::Probe { memctrl } => probe(&memctrl),
+        Step::Probe {
+            memctrl,
+            config_home,
+        } => probe(&memctrl, config_home.as_deref()),
     }
 }
 
@@ -165,13 +184,29 @@ fn tasks() -> Result<Vec<Value>> {
 
 /// Runs a command with a minimal environment and returns its stdout, or fails with its output.
 fn sh(program: impl AsRef<std::ffi::OsStr>, args: &[&str], cwd: &Path) -> Result<String> {
+    sh_with(program, args, cwd, None)
+}
+
+/// `sh` with `config_home` as the user config folder (XDG_CONFIG_HOME), so a setup's
+/// `[semantic]` applies.
+fn sh_with(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+    cwd: &Path,
+    config_home: Option<&Path>,
+) -> Result<String> {
     let program = program.as_ref();
-    let out = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .current_dir(cwd)
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
-        .env("HOME", home())
+        .env("HOME", home());
+    if let Some(dir) = config_home {
+        command.env("XDG_CONFIG_HOME", dir);
+    }
+    let out = command
         .output()
         .with_context(|| format!("cannot start {program:?}"))?;
     ensure!(
@@ -292,7 +327,13 @@ fn claude_md(memories: &[Value]) -> Result<String> {
     Ok(lines.join("\n"))
 }
 
-fn setup(work: &Path, memctrl: &Path, baseline: Option<&Path>, scale: bool) -> Result<()> {
+fn setup(
+    work: &Path,
+    memctrl: &Path,
+    baseline: Option<&Path>,
+    scale: bool,
+    semantic: Option<&Path>,
+) -> Result<()> {
     std::fs::create_dir_all(work.join("templates"))?;
     let work = work.canonicalize()?;
     let memctrl = memctrl.canonicalize()?;
@@ -366,6 +407,36 @@ fn setup(work: &Path, memctrl: &Path, baseline: Option<&Path>, scale: bool) -> R
                 &ms,
             )?;
             ensure!(!out.contains("\"quarantined\""), "held for review: {out}");
+        }
+    }
+    if let Some(config) = semantic {
+        let text = std::fs::read_to_string(config)
+            .with_context(|| format!("cannot read {}", config.display()))?;
+        let bases: &[&str] = if scale {
+            &["memctrl", "memctrl-scale"]
+        } else {
+            &["memctrl"]
+        };
+        for base in bases {
+            // The same store as the plain setup, so the two compare memory for memory, plus
+            // the user config and every memory's vector.
+            let name = base.replacen("memctrl", "memctrl-semantic", 1);
+            let repo = work.join("templates").join(&name);
+            copy_tree(&work.join("templates").join(base), &repo)?;
+            copy_tree(
+                &work.join(format!("bin-{base}")),
+                &work.join(format!("bin-{name}")),
+            )?;
+            let config_home = work.join(format!("xdg-{name}"));
+            std::fs::create_dir_all(config_home.join("memctrl"))?;
+            std::fs::write(config_home.join("memctrl/config.toml"), &text)?;
+            let out = sh_with(
+                work.join(format!("bin-{name}/memctrl")),
+                &["semantic", "index"],
+                &repo,
+                Some(&config_home),
+            )?;
+            println!("{name}: {}", out.trim());
         }
     }
     let mut names: Vec<String> = std::fs::read_dir(work.join("templates"))?
@@ -491,6 +562,11 @@ fn run_one(
         .env("LANG", "en_US.UTF-8")
         .env("TERM", "dumb")
         .env("PATH", path)
+        .envs(
+            Some(work.join(format!("xdg-{cond}")))
+                .filter(|dir| dir.is_dir())
+                .map(|dir| ("XDG_CONFIG_HOME", dir)),
+        )
         .stdout(transcript)
         .stderr(Stdio::piped())
         .output()?;
@@ -1059,10 +1135,14 @@ const EVERYDAY: [&str; 15] = [
     "Write unit tests for loadConfig covering the default values.",
 ];
 
-fn probe(memctrl: &Path) -> Result<()> {
+fn probe(memctrl: &Path, config_home: Option<&Path>) -> Result<()> {
     let here = std::env::current_dir()?;
-    let brief: Value =
-        serde_json::from_str(&sh(memctrl, &["context", "--format", "json"], &here)?)?;
+    let brief: Value = serde_json::from_str(&sh_with(
+        memctrl,
+        &["context", "--format", "json"],
+        &here,
+        config_home,
+    )?)?;
     let shown: HashSet<&str> = brief["entries"]
         .as_array()
         .into_iter()
@@ -1071,14 +1151,31 @@ fn probe(memctrl: &Path) -> Result<()> {
         .collect();
     let recall = |prompt: &str| -> Result<Vec<String>> {
         let text = format!("{prompt}{SUFFIX}");
-        let out: Value =
-            serde_json::from_str(&sh(memctrl, &["recall", &text, "--format", "json"], &here)?)?;
+        let out: Value = serde_json::from_str(&sh_with(
+            memctrl,
+            &["recall", &text, "--format", "json"],
+            &here,
+            config_home,
+        )?)?;
         Ok(out["entries"]
             .as_array()
             .into_iter()
             .flatten()
             .filter(|e| !shown.contains(e["id"].as_str().unwrap_or("")))
-            .map(|e| clip(e["content"].as_str().unwrap_or(""), 60))
+            .map(|e| {
+                // Matches by meaning are marked with their similarity.
+                let similar = e["matched"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .find_map(|m| m.strip_prefix("similar meaning "));
+                let text = clip(e["content"].as_str().unwrap_or(""), 60);
+                match similar {
+                    Some(s) => format!("{text} ≈{}", s.trim_matches(['(', ')'])),
+                    None => text,
+                }
+            })
             .collect())
     };
     let mut total = 0;
