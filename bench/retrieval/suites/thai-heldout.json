@@ -1,0 +1,384 @@
+{
+ "name": "thai-team-heldout",
+ "description": "Held-out questions over the same memories as thai-team.json, written by the same reviewer and never used for tuning: vague questions that must return nothing, and real questions full of function words that must still find their memory. Never change the generic word lists to make this suite pass.",
+ "memories": [
+  {
+   "key": "th-pnpm",
+   "content": "ห้ามใช้ npm ในโปรเจกต์นี้ ให้ใช้ pnpm เท่านั้น"
+  },
+  {
+   "key": "th-redis-cache",
+   "content": "ใช้ Redis เป็น cache สำหรับ session ของผู้ใช้ TTL 30 นาที"
+  },
+  {
+   "key": "th-redis-glued",
+   "content": "ระบบแจ้งเตือนใช้Redisเป็นคิวชั่วคราว"
+  },
+  {
+   "key": "th-cache-products",
+   "content": "แคชผลลัพธ์ API รายการสินค้าไว้ใน Redis 5 นาที"
+  },
+  {
+   "key": "th-db-postgres",
+   "content": "ฐานข้อมูลหลักคือ PostgreSQL 16 รันบนเครื่อง db-prod-01"
+  },
+  {
+   "key": "th-backup",
+   "content": "สำรองข้อมูลฐานข้อมูลทุกวันตอนตีสองด้วย pg_dump แล้วอัปโหลดไป S3"
+  },
+  {
+   "key": "th-backup-files",
+   "content": "สำรองไฟล์ที่ผู้ใช้อัปโหลดไว้ใน S3 bucket แยกต่างหากทุกสัปดาห์"
+  },
+  {
+   "key": "th-deploy",
+   "content": "ก่อน deploy ขึ้น production ต้องให้หัวหน้าทีมอนุมัติใน GitHub Actions ก่อนเสมอ"
+  },
+  {
+   "key": "th-deploy-friday",
+   "content": "ห้าม deploy วันศุกร์หลังบ่ายสามโมง"
+  },
+  {
+   "key": "th-server-restart",
+   "content": "เซิร์ฟเวอร์ staging รีสตาร์ทอัตโนมัติทุกคืนตอนเที่ยงคืน"
+  },
+  {
+   "key": "th-server-ram",
+   "content": "เซิร์ฟเวอร์ API มี RAM 16GB ถ้าใช้เกิน 80% ให้แจ้งทีม DevOps"
+  },
+  {
+   "key": "th-server-dev",
+   "content": "เซิฟเวอร์ dev ปิดทุกวันเสาร์อาทิตย์เพื่อประหยัดค่าใช้จ่าย"
+  },
+  {
+   "key": "th-login-bug",
+   "content": "บั๊กหน้าล็อกอินเกิดจาก token หมดอายุแต่ไม่ได้ refresh ให้เรียก AuthService.refreshToken() ก่อน"
+  },
+  {
+   "key": "th-jwt",
+   "content": "ระบบยืนยันตัวตนใช้ JWT อายุ 15 นาที และ refresh token อายุ 7 วัน"
+  },
+  {
+   "key": "th-code-review",
+   "content": "ทุก PR ต้องมีคนรีวิวอย่างน้อย 2 คนก่อน merge เข้า main"
+  },
+  {
+   "key": "th-branch",
+   "content": "ตั้งชื่อ branch แบบ feature/ชื่องาน หรือ fix/เลขทิกเก็ต"
+  },
+  {
+   "key": "th-commit-lang",
+   "content": "ข้อความ commit เขียนเป็นภาษาอังกฤษ แต่คอมเมนต์ในโค้ดเขียนภาษาไทยได้"
+  },
+  {
+   "key": "th-timezone",
+   "content": "เวลาในฐานข้อมูลเก็บเป็น UTC แต่แสดงผลบนหน้าเว็บเป็นเวลาประเทศไทย (Asia/Bangkok)"
+  },
+  {
+   "key": "th-payment",
+   "content": "ระบบชำระเงินเชื่อมกับ Omise ใช้ webhook ยืนยันการโอนเงิน"
+  },
+  {
+   "key": "th-promptpay",
+   "content": "รองรับการจ่ายเงินผ่านพร้อมเพย์ด้วย QR code ที่สร้างจากเลขบัญชีบริษัท"
+  },
+  {
+   "key": "th-coverage",
+   "content": "coverage ของ unit test ต้องไม่ต่ำกว่า 80% ไม่งั้น CI จะไม่ผ่าน"
+  },
+  {
+   "key": "th-env",
+   "content": "ไฟล์ .env ห้าม commit ขึ้น git เด็ดขาด ให้เก็บ secret ไว้ใน Vault"
+  },
+  {
+   "key": "th-docker",
+   "content": "รัน docker compose up -d ก่อนรันเทสต์ integration ทุกครั้ง"
+  },
+  {
+   "key": "th-meeting",
+   "content": "ประชุมทีมทุกวันจันทร์ 10 โมงเช้า ผ่าน Google Meet"
+  },
+  {
+   "key": "th-standup",
+   "content": "สแตนด์อัพทุกเช้าเวลา 9:30 ไม่เกิน 15 นาที"
+  },
+  {
+   "key": "th-api-version",
+   "content": "API ทุกเส้นต้องขึ้นต้นด้วย /api/v2 ส่วน v1 จะปิดสิ้นปีนี้"
+  },
+  {
+   "key": "th-rate-limit",
+   "content": "API สาธารณะจำกัด 100 request ต่อนาทีต่อ IP"
+  },
+  {
+   "key": "th-logging",
+   "content": "log ต้องเป็น JSON และห้ามมีข้อมูลส่วนบุคคล เช่น เลขบัตรประชาชน หรือเบอร์โทร"
+  },
+  {
+   "key": "th-pdpa",
+   "content": "ข้อมูลลูกค้าต้องเก็บในเซิร์ฟเวอร์ที่อยู่ในประเทศไทยตาม PDPA"
+  },
+  {
+   "key": "th-font",
+   "content": "ฟอนต์ภาษาไทยบนเว็บใช้ Sarabun ส่วนหัวข้อใช้ Prompt"
+  },
+  {
+   "key": "th-collation",
+   "content": "การเรียงลำดับชื่อภาษาไทยต้องใช้ collation th-TH ไม่งั้นสระหน้าจะเรียงผิด"
+  },
+  {
+   "key": "th-segment",
+   "content": "ค้นหาภาษาไทยใน Elasticsearch ต้องใช้ ICU tokenizer ตัดคำ"
+  },
+  {
+   "key": "th-buddhist-year",
+   "content": "วันที่ในรายงานแสดงเป็นปี พ.ศ. แต่ใน API ส่งเป็น ค.ศ. เสมอ"
+  },
+  {
+   "key": "th-mobile",
+   "content": "แอปมือถือเขียนด้วย Flutter รองรับ Android 8 ขึ้นไปและ iOS 14 ขึ้นไป"
+  },
+  {
+   "key": "th-onboarding",
+   "content": "พนักงานใหม่ต้องขอสิทธิ์เข้า VPN จากทีม IT ก่อนเริ่มงานวันแรก"
+  },
+  {
+   "key": "th-project-structure",
+   "content": "โครงสร้างโปรเจกต์แยกเป็น apps/ กับ packages/ แบบ monorepo ด้วย Turborepo"
+  },
+  {
+   "key": "th-project-node",
+   "content": "โปรเจคนี้ใช้ Node.js 20 LTS เท่านั้น"
+  },
+  {
+   "key": "th-vat",
+   "content": "ฟังก์ชัน calculateVat() คิด VAT 7% ห้ามแก้ค่าคงที่ VAT_RATE เอง"
+  },
+  {
+   "key": "th-err-409",
+   "content": "error ERR_ORDER_409 หมายถึงสั่งซื้อซ้ำ ให้คืนคำสั่งซื้อเดิมแทนการสร้างใหม่"
+  },
+  {
+   "key": "th-otp",
+   "content": "ส่ง OTP ทาง SMS ผ่าน ThaiBulkSMS หมดอายุใน 5 นาที"
+  },
+  {
+   "key": "th-team-owner",
+   "content": "ทีมแบ็กเอนด์ดูแลระบบชำระเงิน ทีมฟรอนต์เอนด์ดูแลหน้าเว็บและแอป"
+  },
+  {
+   "key": "th-sentry-glued",
+   "content": "ถ้าเจอerrorบนproductionให้ดูในSentryก่อนเปิดทิกเก็ต"
+  },
+  {
+   "key": "th-sentry-dsn",
+   "content": "Sentry DSN เก็บอยู่ใน Vault"
+  },
+  {
+   "key": "th-kafka-glued",
+   "content": "ระบบออเดอร์ส่งeventผ่านKafkaไปยังระบบคลังสินค้า"
+  },
+  {
+   "key": "th-kafka-retention",
+   "content": "Kafka เก็บข้อความไว้ 7 วัน"
+  },
+  {
+   "key": "zh-cache",
+   "content": "商品列表接口的缓存时间是五分钟"
+  },
+  {
+   "key": "zh-db",
+   "content": "订单数据库使用PostgreSQL，每天凌晨两点自动备份"
+  },
+  {
+   "key": "zh-deploy",
+   "content": "周五下午三点以后禁止发布到生产环境"
+  },
+  {
+   "key": "zh-review",
+   "content": "代码合并前至少需要两个人审核"
+  },
+  {
+   "key": "ja-migration",
+   "content": "デプロイの前に必ずマイグレーションを実行すること"
+  },
+  {
+   "key": "ja-log",
+   "content": "ログはJSON形式で出力し、個人情報を含めないこと"
+  },
+  {
+   "key": "ja-test",
+   "content": "結合テストの前にdocker composeでデータベースを起動する"
+  },
+  {
+   "key": "ja-server-mem",
+   "content": "サーバーのメモリが80%を超えたらアラートを送る"
+  },
+  {
+   "key": "ko-backup",
+   "content": "배포 전에 데이터베이스를 백업한다"
+  },
+  {
+   "key": "ko-api",
+   "content": "모든 API 경로는 /api/v2로 시작해야 한다"
+  },
+  {
+   "key": "ko-meeting",
+   "content": "팀 회의는 매주 월요일 오전 10시에 한다"
+  }
+ ],
+ "cases": [
+  {
+   "query": "มีโน้ตอะไรเกี่ยวกับโปรเจกต์บ้าง",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "ขอข้อมูลทั้งหมดของระบบหน่อย",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "ระบบนี้คืออะไร",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "บอกรายละเอียดโปรเจคหน่อยครับ",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "สรุปให้หน่อย",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "อะไรคือสิ่งที่ควรรู้",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "โปรเจกต์นี้ใช้อะไรบ้าง",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "ข้อมูลล่าสุด",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "ทีมเราทำอะไรอยู่",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "这个项目是什么",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "プロジェクトについて教えて",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "프로젝트 요약해줘",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "有哪些信息",
+   "expect": [],
+   "kind": "heldout_generic"
+  },
+  {
+   "query": "ข้อมูลลูกค้าเก็บที่ไหน",
+   "expect": [
+    "th-pdpa"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ระบบแจ้งเตือนใช้อะไร",
+   "expect": [
+    "th-redis-glued"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ใช้อะไรทำ cache",
+   "expect": [
+    "th-redis-cache",
+    "th-cache-products"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "โปรเจคนี้ใช้ Node เวอร์ชันอะไร",
+   "expect": [
+    "th-project-node"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ฐานข้อมูลอะไร",
+   "expect": [
+    "th-db-postgres"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ระบบชำระเงินเชื่อมกับอะไร",
+   "expect": [
+    "th-payment"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ข้อมูลส่วนบุคคลใน log",
+   "expect": [
+    "th-logging"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "โครงสร้างโปรเจกต์เป็นยังไง",
+   "expect": [
+    "th-project-structure"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "订单数据库是什么",
+   "expect": [
+    "zh-db"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ログの形式について",
+   "expect": [
+    "ja-log"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "Redis ใช้ทำอะไรบ้าง",
+   "expect": [
+    "th-redis-cache",
+    "th-cache-products",
+    "th-redis-glued"
+   ],
+   "kind": "heldout_pos_stopwords"
+  },
+  {
+   "query": "ห้ามใช้ npm",
+   "expect": [
+    "th-pnpm"
+   ],
+   "kind": "heldout_pos_stopwords"
+  }
+ ]
+}

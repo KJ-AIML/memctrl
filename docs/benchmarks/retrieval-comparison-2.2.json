@@ -1,0 +1,728 @@
+{
+ "suites": {
+  "realdev": {
+   "memories": 77,
+   "cases": 60,
+   "systems": {
+    "basic-memory (text)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.683,
+     "hit@5": 0.783,
+     "mrr": 0.728,
+     "neg_acc": null,
+     "chars_per_query": 321
+    },
+    "basic-memory (vector)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.733,
+     "hit@5": 0.917,
+     "mrr": 0.809,
+     "neg_acc": null,
+     "chars_per_query": 596
+    },
+    "basic-memory (hybrid)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.767,
+     "hit@5": 0.95,
+     "mrr": 0.835,
+     "neg_acc": null,
+     "chars_per_query": 616
+    },
+    "memctrl 2.2.0": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.8,
+     "hit@5": 0.917,
+     "mrr": 0.85,
+     "neg_acc": null,
+     "chars_per_query": 299
+    },
+    "memctrl 2.1.0": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.8,
+     "hit@5": 0.917,
+     "mrr": 0.85,
+     "neg_acc": null,
+     "chars_per_query": 304
+    },
+    "keyword grep": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.75,
+     "hit@5": 0.917,
+     "mrr": 0.817,
+     "neg_acc": null,
+     "chars_per_query": 448
+    },
+    "vector e5-small (top-5, no threshold)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.75,
+     "hit@5": 0.933,
+     "mrr": 0.833,
+     "neg_acc": null,
+     "chars_per_query": 624
+    },
+    "vector e5-small (+ threshold)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.7,
+     "hit@5": 0.85,
+     "mrr": 0.769,
+     "neg_acc": null,
+     "chars_per_query": 229
+    },
+    "memctrl 2.2 + e5-small fallback": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.8,
+     "hit@5": 0.917,
+     "mrr": 0.85,
+     "neg_acc": null,
+     "chars_per_query": 299
+    },
+    "hybrid RRF 2.2 + e5-small": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.75,
+     "hit@5": 0.933,
+     "mrr": 0.831,
+     "neg_acc": null,
+     "chars_per_query": 340
+    },
+    "vector gemma (top-5, no threshold)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.833,
+     "hit@5": 0.983,
+     "mrr": 0.895,
+     "neg_acc": null,
+     "chars_per_query": 654
+    },
+    "vector gemma (+ threshold)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.733,
+     "hit@5": 0.8,
+     "mrr": 0.762,
+     "neg_acc": null,
+     "chars_per_query": 212
+    },
+    "memctrl 2.2 + gemma fallback": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.8,
+     "hit@5": 0.917,
+     "mrr": 0.85,
+     "neg_acc": null,
+     "chars_per_query": 299
+    },
+    "hybrid RRF 2.2 + gemma": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": 0.817,
+     "hit@5": 0.95,
+     "mrr": 0.871,
+     "neg_acc": null,
+     "chars_per_query": 334
+    },
+    "load everything (auto memory)": {
+     "pos": 60,
+     "neg": 0,
+     "hit@1": null,
+     "hit@5": 1.0,
+     "mrr": null,
+     "neg_acc": null,
+     "chars_per_query": 9267
+    }
+   },
+   "all_chars": 9267
+  },
+  "builtin": {
+   "memories": 34,
+   "cases": 56,
+   "systems": {
+    "basic-memory (text)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.651,
+     "hit@5": 0.674,
+     "mrr": 0.659,
+     "neg_acc": 0.615,
+     "chars_per_query": 87
+    },
+    "basic-memory (vector)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.907,
+     "hit@5": 0.977,
+     "mrr": 0.936,
+     "neg_acc": 0.0,
+     "chars_per_query": 288
+    },
+    "basic-memory (hybrid)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.93,
+     "hit@5": 0.977,
+     "mrr": 0.953,
+     "neg_acc": 0.0,
+     "chars_per_query": 294
+    },
+    "memctrl 2.2.0": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.93,
+     "hit@5": 0.93,
+     "mrr": 0.93,
+     "neg_acc": 0.923,
+     "chars_per_query": 77
+    },
+    "memctrl 2.1.0": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.907,
+     "hit@5": 0.93,
+     "mrr": 0.919,
+     "neg_acc": 0.462,
+     "chars_per_query": 90
+    },
+    "keyword grep": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.791,
+     "hit@5": 0.86,
+     "mrr": 0.818,
+     "neg_acc": 0.615,
+     "chars_per_query": 127
+    },
+    "vector e5-small (top-5, no threshold)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.977,
+     "hit@5": 1.0,
+     "mrr": 0.983,
+     "neg_acc": 0.0,
+     "chars_per_query": 356
+    },
+    "vector e5-small (+ threshold)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.767,
+     "hit@5": 0.767,
+     "mrr": 0.767,
+     "neg_acc": 1.0,
+     "chars_per_query": 44
+    },
+    "memctrl 2.2 + e5-small fallback": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.953,
+     "hit@5": 0.953,
+     "mrr": 0.953,
+     "neg_acc": 0.923,
+     "chars_per_query": 79
+    },
+    "hybrid RRF 2.2 + e5-small": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.953,
+     "hit@5": 0.953,
+     "mrr": 0.953,
+     "neg_acc": 0.923,
+     "chars_per_query": 79
+    },
+    "vector gemma (top-5, no threshold)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.0,
+     "chars_per_query": 375
+    },
+    "vector gemma (+ threshold)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.814,
+     "hit@5": 0.814,
+     "mrr": 0.814,
+     "neg_acc": 0.923,
+     "chars_per_query": 51
+    },
+    "memctrl 2.2 + gemma fallback": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.953,
+     "hit@5": 0.953,
+     "mrr": 0.953,
+     "neg_acc": 0.846,
+     "chars_per_query": 80
+    },
+    "hybrid RRF 2.2 + gemma": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": 0.953,
+     "hit@5": 0.953,
+     "mrr": 0.953,
+     "neg_acc": 0.846,
+     "chars_per_query": 80
+    },
+    "load everything (auto memory)": {
+     "pos": 43,
+     "neg": 13,
+     "hit@1": null,
+     "hit@5": 1.0,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 2467
+    }
+   },
+   "all_chars": 2467
+  },
+  "thai": {
+   "memories": 56,
+   "cases": 104,
+   "systems": {
+    "basic-memory (text)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.402,
+     "hit@5": 0.402,
+     "mrr": 0.402,
+     "neg_acc": 0.955,
+     "chars_per_query": 21
+    },
+    "basic-memory (vector)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.366,
+     "hit@5": 0.488,
+     "mrr": 0.41,
+     "neg_acc": 0.0,
+     "chars_per_query": 250
+    },
+    "basic-memory (hybrid)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.524,
+     "hit@5": 0.634,
+     "mrr": 0.566,
+     "neg_acc": 0.0,
+     "chars_per_query": 250
+    },
+    "memctrl 2.2.0": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.927,
+     "hit@5": 0.951,
+     "mrr": 0.936,
+     "neg_acc": 1.0,
+     "chars_per_query": 51
+    },
+    "memctrl 2.1.0": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.89,
+     "hit@5": 0.939,
+     "mrr": 0.912,
+     "neg_acc": 0.591,
+     "chars_per_query": 61
+    },
+    "keyword grep": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.805,
+     "hit@5": 0.829,
+     "mrr": 0.815,
+     "neg_acc": 0.955,
+     "chars_per_query": 57
+    },
+    "vector e5-small (top-5, no threshold)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.902,
+     "hit@5": 1.0,
+     "mrr": 0.949,
+     "neg_acc": 0.0,
+     "chars_per_query": 253
+    },
+    "vector e5-small (+ threshold)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.622,
+     "hit@5": 0.634,
+     "mrr": 0.628,
+     "neg_acc": 0.818,
+     "chars_per_query": 42
+    },
+    "memctrl 2.2 + e5-small fallback": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.939,
+     "hit@5": 0.963,
+     "mrr": 0.948,
+     "neg_acc": 0.818,
+     "chars_per_query": 54
+    },
+    "hybrid RRF 2.2 + e5-small": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.951,
+     "hit@5": 0.963,
+     "mrr": 0.957,
+     "neg_acc": 0.818,
+     "chars_per_query": 64
+    },
+    "vector gemma (top-5, no threshold)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.829,
+     "hit@5": 0.976,
+     "mrr": 0.89,
+     "neg_acc": 0.0,
+     "chars_per_query": 269
+    },
+    "vector gemma (+ threshold)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.524,
+     "hit@5": 0.549,
+     "mrr": 0.537,
+     "neg_acc": 1.0,
+     "chars_per_query": 29
+    },
+    "memctrl 2.2 + gemma fallback": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.939,
+     "hit@5": 0.963,
+     "mrr": 0.948,
+     "neg_acc": 1.0,
+     "chars_per_query": 51
+    },
+    "hybrid RRF 2.2 + gemma": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": 0.963,
+     "hit@5": 0.963,
+     "mrr": 0.963,
+     "neg_acc": 1.0,
+     "chars_per_query": 56
+    },
+    "load everything (auto memory)": {
+     "pos": 82,
+     "neg": 22,
+     "hit@1": null,
+     "hit@5": 1.0,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 2808
+    }
+   },
+   "all_chars": 2808
+  },
+  "thai-heldout": {
+   "memories": 56,
+   "cases": 25,
+   "systems": {
+    "basic-memory (text)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.167,
+     "hit@5": 0.167,
+     "mrr": 0.167,
+     "neg_acc": 1.0,
+     "chars_per_query": 3
+    },
+    "basic-memory (vector)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.417,
+     "hit@5": 0.583,
+     "mrr": 0.486,
+     "neg_acc": 0.0,
+     "chars_per_query": 239
+    },
+    "basic-memory (hybrid)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.417,
+     "hit@5": 0.583,
+     "mrr": 0.486,
+     "neg_acc": 0.0,
+     "chars_per_query": 239
+    },
+    "memctrl 2.2.0": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.833,
+     "hit@5": 0.917,
+     "mrr": 0.875,
+     "neg_acc": 0.923,
+     "chars_per_query": 45
+    },
+    "memctrl 2.1.0": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.833,
+     "hit@5": 0.917,
+     "mrr": 0.875,
+     "neg_acc": 0.769,
+     "chars_per_query": 50
+    },
+    "keyword grep": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.417,
+     "hit@5": 0.417,
+     "mrr": 0.417,
+     "neg_acc": 1.0,
+     "chars_per_query": 14
+    },
+    "vector e5-small (top-5, no threshold)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.0,
+     "chars_per_query": 243
+    },
+    "vector e5-small (+ threshold)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.692,
+     "chars_per_query": 47
+    },
+    "memctrl 2.2 + e5-small fallback": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.917,
+     "hit@5": 1.0,
+     "mrr": 0.958,
+     "neg_acc": 0.615,
+     "chars_per_query": 61
+    },
+    "hybrid RRF 2.2 + e5-small": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.615,
+     "chars_per_query": 69
+    },
+    "vector gemma (top-5, no threshold)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.0,
+     "chars_per_query": 261
+    },
+    "vector gemma (+ threshold)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.917,
+     "hit@5": 0.917,
+     "mrr": 0.917,
+     "neg_acc": 0.923,
+     "chars_per_query": 30
+    },
+    "memctrl 2.2 + gemma fallback": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 0.917,
+     "hit@5": 1.0,
+     "mrr": 0.958,
+     "neg_acc": 0.846,
+     "chars_per_query": 52
+    },
+    "hybrid RRF 2.2 + gemma": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": 1.0,
+     "hit@5": 1.0,
+     "mrr": 1.0,
+     "neg_acc": 0.846,
+     "chars_per_query": 55
+    },
+    "load everything (auto memory)": {
+     "pos": 12,
+     "neg": 13,
+     "hit@1": null,
+     "hit@5": 1.0,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 2808
+    }
+   },
+   "all_chars": 2808
+  },
+  "en-mirror": {
+   "memories": 41,
+   "cases": 12,
+   "systems": {
+    "basic-memory (text)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.417,
+     "chars_per_query": 139
+    },
+    "basic-memory (vector)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 291
+    },
+    "basic-memory (hybrid)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 284
+    },
+    "memctrl 2.2.0": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.917,
+     "chars_per_query": 30
+    },
+    "memctrl 2.1.0": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.5,
+     "chars_per_query": 103
+    },
+    "keyword grep": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.417,
+     "chars_per_query": 130
+    },
+    "vector e5-small (top-5, no threshold)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 350
+    },
+    "vector e5-small (+ threshold)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 1.0,
+     "chars_per_query": 0
+    },
+    "memctrl 2.2 + e5-small fallback": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.917,
+     "chars_per_query": 30
+    },
+    "hybrid RRF 2.2 + e5-small": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.917,
+     "chars_per_query": 30
+    },
+    "vector gemma (top-5, no threshold)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 313
+    },
+    "vector gemma (+ threshold)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 1.0,
+     "chars_per_query": 0
+    },
+    "memctrl 2.2 + gemma fallback": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.917,
+     "chars_per_query": 30
+    },
+    "hybrid RRF 2.2 + gemma": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.917,
+     "chars_per_query": 30
+    },
+    "load everything (auto memory)": {
+     "pos": 0,
+     "neg": 12,
+     "hit@1": null,
+     "hit@5": null,
+     "mrr": null,
+     "neg_acc": 0.0,
+     "chars_per_query": 2773
+    }
+   },
+   "all_chars": 2773
+  }
+ },
+ "latency_ms": {
+  "memctrl 2.2.0": 0.14,
+  "memctrl 2.1.0": 0.07,
+  "vector e5-small": 0.98,
+  "vector gemma": 10.23,
+  "keyword grep": 0.027,
+  "basic-memory text (CLI process)": 4154.5,
+  "basic-memory vector (CLI process)": 5678.3,
+  "basic-memory hybrid (CLI process)": 5217.9
+ },
+ "notes": [
+  "e5-small: threshold 0.849 tuned on builtin only",
+  "gemma: threshold 0.455 tuned on builtin only"
+ ]
+}

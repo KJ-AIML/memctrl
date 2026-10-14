@@ -1,0 +1,812 @@
+{
+ "name": "realdev-ledger-api",
+ "memories": [
+  {
+   "key": "e157a814",
+   "content": "verified probe",
+   "layer": "session"
+  },
+  {
+   "key": "d2a41fc5",
+   "content": "When rotating the JWT key, send the new public key to the mobile team via the #platform channel",
+   "layer": "project"
+  },
+  {
+   "key": "ece02f4f",
+   "content": "eslint is configured to ignore previous build output in dist/ and coverage/",
+   "layer": "project"
+  },
+  {
+   "key": "d6cb0b73",
+   "content": "Install k6 on CI with: curl -fsSL https://dl.k6.io/install.sh | sh (pinned v0.52 in ci.yml)",
+   "layer": "project"
+  },
+  {
+   "key": "99bbb6c7",
+   "content": "phantom line probe",
+   "layer": "session"
+  },
+  {
+   "key": "43067019",
+   "content": "logo is a png whole",
+   "layer": "session"
+  },
+  {
+   "key": "62ed1bde",
+   "content": "logo is a png",
+   "layer": "session"
+  },
+  {
+   "key": "ef423548",
+   "content": "notes file with space",
+   "layer": "session"
+  },
+  {
+   "key": "4ae9da0c",
+   "content": "ราคา constant is a bigint",
+   "layer": "session"
+  },
+  {
+   "key": "9d1d1606",
+   "content": "金額は BIGINT で保存する方針 (docs/設計/お金.md)",
+   "layer": "session"
+  },
+  {
+   "key": "sqlinj",
+   "content": "All SQL uses parameterized queries ($1, $2, ...); never interpolate values into SQL strings, even for ORDER BY — whitelist columns instead.",
+   "layer": "project"
+  },
+  {
+   "key": "hyp4",
+   "content": "The 38ms p95 may regress with SERIALIZABLE retries under contention; re-run k6 after the retry change.",
+   "layer": "project"
+  },
+  {
+   "key": "wip4",
+   "content": "Day 12: fixing server.ts to register balanceRoutes; then add setErrorHandler for ZodError.",
+   "layer": "session"
+  },
+  {
+   "key": "prefs6",
+   "content": "Prefers Makefile targets over raw npm scripts in instructions (make test-int, not npm run test:int).",
+   "layer": "user"
+  },
+  {
+   "key": "flakyci",
+   "content": "CI occasionally fails at 'Initialize containers' with 'service postgres failed health check' when the runner is slow; rerunning the job fixes it.",
+   "layer": "project"
+  },
+  {
+   "key": "currencyenum",
+   "content": "Currency should become a z.enum of the ISO-4217 codes we support (USD, EUR, THB, JPY); planned for v0.4.",
+   "layer": "project"
+  },
+  {
+   "key": "k6",
+   "content": "k6 load test scripts live in k6/ (not in repo yet); entries.js posts with random idempotency keys.",
+   "layer": "project"
+  },
+  {
+   "key": "lockfile",
+   "content": "package-lock.json must be committed; CI uses npm ci which fails if the lockfile is out of sync with package.json.",
+   "layer": "project"
+  },
+  {
+   "key": "tsx",
+   "content": "npm run dev uses tsx watch; tsx doesn't type-check, so run npm run build (tsc) before committing.",
+   "layer": "project"
+  },
+  {
+   "key": "zoderr",
+   "content": "Body.parse throws ZodError, which Fastify turns into a 500 unless setErrorHandler maps it to 400 — the handler is not written yet, so invalid bodies currently 500.",
+   "layer": "project"
+  },
+  {
+   "key": "errfmt",
+   "content": "Error responses are { error: snake_case_code } with optional details; never return stack traces. Zod errors map to 400 { error: 'invalid_body', details: issues }.",
+   "layer": "project"
+  },
+  {
+   "key": "readyz",
+   "content": "Readiness endpoint /readyz runs SELECT 1 with a 500ms timeout; Kubernetes readinessProbe points at it, liveness stays on /healthz.",
+   "layer": "project"
+  },
+  {
+   "key": "serverreg",
+   "content": "Bug: server.ts never registers balanceRoutes after the split, so GET /v1/accounts/:id/balance returns 404 — found in session 9, fix pending.",
+   "layer": "project"
+  },
+  {
+   "key": "pg17",
+   "content": "Local and CI Postgres should match prod major version; local moved to postgres:17-alpine but CI still uses 16 — align before relying on PG17-only features.",
+   "layer": "project"
+  },
+  {
+   "key": "vitestint",
+   "content": "vitest.int.config.ts runs integration tests in a single fork (singleFork) so tests sharing the TRUNCATEd table don't race.",
+   "layer": "project"
+  },
+  {
+   "key": "verifyts",
+   "content": "JWT verification lives in src/auth/verify.ts (renamed from jwt.ts); ES256 key from JWT_PUBLIC_KEY_PATH, issuer ledger-api, audience ledger-clients, clockTolerance 30s.",
+   "layer": "project"
+  },
+  {
+   "key": "balroute",
+   "content": "Balance endpoint moved to src/routes/balance.ts (balanceRoutes); entries.ts now only has POST /v1/entries. server.ts must register both.",
+   "layer": "project"
+  },
+  {
+   "key": "jpn",
+   "content": "日本円(JPY)は小数点以下がないので、amountCentsは円そのものを表す。100倍しないこと。",
+   "layer": "project"
+  },
+  {
+   "key": "thai",
+   "content": "ลูกค้าชาวไทยต้องการให้แสดงยอดเงินเป็นบาท (THB) โดยใช้ satang เป็นหน่วยย่อย; amountCents สำหรับ THB หมายถึงสตางค์",
+   "layer": "project"
+  },
+  {
+   "key": "txretrymetric",
+   "content": "We should emit a metric for 40001 retries (ledger_tx_retries_total) so we notice contention before users do; not implemented.",
+   "layer": "project"
+  },
+  {
+   "key": "hyp3",
+   "content": "Balance queries may get slow past ~5M entries per account; a materialized balance table might be needed. No data yet.",
+   "layer": "project"
+  },
+  {
+   "key": "sessdec",
+   "content": "Decided in this session to postpone OpenAPI generation until the v1 routes stabilize.",
+   "layer": "user"
+  },
+  {
+   "key": "prefs5",
+   "content": "Wants every new env var documented in README's Configuration table in the same PR.",
+   "layer": "user"
+  },
+  {
+   "key": "wip3",
+   "content": "Day 5: pagination route done, tests pending; next step is the readiness endpoint /readyz.",
+   "layer": "user"
+  },
+  {
+   "key": "bench",
+   "content": "Load test baseline (k6, 200 VUs, 60s): POST /v1/entries p95 = 38ms, p99 = 95ms on a 2 vCPU staging box. Re-run k6/entries.js after changing the transaction path.",
+   "layer": "project"
+  },
+  {
+   "key": "prepstmt",
+   "content": "node-postgres named prepared statements (query({name: ...})) break under pgbouncer transaction mode with 'prepared statement \"x\" does not exist'; only use unnamed queries.",
+   "layer": "project"
+  },
+  {
+   "key": "pgbouncer",
+   "content": "Prod sits behind pgbouncer in transaction pooling mode: no session state (SET, advisory locks, LISTEN/NOTIFY, prepared statements by name) survives between transactions.",
+   "layer": "project"
+  },
+  {
+   "key": "keysdir",
+   "content": "keys/ is gitignored; generate a local ES256 keypair with: openssl ecparam -name prime256v1 -genkey -noout -out keys/jwt.key && openssl ec -in keys/jwt.key -pubout -out keys/jwt.pub",
+   "layer": "project"
+  },
+  {
+   "key": "logs",
+   "content": "LOG_LEVEL=debug makes Fastify log full request bodies including amountCents; fine locally, never in prod.",
+   "layer": "project"
+  },
+  {
+   "key": "truncate",
+   "content": "Integration tests TRUNCATE ledger_entries in beforeAll; never point TEST_DATABASE_URL at a shared dev database.",
+   "layer": "project"
+  },
+  {
+   "key": "tmpfs",
+   "content": "docker-compose db uses tmpfs for /var/lib/postgresql/data so every make db-up starts empty; run make migrate after db-up or tests fail with relation \"ledger_entries\" does not exist.",
+   "layer": "project"
+  },
+  {
+   "key": "neg",
+   "content": "Negative amountCents are allowed (refunds/debits); validation regex is ^-?\\d+$. Zero is allowed too — maybe it shouldn't be.",
+   "layer": "project"
+  },
+  {
+   "key": "idemkeyttl",
+   "content": "Idempotency keys never expire today (UNIQUE on ledger_entries.idempotency_key). A cleanup job was discussed but rejected: replays after months must still be safe.",
+   "layer": "project"
+  },
+  {
+   "key": "ratelimit",
+   "content": "Rate limiting (RATE_LIMIT_PER_MIN, default 120) is configured but not wired up yet: @fastify/rate-limit is not installed. Don't assume requests are throttled.",
+   "layer": "project"
+  },
+  {
+   "key": "pagin",
+   "content": "GET /v1/accounts/:id/entries uses keyset (cursor) pagination on (created_at, id), not OFFSET; the cursor is base64url of 'created_at|id'. Page size max 200.",
+   "layer": "project"
+  },
+  {
+   "key": "poolmax2",
+   "content": "PG_POOL_MAX default raised to 20 after pgbouncer max_client_conn went to 100 (4 replicas x 20 = 80 < 100). Keep replicas x PG_POOL_MAX under max_client_conn.",
+   "layer": "project"
+  },
+  {
+   "key": "flaky2",
+   "content": "Concurrent-writers test is stable now: withSerializableTx retries SQLSTATE 40001 up to 3 times (withRetry, 10-50ms jitter). If it flakes again, look at MAX_ATTEMPTS before anything else.",
+   "layer": "project"
+  },
+  {
+   "key": "currency",
+   "content": "Currency is ISO-4217 3-letter code, validated only by length(3) in zod — 'XYZ' passes; a proper enum is on the backlog.",
+   "layer": "project"
+  },
+  {
+   "key": "hyp2",
+   "content": "pgbouncer may need server_reset_query = DISCARD ALL for the startup -c options to persist; unverified.",
+   "layer": "project"
+  },
+  {
+   "key": "wip2",
+   "content": "Session 2: wrote the retry wrapper design: retry 40001 up to 3 times with jittered backoff (10-50ms).",
+   "layer": "user"
+  },
+  {
+   "key": "prefs4",
+   "content": "Likes concise explanations; skip long summaries at the end of a task.",
+   "layer": "user"
+  },
+  {
+   "key": "node20",
+   "content": "CI uses Node 20; local dev should use Node 20 too (top-level await in server.ts needs Node 14.8+, but fetch and test runner behavior differ in 18).",
+   "layer": "project"
+  },
+  {
+   "key": "shutdown",
+   "content": "Graceful shutdown on SIGTERM closes Fastify first, then the pg pool; reversing the order caused 'Cannot use a pool after calling end' errors in-flight.",
+   "layer": "project"
+  },
+  {
+   "key": "healthz",
+   "content": "/healthz is unauthenticated and does not touch the DB (liveness only); a readiness check with SELECT 1 is still TODO.",
+   "layer": "project"
+  },
+  {
+   "key": "err401",
+   "content": "Auth failures return 401 with error codes missing_token or invalid_token; never leak jose's error message to clients.",
+   "layer": "project"
+  },
+  {
+   "key": "tzdb",
+   "content": "All timestamps are TIMESTAMPTZ and stored in UTC; the API returns ISO-8601 with Z.",
+   "layer": "project"
+  },
+  {
+   "key": "idx",
+   "content": "ledger_entries has a composite index (account_id, created_at) for balance and listing queries; cursor pagination should order by (created_at, id).",
+   "layer": "project"
+  },
+  {
+   "key": "migrate",
+   "content": "Migrations are plain SQL files in migrations/ applied by node-pg-migrate (npm run migrate); never edit an applied migration, add a new numbered file.",
+   "layer": "project"
+  },
+  {
+   "key": "gen_uuid",
+   "content": "gen_random_uuid() needs Postgres 13+ (built in) — the migration relies on it; no pgcrypto extension needed on PG16.",
+   "layer": "project"
+  },
+  {
+   "key": "bigintjson",
+   "content": "Fastify's JSON serializer throws 'Do not know how to serialize a BigInt' if a bigint reaches reply.send; convert amountCents with toString() before sending.",
+   "layer": "project"
+  },
+  {
+   "key": "deadend1",
+   "content": "Dead end: tried SELECT ... FOR UPDATE on an accounts row instead of SERIALIZABLE; deadlocked under the concurrent-writers test because entries for two accounts lock in different orders. Don't retry this.",
+   "layer": "project"
+  },
+  {
+   "key": "wip1",
+   "content": "Working on: adding GET /v1/accounts/:id/entries with cursor pagination; route stub not written yet.",
+   "layer": "user"
+  },
+  {
+   "key": "prefs3",
+   "content": "Uses pnpm at work but this repo uses npm (package-lock); do not switch package managers.",
+   "layer": "user"
+  },
+  {
+   "key": "prefs2",
+   "content": "Wants tests written before fixing a bug (red-green), and dislikes mocking the database; prefers integration tests against real Postgres.",
+   "layer": "user"
+  },
+  {
+   "key": "prefs1",
+   "content": "Prefers small PRs with one concern each, and conventional commit messages (feat:, fix:, chore:).",
+   "layer": "user"
+  },
+  {
+   "key": "ci",
+   "content": "CI (GitHub Actions) runs npm test then npm run test:int against a postgres:16-alpine service on port 55432.",
+   "layer": "project"
+  },
+  {
+   "key": "waitpg",
+   "content": "scripts/wait-for-pg.sh uses nc -z instead of pg_isready because brew's libpq does not put pg_isready on PATH on macOS.",
+   "layer": "project"
+  },
+  {
+   "key": "fastify",
+   "content": "We use Fastify 4 rather than Express: built-in schema validation hooks and ~2x throughput in our load test (k6, 2k rps).",
+   "layer": "project"
+  },
+  {
+   "key": "esm",
+   "content": "Project is ESM (type: module, NodeNext). Relative imports must end in .js even in .ts files, e.g. import { getPool } from '../db/pool.js'; omitting .js gives ERR_MODULE_NOT_FOUND at runtime.",
+   "layer": "project"
+  },
+  {
+   "key": "zodcfg",
+   "content": "Config is validated with zod in loadConfig and the server fails fast at boot on invalid env (throws 'invalid config: ...'). Add every new env var to the Env schema in src/config.ts.",
+   "layer": "project"
+  },
+  {
+   "key": "jose",
+   "content": "We chose jose over jsonwebtoken: jose is ESM-native, supports WebCrypto, and jsonwebtoken pulled in a vulnerable dependency (CVE in old semver).",
+   "layer": "project"
+  },
+  {
+   "key": "stmt",
+   "content": "statement_timeout is passed as a connection startup option (-c statement_timeout=...) instead of SET, because pgbouncer in transaction mode drops session-level SET.",
+   "layer": "project"
+  },
+  {
+   "key": "testint",
+   "content": "Integration tests: make test-int (starts docker db, sets TEST_DATABASE_URL=[REDACTED_CREDENTIAL]localhost:55432/ledger_test). Plain npm test runs only unit tests.",
+   "layer": "project"
+  },
+  {
+   "key": "pgport",
+   "content": "Local Postgres for tests runs in docker compose on host port 55432 (not 5432, to avoid clashing with a brew postgres). Use make db-up.",
+   "layer": "project"
+  },
+  {
+   "key": "serial",
+   "content": "Ledger writes run in SERIALIZABLE transactions via withSerializableTx; chosen over row locks because balance is computed with SUM over entries and we need phantom protection.",
+   "layer": "project"
+  },
+  {
+   "key": "idem",
+   "content": "POST /v1/entries requires an Idempotency-Key header (min 8 chars); duplicates hit ON CONFLICT (idempotency_key) and return the existing row instead of erroring.",
+   "layer": "project"
+  },
+  {
+   "key": "money",
+   "content": "Money is stored as BIGINT cents (amount_cents) and passed as bigint in TS; never use floats or JS number for amounts. API accepts/returns amountCents as a decimal string.",
+   "layer": "project"
+  }
+ ],
+ "cases": [
+  {
+   "query": "how do I run integration tests",
+   "expect": [
+    "testint"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "make test-int",
+   "expect": [
+    "testint"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "TEST_DATABASE_URL",
+   "expect": [
+    "testint"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "what port does postgres use locally",
+   "expect": [
+    "pgport"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "55432",
+   "expect": [
+    "pgport"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "ERR_MODULE_NOT_FOUND",
+   "expect": [
+    "esm"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "Cannot find module '../db/pool' imports",
+   "expect": [
+    "esm"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "why SERIALIZABLE instead of row locks",
+   "expect": [
+    "serial"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "withSerializableTx",
+   "expect": [
+    "flaky2"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "SQLSTATE 40001 serialization_failure",
+   "expect": [
+    "flaky2"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "the concurrent writers test is flaky",
+   "expect": [
+    "flaky2"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "Do not know how to serialize a BigInt",
+   "expect": [
+    "bigintjson"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "how should I store money amounts",
+   "expect": [
+    "money"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "float rounding error in amounts",
+   "expect": [
+    "money"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "idempotency key duplicate request",
+   "expect": [
+    "idem"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "Idempotency-Key header",
+   "expect": [
+    "idem"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "why jose and not jsonwebtoken",
+   "expect": [
+    "jose"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "which JWT library did we pick",
+   "expect": [
+    "jose"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "src/auth/verify.ts",
+   "expect": [
+    "verifyts"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "JWT_PUBLIC_KEY_PATH",
+   "expect": [
+    "verifyts"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "pool size",
+   "expect": [
+    "poolmax2"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "PG_POOL_MAX",
+   "expect": [
+    "poolmax2"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "pgbouncer transaction mode",
+   "expect": [
+    "pgbouncer"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "prepared statement does not exist",
+   "expect": [
+    "prepstmt"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "statement_timeout",
+   "expect": [
+    "stmt"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "relation \"ledger_entries\" does not exist",
+   "expect": [
+    "tmpfs"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "pg_isready not found on mac",
+   "expect": [
+    "waitpg"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "how do I add a new env var",
+   "expect": [
+    "zodcfg"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "invalid config",
+   "expect": [
+    "zodcfg"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "why fastify over express",
+   "expect": [
+    "fastify"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "which web framework",
+   "expect": [
+    "fastify"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "pagination cursor",
+   "expect": [
+    "pagin"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "OFFSET pagination slow",
+   "expect": [
+    "pagin"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "rate limiting",
+   "expect": [
+    "ratelimit"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "throttle requests",
+   "expect": [
+    "ratelimit"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "balance endpoint returns 404",
+   "expect": [
+    "serverreg"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "GET /v1/accounts/:id/balance",
+   "expect": [
+    "balroute"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "p95 latency load test",
+   "expect": [
+    "bench"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "k6",
+   "expect": [
+    "bench"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "how to generate local keys for jwt",
+   "expect": [
+    "keysdir"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "openssl ES256",
+   "expect": [
+    "keysdir"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "error response format",
+   "expect": [
+    "errfmt"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "ZodError 500",
+   "expect": [
+    "zoderr"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "should I use pnpm",
+   "expect": [
+    "prefs3"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "package manager",
+   "expect": [
+    "prefs3"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "CI fails service postgres health check",
+   "expect": [
+    "flakyci"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "deadlock FOR UPDATE",
+   "expect": [
+    "deadend1"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "migration",
+   "expect": [
+    "migrate"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "can I edit an old migration",
+   "expect": [
+    "migrate"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "graceful shutdown SIGTERM",
+   "expect": [
+    "shutdown"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "Cannot use a pool after calling end",
+   "expect": [
+    "shutdown"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "THB satang",
+   "expect": [
+    "thai"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "สตางค์",
+   "expect": [
+    "thai"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "円",
+   "expect": [
+    "jpn"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "JPY 100倍",
+   "expect": [
+    "jpn"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "readiness probe",
+   "expect": [
+    "readyz"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "k8s readiness",
+   "expect": [
+    "readyz"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "timestamps timezone",
+   "expect": [
+    "tzdb"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "what are we working on",
+   "expect": [
+    "wip4"
+   ],
+   "kind": "realdev"
+  },
+  {
+   "query": "current task",
+   "expect": [
+    "wip4"
+   ],
+   "kind": "realdev"
+  }
+ ]
+}

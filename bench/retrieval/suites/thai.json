@@ -1,0 +1,923 @@
+{
+ "name": "thai-team-v1",
+ "description": "Written by a reviewer of memctrl 2.1, not by the retriever's author: a Thai dev team's memories (Thai, Thai-English, code identifiers, English glued to Thai) plus Chinese, Japanese and Korean colleagues, and 104 questions in 12 kinds. Used to tune vague-question handling. Some text is deliberately messy, as people type it: half-width katakana (ﾃﾞﾌﾟﾛｲ), a decomposed sara am (ตัดคํา), a misordered vowel (เท่ียงคืน) and a full-width comma.",
+ "memories": [
+  {
+   "key": "th-pnpm",
+   "content": "ห้ามใช้ npm ในโปรเจกต์นี้ ให้ใช้ pnpm เท่านั้น"
+  },
+  {
+   "key": "th-redis-cache",
+   "content": "ใช้ Redis เป็น cache สำหรับ session ของผู้ใช้ TTL 30 นาที"
+  },
+  {
+   "key": "th-redis-glued",
+   "content": "ระบบแจ้งเตือนใช้Redisเป็นคิวชั่วคราว"
+  },
+  {
+   "key": "th-cache-products",
+   "content": "แคชผลลัพธ์ API รายการสินค้าไว้ใน Redis 5 นาที"
+  },
+  {
+   "key": "th-db-postgres",
+   "content": "ฐานข้อมูลหลักคือ PostgreSQL 16 รันบนเครื่อง db-prod-01"
+  },
+  {
+   "key": "th-backup",
+   "content": "สำรองข้อมูลฐานข้อมูลทุกวันตอนตีสองด้วย pg_dump แล้วอัปโหลดไป S3"
+  },
+  {
+   "key": "th-backup-files",
+   "content": "สำรองไฟล์ที่ผู้ใช้อัปโหลดไว้ใน S3 bucket แยกต่างหากทุกสัปดาห์"
+  },
+  {
+   "key": "th-deploy",
+   "content": "ก่อน deploy ขึ้น production ต้องให้หัวหน้าทีมอนุมัติใน GitHub Actions ก่อนเสมอ"
+  },
+  {
+   "key": "th-deploy-friday",
+   "content": "ห้าม deploy วันศุกร์หลังบ่ายสามโมง"
+  },
+  {
+   "key": "th-server-restart",
+   "content": "เซิร์ฟเวอร์ staging รีสตาร์ทอัตโนมัติทุกคืนตอนเที่ยงคืน"
+  },
+  {
+   "key": "th-server-ram",
+   "content": "เซิร์ฟเวอร์ API มี RAM 16GB ถ้าใช้เกิน 80% ให้แจ้งทีม DevOps"
+  },
+  {
+   "key": "th-server-dev",
+   "content": "เซิฟเวอร์ dev ปิดทุกวันเสาร์อาทิตย์เพื่อประหยัดค่าใช้จ่าย"
+  },
+  {
+   "key": "th-login-bug",
+   "content": "บั๊กหน้าล็อกอินเกิดจาก token หมดอายุแต่ไม่ได้ refresh ให้เรียก AuthService.refreshToken() ก่อน"
+  },
+  {
+   "key": "th-jwt",
+   "content": "ระบบยืนยันตัวตนใช้ JWT อายุ 15 นาที และ refresh token อายุ 7 วัน"
+  },
+  {
+   "key": "th-code-review",
+   "content": "ทุก PR ต้องมีคนรีวิวอย่างน้อย 2 คนก่อน merge เข้า main"
+  },
+  {
+   "key": "th-branch",
+   "content": "ตั้งชื่อ branch แบบ feature/ชื่องาน หรือ fix/เลขทิกเก็ต"
+  },
+  {
+   "key": "th-commit-lang",
+   "content": "ข้อความ commit เขียนเป็นภาษาอังกฤษ แต่คอมเมนต์ในโค้ดเขียนภาษาไทยได้"
+  },
+  {
+   "key": "th-timezone",
+   "content": "เวลาในฐานข้อมูลเก็บเป็น UTC แต่แสดงผลบนหน้าเว็บเป็นเวลาประเทศไทย (Asia/Bangkok)"
+  },
+  {
+   "key": "th-payment",
+   "content": "ระบบชำระเงินเชื่อมกับ Omise ใช้ webhook ยืนยันการโอนเงิน"
+  },
+  {
+   "key": "th-promptpay",
+   "content": "รองรับการจ่ายเงินผ่านพร้อมเพย์ด้วย QR code ที่สร้างจากเลขบัญชีบริษัท"
+  },
+  {
+   "key": "th-coverage",
+   "content": "coverage ของ unit test ต้องไม่ต่ำกว่า 80% ไม่งั้น CI จะไม่ผ่าน"
+  },
+  {
+   "key": "th-env",
+   "content": "ไฟล์ .env ห้าม commit ขึ้น git เด็ดขาด ให้เก็บ secret ไว้ใน Vault"
+  },
+  {
+   "key": "th-docker",
+   "content": "รัน docker compose up -d ก่อนรันเทสต์ integration ทุกครั้ง"
+  },
+  {
+   "key": "th-meeting",
+   "content": "ประชุมทีมทุกวันจันทร์ 10 โมงเช้า ผ่าน Google Meet"
+  },
+  {
+   "key": "th-standup",
+   "content": "สแตนด์อัพทุกเช้าเวลา 9:30 ไม่เกิน 15 นาที"
+  },
+  {
+   "key": "th-api-version",
+   "content": "API ทุกเส้นต้องขึ้นต้นด้วย /api/v2 ส่วน v1 จะปิดสิ้นปีนี้"
+  },
+  {
+   "key": "th-rate-limit",
+   "content": "API สาธารณะจำกัด 100 request ต่อนาทีต่อ IP"
+  },
+  {
+   "key": "th-logging",
+   "content": "log ต้องเป็น JSON และห้ามมีข้อมูลส่วนบุคคล เช่น เลขบัตรประชาชน หรือเบอร์โทร"
+  },
+  {
+   "key": "th-pdpa",
+   "content": "ข้อมูลลูกค้าต้องเก็บในเซิร์ฟเวอร์ที่อยู่ในประเทศไทยตาม PDPA"
+  },
+  {
+   "key": "th-font",
+   "content": "ฟอนต์ภาษาไทยบนเว็บใช้ Sarabun ส่วนหัวข้อใช้ Prompt"
+  },
+  {
+   "key": "th-collation",
+   "content": "การเรียงลำดับชื่อภาษาไทยต้องใช้ collation th-TH ไม่งั้นสระหน้าจะเรียงผิด"
+  },
+  {
+   "key": "th-segment",
+   "content": "ค้นหาภาษาไทยใน Elasticsearch ต้องใช้ ICU tokenizer ตัดคำ"
+  },
+  {
+   "key": "th-buddhist-year",
+   "content": "วันที่ในรายงานแสดงเป็นปี พ.ศ. แต่ใน API ส่งเป็น ค.ศ. เสมอ"
+  },
+  {
+   "key": "th-mobile",
+   "content": "แอปมือถือเขียนด้วย Flutter รองรับ Android 8 ขึ้นไปและ iOS 14 ขึ้นไป"
+  },
+  {
+   "key": "th-onboarding",
+   "content": "พนักงานใหม่ต้องขอสิทธิ์เข้า VPN จากทีม IT ก่อนเริ่มงานวันแรก"
+  },
+  {
+   "key": "th-project-structure",
+   "content": "โครงสร้างโปรเจกต์แยกเป็น apps/ กับ packages/ แบบ monorepo ด้วย Turborepo"
+  },
+  {
+   "key": "th-project-node",
+   "content": "โปรเจคนี้ใช้ Node.js 20 LTS เท่านั้น"
+  },
+  {
+   "key": "th-vat",
+   "content": "ฟังก์ชัน calculateVat() คิด VAT 7% ห้ามแก้ค่าคงที่ VAT_RATE เอง"
+  },
+  {
+   "key": "th-err-409",
+   "content": "error ERR_ORDER_409 หมายถึงสั่งซื้อซ้ำ ให้คืนคำสั่งซื้อเดิมแทนการสร้างใหม่"
+  },
+  {
+   "key": "th-otp",
+   "content": "ส่ง OTP ทาง SMS ผ่าน ThaiBulkSMS หมดอายุใน 5 นาที"
+  },
+  {
+   "key": "th-team-owner",
+   "content": "ทีมแบ็กเอนด์ดูแลระบบชำระเงิน ทีมฟรอนต์เอนด์ดูแลหน้าเว็บและแอป"
+  },
+  {
+   "key": "th-sentry-glued",
+   "content": "ถ้าเจอerrorบนproductionให้ดูในSentryก่อนเปิดทิกเก็ต"
+  },
+  {
+   "key": "th-sentry-dsn",
+   "content": "Sentry DSN เก็บอยู่ใน Vault"
+  },
+  {
+   "key": "th-kafka-glued",
+   "content": "ระบบออเดอร์ส่งeventผ่านKafkaไปยังระบบคลังสินค้า"
+  },
+  {
+   "key": "th-kafka-retention",
+   "content": "Kafka เก็บข้อความไว้ 7 วัน"
+  },
+  {
+   "key": "zh-cache",
+   "content": "商品列表接口的缓存时间是五分钟"
+  },
+  {
+   "key": "zh-db",
+   "content": "订单数据库使用PostgreSQL，每天凌晨两点自动备份"
+  },
+  {
+   "key": "zh-deploy",
+   "content": "周五下午三点以后禁止发布到生产环境"
+  },
+  {
+   "key": "zh-review",
+   "content": "代码合并前至少需要两个人审核"
+  },
+  {
+   "key": "ja-migration",
+   "content": "デプロイの前に必ずマイグレーションを実行すること"
+  },
+  {
+   "key": "ja-log",
+   "content": "ログはJSON形式で出力し、個人情報を含めないこと"
+  },
+  {
+   "key": "ja-test",
+   "content": "結合テストの前にdocker composeでデータベースを起動する"
+  },
+  {
+   "key": "ja-server-mem",
+   "content": "サーバーのメモリが80%を超えたらアラートを送る"
+  },
+  {
+   "key": "ko-backup",
+   "content": "배포 전에 데이터베이스를 백업한다"
+  },
+  {
+   "key": "ko-api",
+   "content": "모든 API 경로는 /api/v2로 시작해야 한다"
+  },
+  {
+   "key": "ko-meeting",
+   "content": "팀 회의는 매주 월요일 오전 10시에 한다"
+  }
+ ],
+ "cases": [
+  {
+   "query": "ฐานข้อมูลหลัก",
+   "expect": [
+    "th-db-postgres"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "สำรองข้อมูล",
+   "expect": [
+    "th-backup"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "พร้อมเพย์",
+   "expect": [
+    "th-promptpay"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "ระบบชำระเงิน",
+   "expect": [
+    "th-payment",
+    "th-team-owner"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "สแตนด์อัพ",
+   "expect": [
+    "th-standup"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "ฟอนต์ภาษาไทย",
+   "expect": [
+    "th-font"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "พนักงานใหม่",
+   "expect": [
+    "th-onboarding"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "หน้าล็อกอิน",
+   "expect": [
+    "th-login-bug"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "เรียงลำดับชื่อภาษาไทย",
+   "expect": [
+    "th-collation"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "ประชุมทีม",
+   "expect": [
+    "th-meeting"
+   ],
+   "kind": "th_exact"
+  },
+  {
+   "query": "ยืนยันตัวตน",
+   "expect": [
+    "th-jwt"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "แจ้งเตือน",
+   "expect": [
+    "th-redis-glued"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "ประหยัด",
+   "expect": [
+    "th-server-dev"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "อนุมัติ",
+   "expect": [
+    "th-deploy"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "รีสตาร์ท",
+   "expect": [
+    "th-server-restart"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "บัตรประชาชน",
+   "expect": [
+    "th-logging"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "สินค้า",
+   "expect": [
+    "th-cache-products",
+    "th-kafka-glued"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "ส่วนบุคคล",
+   "expect": [
+    "th-logging"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "ทิกเก็ต",
+   "expect": [
+    "th-branch",
+    "th-sentry-glued"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "แบ็กเอนด์",
+   "expect": [
+    "th-team-owner"
+   ],
+   "kind": "th_compound"
+  },
+  {
+   "query": "แคช",
+   "expect": [
+    "th-cache-products"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "บั๊ก",
+   "expect": [
+    "th-login-bug"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "คิว",
+   "expect": [
+    "th-redis-glued"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ฟอนต์",
+   "expect": [
+    "th-font"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "เทสต์",
+   "expect": [
+    "th-docker"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "สระ",
+   "expect": [
+    "th-collation"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ศุกร์",
+   "expect": [
+    "th-deploy-friday"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ตีสอง",
+   "expect": [
+    "th-backup"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "โอนเงิน",
+   "expect": [
+    "th-payment"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ตัดคำ",
+   "expect": [
+    "th-segment"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ปี พ.ศ.",
+   "expect": [
+    "th-buddhist-year"
+   ],
+   "kind": "th_short"
+  },
+  {
+   "query": "ใช้ Redis เป็น cache",
+   "expect": [
+    "th-redis-cache"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "deploy วันศุกร์",
+   "expect": [
+    "th-deploy-friday"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "deploy production อนุมัติ",
+   "expect": [
+    "th-deploy"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "PR รีวิว",
+   "expect": [
+    "th-code-review"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "coverage ขั้นต่ำ",
+   "expect": [
+    "th-coverage"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": ".env secret",
+   "expect": [
+    "th-env"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "pg_dump S3",
+   "expect": [
+    "th-backup"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "calculateVat",
+   "expect": [
+    "th-vat"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "VAT_RATE",
+   "expect": [
+    "th-vat"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "ERR_ORDER_409",
+   "expect": [
+    "th-err-409"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "AuthService.refreshToken",
+   "expect": [
+    "th-login-bug"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "Flutter Android",
+   "expect": [
+    "th-mobile"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "Omise webhook",
+   "expect": [
+    "th-payment"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "ICU tokenizer ภาษาไทย",
+   "expect": [
+    "th-segment"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "collation th-TH",
+   "expect": [
+    "th-collation"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "RAM เกิน 80%",
+   "expect": [
+    "th-server-ram"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "สแตนด์อัพ 9:30",
+   "expect": [
+    "th-standup"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "JWT อายุกี่นาที",
+   "expect": [
+    "th-jwt"
+   ],
+   "kind": "mixed"
+  },
+  {
+   "query": "Redis แจ้งเตือน",
+   "expect": [
+    "th-redis-glued"
+   ],
+   "kind": "glued"
+  },
+  {
+   "query": "Sentry error",
+   "expect": [
+    "th-sentry-glued"
+   ],
+   "kind": "glued"
+  },
+  {
+   "query": "Kafka event",
+   "expect": [
+    "th-kafka-glued"
+   ],
+   "kind": "glued"
+  },
+  {
+   "query": "Kafka คลังสินค้า",
+   "expect": [
+    "th-kafka-glued"
+   ],
+   "kind": "glued"
+  },
+  {
+   "query": "โปรเจกต์ Node.js",
+   "expect": [
+    "th-project-node"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "โครงสร้างโปรเจค",
+   "expect": [
+    "th-project-structure"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "เซิฟเวอร์ staging",
+   "expect": [
+    "th-server-restart"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "เซิร์ฟเวอร์ dev",
+   "expect": [
+    "th-server-dev"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "ล็อคอิน",
+   "expect": [
+    "th-login-bug"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "เทส integration",
+   "expect": [
+    "th-docker"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "แบคเอนด์",
+   "expect": [
+    "th-team-owner"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "อัพโหลด S3",
+   "expect": [
+    "th-backup",
+    "th-backup-files"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "ดีพลอย",
+   "expect": [
+    "th-deploy",
+    "th-deploy-friday"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "ตัดคํา",
+   "expect": [
+    "th-segment"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "เท่ียงคืน",
+   "expect": [
+    "th-server-restart"
+   ],
+   "kind": "th_variant"
+  },
+  {
+   "query": "เก็บรหัสผ่านไว้ที่ไหน",
+   "expect": [
+    "th-env",
+    "th-sentry-dsn"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "ทำไมล็อกอินไม่ได้",
+   "expect": [
+    "th-login-bug"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "ประชุมวันไหน",
+   "expect": [
+    "th-meeting"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "ลูกค้าจ่ายเงินยังไง",
+   "expect": [
+    "th-promptpay",
+    "th-payment"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "ห้ามปล่อยของวันศุกร์",
+   "expect": [
+    "th-deploy-friday"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "แอปรองรับ iOS เวอร์ชันไหน",
+   "expect": [
+    "th-mobile"
+   ],
+   "kind": "th_paraphrase"
+  },
+  {
+   "query": "ข้อมูลโปรเจกต์ทั้งหมด",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "ข้อมูลทั้งหมด",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "มีอะไรบ้าง",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "สรุปโปรเจกต์",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "บอกทุกอย่างเกี่ยวกับระบบ",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "ทีมใช้อะไรบ้าง",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "ภาพรวมของโปรเจกต์นี้",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "มีข้อมูลอะไรบ้างในระบบ",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "การตัดสินใจที่ผ่านมา",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "สถานะงานล่าสุด",
+   "expect": [],
+   "kind": "th_generic"
+  },
+  {
+   "query": "ตั้งค่า Kubernetes ingress",
+   "expect": [],
+   "kind": "th_negative"
+  },
+  {
+   "query": "ระบบสะสมแต้มลูกค้า",
+   "expect": [],
+   "kind": "th_negative"
+  },
+  {
+   "query": "ภาษีหัก ณ ที่จ่าย",
+   "expect": [],
+   "kind": "th_negative"
+  },
+  {
+   "query": "ใบกำกับภาษีอิเล็กทรอนิกส์",
+   "expect": [],
+   "kind": "th_negative"
+  },
+  {
+   "query": "GraphQL schema ของทีม",
+   "expect": [],
+   "kind": "th_negative"
+  },
+  {
+   "query": "缓存",
+   "expect": [
+    "zh-cache"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "生产环境",
+   "expect": [
+    "zh-deploy"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "备份",
+   "expect": [
+    "zh-db"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "数据库备份",
+   "expect": [
+    "zh-db"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "代码审核",
+   "expect": [
+    "zh-review"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "マイグレーション",
+   "expect": [
+    "ja-migration"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "個人情報",
+   "expect": [
+    "ja-log"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "サーバ メモリ",
+   "expect": [
+    "ja-server-mem"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "ﾃﾞﾌﾟﾛｲ",
+   "expect": [
+    "ja-migration"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "데이터베이스 백업",
+   "expect": [
+    "ko-backup"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "팀 회의",
+   "expect": [
+    "ko-meeting"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "API 경로",
+   "expect": [
+    "ko-api"
+   ],
+   "kind": "cjk"
+  },
+  {
+   "query": "项目所有信息",
+   "expect": [],
+   "kind": "cjk_generic"
+  },
+  {
+   "query": "项目概况",
+   "expect": [],
+   "kind": "cjk_generic"
+  },
+  {
+   "query": "プロジェクトの概要",
+   "expect": [],
+   "kind": "cjk_generic"
+  },
+  {
+   "query": "모든 정보",
+   "expect": [],
+   "kind": "cjk_generic"
+  },
+  {
+   "query": "全部のメモ",
+   "expect": [],
+   "kind": "cjk_generic"
+  },
+  {
+   "query": "all project information",
+   "expect": [],
+   "kind": "en_generic"
+  },
+  {
+   "query": "summarize the project",
+   "expect": [],
+   "kind": "en_generic"
+  }
+ ]
+}
