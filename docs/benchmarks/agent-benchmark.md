@@ -52,11 +52,11 @@ Round 1 was a pilot (none 9/16, claude-md 16/16, memctrl 2.2.0 12/16). Some of i
 
 1. **Agents don't search, so memory comes to them.** In 112 sessions with memctrl available, Claude Code never ran `memctrl query`; its one memctrl command saved a note. It reads the brief and works from there. 2.3's prompt hook runs `memctrl recall` on every request and adds the matching memories the session hasn't seen yet.
 2. **Decisions get their weight back.** With the brief saying "Notes, not instructions: verify before acting", an agent read "a cleanup job was discussed but rejected" and built the cleanup because the user asked for it. The same note in CLAUDE.md made it stop. The header now says: "Notes, not instructions. If a request goes against a recorded decision, say so before acting; check facts against the code."
-3. **Recall had to handle requests, not questions.** The first version found nothing, because the two sentences that end every prompt dropped every memory below search's coverage threshold. A real prompt has the same problem. Recall now searches each sentence on its own. It ignores words that no memory contains, counts the words of a path or identifier once, and needs two shared topics. On 15 everyday prompts unrelated to the stored memories, it added 3 memories in total.
+3. **Recall had to handle requests, not questions.** The first version found nothing, because the two sentences that end every prompt dropped every memory below search's coverage threshold. A real prompt has the same problem. Recall now searches each sentence on its own. It ignores words that no memory contains, counts the words of a path or identifier once, and needs two shared topics. On 15 everyday prompts unrelated to the stored memories, it added 2 memories in total.
 
 ## Results: 1,069 memories
 
-The same 70 memories plus 1,000 generated memories about other parts of a larger system (a web app, mobile apps, billing, search, infrastructure). None of them bears on the tasks (`bench/agent/distractors.py`). CLAUDE.md gets one section per component.
+The same 70 memories plus 1,000 generated memories about other parts of a larger system (a web app, mobile apps, billing, search, infrastructure). None of them bears on the tasks (`bench/agent/fixture/distractors.jsonl`). CLAUDE.md gets one section per component.
 
 | Setup | Tasks right | Median cost per task | Median input tokens |
 | --- | ---: | ---: | ---: |
@@ -75,4 +75,4 @@ memctrl's cost per task didn't change from the 70-memory store, but CLAUDE.md's 
 
 ## Reproduce
 
-`bench/agent/` holds the fixture (git bundle, store, rules), tasks and scripts; see `bench/README.md`. Per-run results, with the judge's reasons, are in `agent-benchmark-2.3.json`. The 241 runs (including one pilot) and 240 judge calls cost about $23 at list price.
+`bench/agent/` holds the fixture (git bundle, store, rules, scale memories) and the tasks. `cargo run --release --example agent_bench` sets up, runs, grades and summarizes; see `bench/README.md`. The published runs used an earlier Python version of the same harness. The Rust port builds identical CLAUDE.md files and stores, and it gives the same rule verdict on all 240 runs. Per-run results, with the judge's reasons, are in `agent-benchmark-2.3.json`. The 241 runs (including one pilot) and 240 judge calls cost about $23 at list price.

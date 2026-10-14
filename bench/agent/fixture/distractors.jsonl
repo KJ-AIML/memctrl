@@ -1,0 +1,1000 @@
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the push token store might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the push token store might move to Mixpanel-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Lambda for the crash reporter because it has first-class TypeScript types."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the crash reporter in design tokens JSON; the key prefix is design_system:3."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 20 minutes; the slowest part is the image resizer."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over Mixpanel for the push token store because it halved cold-start time."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 2 minutes; the slowest part is the export to CSV."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: the build cache is owned by #web; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the dark-mode tokens in MDX; the key prefix is docs_site:76."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the export to CSV is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over Webpack for the font loading because it let us drop a sidecar."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over a cron box for the font loading because the team already knew it."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the webhook relay lives in image-service/src/shared; nothing else imports it."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: Storybook shows stale tokens roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the email templates is #media; the runbook is docs/runbooks/image_service-43.md."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the A/B test bucketing in S3; the key prefix is image_service:51."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: releases go out through Vercel on Wednesdays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the export to CSV in index aliases; the key prefix is search:27."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the email templates might move to Webpack-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the sitemap generator lives in mobile-android/src/core; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the sitemap generator lives in data-warehouse/src/shared; nothing else imports it."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: the deep-link router is owned by #web; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the font loading is #mobile; the runbook is docs/runbooks/mobile_ios-23.md."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Puppeteer for the webhook relay because the old one was unmaintained."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the crash reporter got about 77% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the crash reporter in design tokens JSON; the key prefix is design_system:12."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Webpack for the A/B test bucketing because it works behind the corporate proxy."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the webhook relay in Room; the key prefix is mobile_android:16."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: releases go out through Play Console internal track on Thursdays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the feature-flag client is #mobile; the runbook is docs/runbooks/mobile_android-58.md."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the webhook relay lives in search/src/features; nothing else imports it."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Sentry for the cost dashboard because it halved cold-start time."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: releases go out through ArgoCD on Thursdays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: releases go out through Terraform on Mondays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: deep links open the home screen instead roughly once a week; the workaround is to restart the simulator."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the image resizer lives in image-service/src/core; nothing else imports it."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: the export to CSV is owned by #web; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the onboarding flow might move to Puppeteer-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the A/B test bucketing in S3; the key prefix is image_service:27."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the sitemap generator is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the onboarding flow got about 56% slower after the last Jetpack Compose upgrade."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the nightly job is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: the deep-link router is owned by #search; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: CSV exports lose leading zeros roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the image resizer might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the build cache in S3; the key prefix is image_service:58."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the reindex leaves an orphan alias roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the onboarding flow might move to Jest-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the font loading got about 65% slower after the last SwiftUI upgrade."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the email templates might move to Sentry-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over CircleCI for the CDN purge because it supports offline mode."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the feature-flag client in Kafka topics; the key prefix is analytics_events:87."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the deep-link router might move to Firebase-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the webhook relay got about 29% slower after the last Terraform + EKS upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 47 minutes; the slowest part is the email templates."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 44 minutes; the slowest part is the dark-mode tokens."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 3 minutes; the slowest part is the thumbnail queue."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 65 minutes; the slowest part is the build cache."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over CircleCI for the CDN purge because it supports offline mode."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: on-call for the font loading is #messaging; the runbook is docs/runbooks/notifications-57.md."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the email templates might move to Lambda-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 11 minutes; the slowest part is the dark-mode tokens."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the crash reporter is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the search reindex lives in data-warehouse/src/lib; nothing else imports it."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over BigQuery for the thumbnail queue because the old one was unmaintained."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the export to CSV got about 14% slower after the last Go 1.22 upgrade."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the offline cache is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the crash reporter might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the A/B test bucketing is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 64 minutes; the slowest part is the CDN purge."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Mixpanel for the onboarding flow because it halved cold-start time."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 9 minutes; the slowest part is the sitemap generator."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: releases go out through ArgoCD on Thursdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: releases go out through Vercel on Mondays only, never on Fridays after 3pm."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the feature-flag client in S3 state bucket; the key prefix is infra:38."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over ImageMagick for the onboarding flow because it halved cold-start time."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the thumbnail queue lives in image-service/src/shared; nothing else imports it."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the push token store is #internal-tools; the runbook is docs/runbooks/admin_console-29.md."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 25 minutes; the slowest part is the deep-link router."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the build cache got about 56% slower after the last Jetpack Compose upgrade."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the dark-mode tokens is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the dark-mode tokens lives in admin-console/src/shared; nothing else imports it."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: releases go out through Vercel on Fridays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the A/B test bucketing in index aliases; the key prefix is search:42."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the first push after install is dropped roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Jest for the feature-flag client because it has first-class TypeScript types."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 14 minutes; the slowest part is the cost dashboard."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the font loading might move to ImageMagick-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the crash reporter might move to a cron box-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the feature-flag client in S3 state bucket; the key prefix is infra:33."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: builds hang at 'optimizing assets' roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the search reindex is #design; the runbook is docs/runbooks/design_system-13.md."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the font loading is #devrel; the runbook is docs/runbooks/docs_site-77.md."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: releases go out through Airflow on Mondays only, never on Fridays after 3pm."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 85 minutes; the slowest part is the offline cache."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the deep-link router is #devrel; the runbook is docs/runbooks/docs_site-77.md."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over CloudFormation for the search reindex because the team already knew it."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the search reindex is owned by #media; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over Webpack for the cost dashboard because it let us drop a sidecar."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Firebase for the font loading because it made screenshots deterministic."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the CDN serves a stale bundle roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: thumbnails come out rotated roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the dark-mode tokens got about 17% slower after the last SwiftUI upgrade."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: deep links open the home screen instead roughly once a week; the workaround is to re-run the job once."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the A/B test bucketing lives in data-warehouse/src/features; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the thumbnail queue lives in mobile-ios/src/lib; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the crash reporter in MDX; the key prefix is docs_site:5."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 35 minutes; the slowest part is the onboarding flow."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the first push after install is dropped roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: on-call for the onboarding flow is #messaging; the runbook is docs/runbooks/notifications-4.md."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the CDN purge lives in image-service/src/core; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the image resizer got about 69% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the deep-link router might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: releases go out through Play Console internal track on Fridays only, never on Fridays after 3pm."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the dark-mode tokens got about 19% slower after the last React 18 + Vite upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the export to CSV lives in billing-worker/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the offline cache lives in mobile-ios/src/shared; nothing else imports it."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the deep-link router is owned by #media; changes need a review from someone in that channel."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the nightly job might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the image resizer might move to a cron box-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: on-call for the email templates is #data; the runbook is docs/runbooks/analytics_events-90.md."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the dark-mode tokens in S3; the key prefix is image_service:66."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the nightly job got about 14% slower after the last Docusaurus 3 upgrade."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the A/B test bucketing lives in mobile-ios/src/features; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: the the nightly job lives in docs-site/src/features; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the image resizer in Kafka topics; the key prefix is analytics_events:17."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over Sentry for the cost dashboard because it supports offline mode."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the image resizer lives in search/src/features; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: dbt models time out on Mondays roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the sitemap generator might move to Lambda-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the A/B test bucketing lives in notifications/src/lib; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the export to CSV is owned by #data; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the font loading got about 68% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over styled-components for the font loading because it removed a flaky dependency."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the onboarding flow might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "hypothesis", "layer": "project", "content": "infra: the email templates might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the cost dashboard in Core Data; the key prefix is mobile_ios:77."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: the font loading got about 48% slower after the last dbt + Snowflake upgrade."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the search reindex is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 84 minutes; the slowest part is the export to CSV."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the sitemap generator might move to CloudFormation-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 75 minutes; the slowest part is the crash reporter."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the webhook relay in Redis; the key prefix is billing_worker:83."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over Webpack for the deep-link router because it works behind the corporate proxy."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: releases go out through ArgoCD on Fridays only, never on Fridays after 3pm."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the thumbnail queue got about 78% slower after the last Docusaurus 3 upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the thumbnail queue lives in billing-worker/src/core; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: dbt models time out on Mondays roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the search reindex is owned by #data; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over CloudFormation for the sitemap generator because it works behind the corporate proxy."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the thumbnail queue is owned by #design; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: releases go out through ArgoCD on Mondays only, never on Fridays after 3pm."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the A/B test bucketing lives in data-warehouse/src/shared; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the build cache might move to Lambda-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the export to CSV lives in web-app/src/core; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the sitemap generator might move to Firebase-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "hypothesis", "layer": "project", "content": "web-app: the sitemap generator might move to ImageMagick-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the feature-flag client is owned by #data; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the sitemap generator might move to Firebase-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the dark-mode tokens got about 73% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over Mixpanel for the push token store because the old one was unmaintained."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the search reindex lives in data-warehouse/src/features; nothing else imports it."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the email templates in index aliases; the key prefix is search:41."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the reindex leaves an orphan alias roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: on-call for the search reindex is #search; the runbook is docs/runbooks/search-89.md."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the offline cache might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the email templates might move to a cron box-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 30 minutes; the slowest part is the dark-mode tokens."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the font loading lives in search/src/features; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over CloudFormation for the sitemap generator because it has first-class TypeScript types."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: builds hang at 'optimizing assets' roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over Mixpanel for the offline cache because it cut the monthly bill by about 40%."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the build cache lives in data-warehouse/src/shared; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the offline cache might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the search reindex is #mobile; the runbook is docs/runbooks/mobile_android-22.md."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the deep-link router got about 47% slower after the last Next.js 14 upgrade."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the offline cache got about 81% slower after the last Go 1.22 upgrade."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the dark-mode tokens lives in mobile-ios/src/features; nothing else imports it."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 3 minutes; the slowest part is the search reindex."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the A/B test bucketing got about 55% slower after the last Docusaurus 3 upgrade."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 82 minutes; the slowest part is the build cache."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: releases go out through GitHub Pages on Mondays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the email templates got about 22% slower after the last Rust + axum upgrade."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the search reindex is #mobile; the runbook is docs/runbooks/mobile_ios-23.md."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Lambda for the search reindex because it made screenshots deterministic."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the email templates lives in mobile-ios/src/core; nothing else imports it."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the dark-mode tokens might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the feature-flag client is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the sitemap generator lives in web-app/src/features; nothing else imports it."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over a cron box for the push token store because it works behind the corporate proxy."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the image resizer is #mobile; the runbook is docs/runbooks/mobile_android-80.md."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: CSV exports lose leading zeros roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the build cache is owned by #data; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: releases go out through Vercel on Thursdays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the email templates might move to styled-components-free tooling next quarter; not decided."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: on-call for the search reindex is #search; the runbook is docs/runbooks/search-39.md."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: on-call for the build cache is #data; the runbook is docs/runbooks/data_warehouse-70.md."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: builds hang at 'optimizing assets' roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the thumbnail queue in Kafka topics; the key prefix is analytics_events:70."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the nightly job is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 84 minutes; the slowest part is the CDN purge."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 41 minutes; the slowest part is the A/B test bucketing."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the deep-link router got about 52% slower after the last Segment + Kafka upgrade."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: releases go out through Confluent Cloud on Fridays only, never on Fridays after 3pm."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the sitemap generator lives in infra/src/shared; nothing else imports it."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the deep-link router got about 60% slower after the last Rust + axum upgrade."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over ImageMagick for the email templates because it halved cold-start time."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the email templates got about 18% slower after the last Rust + axum upgrade."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the email templates might move to Mixpanel-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the offline cache got about 46% slower after the last Segment + Kafka upgrade."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over styled-components for the deep-link router because it removed a flaky dependency."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the crash reporter is owned by #data; changes need a review from someone in that channel."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the CDN purge is #platform-infra; the runbook is docs/runbooks/infra-63.md."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the deep-link router might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the deep-link router in Room; the key prefix is mobile_android:28."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the A/B test bucketing might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: releases go out through Airflow on Wednesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 39 minutes; the slowest part is the search reindex."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over BigQuery for the A/B test bucketing because it works behind the corporate proxy."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: releases go out through Atlantis on Tuesdays only, never on Fridays after 3pm."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the image resizer lives in infra/src/lib; nothing else imports it."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 21 minutes; the slowest part is the cost dashboard."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the image resizer got about 37% slower after the last React 18 + Vite upgrade."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the cost dashboard got about 62% slower after the last OpenSearch 2.13 upgrade."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the CDN purge is owned by #data; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the dark-mode tokens got about 83% slower after the last React 18 + Vite upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: on-call for the build cache is #messaging; the runbook is docs/runbooks/notifications-62.md."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the build cache might move to Lambda-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the nightly job might move to Puppeteer-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 51 minutes; the slowest part is the crash reporter."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: releases go out through TestFlight on Tuesdays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the export to CSV lives in image-service/src/features; nothing else imports it."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the feature-flag client got about 80% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra runs its terratest suite in about 72 minutes; the slowest part is the build cache."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 56 minutes; the slowest part is the cost dashboard."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the image resizer is #internal-tools; the runbook is docs/runbooks/admin_console-75.md."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over CloudFormation for the webhook relay because the old one was unmaintained."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the font loading in MDX; the key prefix is docs_site:37."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the export to CSV might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app keeps the export to CSV in Zustand; the key prefix is web_app:79."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the CDN serves a stale bundle roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Webpack for the crash reporter because the old one was unmaintained."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: dbt models time out on Mondays roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the cost dashboard lives in data-warehouse/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the sitemap generator got about 15% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the email templates got about 52% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the search reindex lives in analytics-events/src/shared; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the cost dashboard might move to Redux-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the search reindex might move to ImageMagick-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: dark mode flickers on first paint roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over a cron box for the feature-flag client because it works behind the corporate proxy."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: releases go out through npm publish on Wednesdays only, never on Fridays after 3pm."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: CSV exports lose leading zeros roughly once a week; the workaround is to restart the simulator."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: on-call for the crash reporter is #billing; the runbook is docs/runbooks/billing_worker-15.md."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: dbt models time out on Mondays roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: on-call for the offline cache is #search; the runbook is docs/runbooks/search-60.md."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: the A/B test bucketing got about 19% slower after the last dbt + Snowflake upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the webhook relay is #web; the runbook is docs/runbooks/web_app-42.md."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the export to CSV got about 50% slower after the last Next.js 14 upgrade."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the font loading is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the feature-flag client might move to CloudFormation-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the build cache got about 34% slower after the last React 18 + Vite upgrade."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 90 minutes; the slowest part is the onboarding flow."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Mixpanel for the nightly job because it let us drop a sidecar."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the thumbnail queue is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the webhook relay got about 15% slower after the last Go 1.22 upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the A/B test bucketing in Redis; the key prefix is billing_worker:22."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the webhook relay might move to a cron box-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the crash reporter got about 69% slower after the last Rust + axum upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the onboarding flow lives in web-app/src/core; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the crash reporter in Kafka topics; the key prefix is analytics_events:42."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the build cache might move to Lambda-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the sitemap generator in S3 state bucket; the key prefix is infra:77."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 74 minutes; the slowest part is the cost dashboard."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the export to CSV got about 88% slower after the last Go 1.22 upgrade."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: thumbnails come out rotated roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the A/B test bucketing lives in mobile-android/src/features; nothing else imports it."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: dbt models time out on Mondays roughly once a week; the workaround is to re-run the job once."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the onboarding flow might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 84 minutes; the slowest part is the cost dashboard."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the CDN purge lives in image-service/src/shared; nothing else imports it."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Gatsby for the nightly job because the team already knew it."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: releases go out through ArgoCD on Tuesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console keeps the webhook relay in tRPC; the key prefix is admin_console:52."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the push token store in Core Data; the key prefix is mobile_ios:81."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: deep links open the home screen instead roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the CDN purge is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console keeps the CDN purge in tRPC; the key prefix is admin_console:31."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the onboarding flow might move to a cron box-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 41 minutes; the slowest part is the deep-link router."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the crash reporter is #devrel; the runbook is docs/runbooks/docs_site-64.md."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the cost dashboard might move to Sentry-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: releases go out through ArgoCD on Mondays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over Lambda for the CDN purge because it has first-class TypeScript types."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the thumbnail queue in Redis; the key prefix is billing_worker:13."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Redux for the crash reporter because it works behind the corporate proxy."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the push token store might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the font loading in Core Data; the key prefix is mobile_ios:83."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the cost dashboard lives in mobile-android/src/shared; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the nightly job is owned by #data; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the image resizer lives in analytics-events/src/features; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the font loading in Core Data; the key prefix is mobile_ios:76."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over BigQuery for the cost dashboard because it supports offline mode."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the export to CSV got about 64% slower after the last Go 1.22 upgrade."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the onboarding flow in MDX; the key prefix is docs_site:46."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the onboarding flow is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the CDN purge might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 26 minutes; the slowest part is the offline cache."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the nightly job is #media; the runbook is docs/runbooks/image_service-49.md."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the thumbnail queue might move to ImageMagick-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra runs its terratest suite in about 57 minutes; the slowest part is the email templates."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the font loading is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the A/B test bucketing is owned by #design; changes need a review from someone in that channel."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the deep-link router might move to Puppeteer-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the sitemap generator is #devrel; the runbook is docs/runbooks/docs_site-34.md."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the sitemap generator lives in mobile-ios/src/features; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: releases go out through Confluent Cloud on Thursdays only, never on Fridays after 3pm."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the build cache might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the deep-link router might move to Sentry-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the email templates might move to Webpack-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 28 minutes; the slowest part is the sitemap generator."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the dark-mode tokens got about 79% slower after the last Docusaurus 3 upgrade."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the push token store is #media; the runbook is docs/runbooks/image_service-53.md."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the deep-link router got about 41% slower after the last Go 1.22 upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the onboarding flow in Redis streams; the key prefix is notifications:61."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 44 minutes; the slowest part is the feature-flag client."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the email templates might move to Lambda-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the A/B test bucketing got about 4% slower after the last Rust + axum upgrade."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the crash reporter is owned by #design; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the sitemap generator might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the email templates lives in design-system/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the sitemap generator in Redis; the key prefix is billing_worker:52."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: releases go out through Vercel on Thursdays only, never on Fridays after 3pm."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the thumbnail queue got about 51% slower after the last Docusaurus 3 upgrade."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the onboarding flow in Snowflake schemas; the key prefix is data_warehouse:26."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the crash reporter might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the image resizer got about 14% slower after the last OpenSearch 2.13 upgrade."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the CDN purge is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the nightly job might move to Webpack-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the push token store is owned by #data; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the push token store is owned by #data; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the first push after install is dropped roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the cost dashboard might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: releases go out through ArgoCD on Mondays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the nightly job might move to Puppeteer-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: CSV exports lose leading zeros roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 88 minutes; the slowest part is the build cache."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: releases go out through npm publish on Fridays only, never on Fridays after 3pm."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: releases go out through Atlantis on Mondays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the CDN purge is #media; the runbook is docs/runbooks/image_service-61.md."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the onboarding flow in Redis; the key prefix is billing_worker:37."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: Storybook shows stale tokens roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the A/B test bucketing got about 52% slower after the last Jetpack Compose upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the push token store in Redis streams; the key prefix is notifications:65."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 42 minutes; the slowest part is the build cache."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Elasticsearch 7 for the dark-mode tokens because it cut the monthly bill by about 40%."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the onboarding flow in Room; the key prefix is mobile_android:31."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the A/B test bucketing might move to Mixpanel-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the font loading is #devrel; the runbook is docs/runbooks/docs_site-47.md."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the push token store lives in search/src/shared; nothing else imports it."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Mixpanel for the export to CSV because the old one was unmaintained."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: the the onboarding flow lives in docs-site/src/lib; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: releases go out through Airflow on Fridays only, never on Fridays after 3pm."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: releases go out through ArgoCD on Wednesdays only, never on Fridays after 3pm."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the webhook relay lives in data-warehouse/src/core; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the CDN serves a stale bundle roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: builds hang at 'optimizing assets' roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 70 minutes; the slowest part is the onboarding flow."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the crash reporter might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over CloudFormation for the onboarding flow because it made screenshots deterministic."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the dark-mode tokens is #design; the runbook is docs/runbooks/design_system-82.md."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the crash reporter got about 80% slower after the last Go 1.22 upgrade."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the crash reporter in Snowflake schemas; the key prefix is data_warehouse:87."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: releases go out through ArgoCD on Fridays only, never on Fridays after 3pm."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the build cache got about 43% slower after the last Docusaurus 3 upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 16 minutes; the slowest part is the export to CSV."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the email templates lives in design-system/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 35 minutes; the slowest part is the dark-mode tokens."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: dark mode flickers on first paint roughly once a week; the workaround is to restart the simulator."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Firebase for the feature-flag client because it made screenshots deterministic."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the CDN serves a stale bundle roughly once a week; the workaround is to restart the simulator."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: on-call for the push token store is #billing; the runbook is docs/runbooks/billing_worker-60.md."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: thumbnails come out rotated roughly once a week; the workaround is to re-run the job once."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the A/B test bucketing might move to Lambda-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the A/B test bucketing in design tokens JSON; the key prefix is design_system:84."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over RabbitMQ for the webhook relay because it halved cold-start time."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: deep links open the home screen instead roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the CDN purge got about 15% slower after the last Go 1.22 upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the feature-flag client lives in notifications/src/features; nothing else imports it."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: the push token store is owned by #search; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over CircleCI for the A/B test bucketing because it supports offline mode."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the sitemap generator in Redis streams; the key prefix is notifications:27."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over Lambda for the feature-flag client because it halved cold-start time."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over Puppeteer for the export to CSV because it supports offline mode."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: on-call for the deep-link router is #data; the runbook is docs/runbooks/analytics_events-84.md."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: dbt models time out on Mondays roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the crash reporter might move to Redux-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the sitemap generator might move to Puppeteer-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the cost dashboard got about 61% slower after the last Segment + Kafka upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the A/B test bucketing lives in notifications/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the dark-mode tokens is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the offline cache got about 86% slower after the last Segment + Kafka upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the deep-link router lives in notifications/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the offline cache lives in mobile-ios/src/features; nothing else imports it."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the sitemap generator is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: releases go out through npm publish on Thursdays only, never on Fridays after 3pm."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 64 minutes; the slowest part is the font loading."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: the cost dashboard is owned by #search; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "hypothesis", "layer": "project", "content": "web-app: the search reindex might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the cost dashboard is #mobile; the runbook is docs/runbooks/mobile_ios-80.md."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: builds hang at 'optimizing assets' roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the deep-link router in Kafka topics; the key prefix is analytics_events:15."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 15 minutes; the slowest part is the dark-mode tokens."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the A/B test bucketing is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the CDN serves a stale bundle roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 18 minutes; the slowest part is the font loading."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 34 minutes; the slowest part is the onboarding flow."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over Puppeteer for the offline cache because it removed a flaky dependency."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the CDN purge lives in mobile-android/src/shared; nothing else imports it."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console keeps the deep-link router in tRPC; the key prefix is admin_console:41."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the CDN purge lives in analytics-events/src/features; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Sentry for the CDN purge because it halved cold-start time."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the search reindex got about 74% slower after the last Rust + axum upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 53 minutes; the slowest part is the offline cache."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the push token store in index aliases; the key prefix is search:30."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Gatsby for the thumbnail queue because the team already knew it."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the cost dashboard in Room; the key prefix is mobile_android:2."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the CDN serves a stale bundle roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 46 minutes; the slowest part is the sitemap generator."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the export to CSV lives in analytics-events/src/features; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the search reindex got about 11% slower after the last Segment + Kafka upgrade."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the crash reporter in Redis streams; the key prefix is notifications:33."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the crash reporter lives in notifications/src/core; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the push token store in Snowflake schemas; the key prefix is data_warehouse:67."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the font loading is owned by #data; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the export to CSV lives in notifications/src/features; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 78 minutes; the slowest part is the export to CSV."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the font loading is #design; the runbook is docs/runbooks/design_system-36.md."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the email templates is #internal-tools; the runbook is docs/runbooks/admin_console-48.md."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the font loading is #platform-infra; the runbook is docs/runbooks/infra-69.md."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the build cache lives in notifications/src/lib; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the push token store in Kafka topics; the key prefix is analytics_events:83."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the first push after install is dropped roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over BigQuery for the dark-mode tokens because it removed a flaky dependency."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: thumbnails come out rotated roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 73 minutes; the slowest part is the cost dashboard."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the font loading might move to CloudFormation-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the thumbnail queue got about 53% slower after the last Rust + axum upgrade."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the feature-flag client got about 75% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app keeps the dark-mode tokens in Zustand; the key prefix is web_app:39."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the crash reporter lives in notifications/src/lib; nothing else imports it."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the push token store got about 54% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Mixpanel for the thumbnail queue because it halved cold-start time."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over CloudFormation for the webhook relay because it removed a flaky dependency."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the onboarding flow in Snowflake schemas; the key prefix is data_warehouse:11."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the A/B test bucketing in Room; the key prefix is mobile_android:35."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the dark-mode tokens lives in mobile-android/src/features; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: dbt models time out on Mondays roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: releases go out through ArgoCD on Thursdays only, never on Fridays after 3pm."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the nightly job got about 75% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the offline cache lives in search/src/features; nothing else imports it."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over ImageMagick for the nightly job because it made screenshots deterministic."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the offline cache lives in design-system/src/lib; nothing else imports it."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the export to CSV in S3; the key prefix is image_service:19."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over CircleCI for the onboarding flow because it removed a flaky dependency."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the image resizer lives in search/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the thumbnail queue might move to a cron box-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the crash reporter is #design; the runbook is docs/runbooks/design_system-79.md."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the offline cache is #web; the runbook is docs/runbooks/web_app-90.md."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the sitemap generator lives in admin-console/src/features; nothing else imports it."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console keeps the push token store in tRPC; the key prefix is admin_console:21."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the A/B test bucketing in index aliases; the key prefix is search:69."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the image resizer in MDX; the key prefix is docs_site:23."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 83 minutes; the slowest part is the crash reporter."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the first push after install is dropped roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the export to CSV lives in analytics-events/src/shared; nothing else imports it."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the deep-link router in index aliases; the key prefix is search:79."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: on-call for the feature-flag client is #data; the runbook is docs/runbooks/data_warehouse-63.md."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over Elasticsearch 7 for the thumbnail queue because it supports offline mode."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: the webhook relay is owned by #billing; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the font loading in index aliases; the key prefix is search:83."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the deep-link router lives in image-service/src/lib; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the export to CSV in MDX; the key prefix is docs_site:70."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: releases go out through Vercel on Wednesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: builds hang at 'optimizing assets' roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the onboarding flow might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the build cache in Redis; the key prefix is billing_worker:72."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the first push after install is dropped roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over styled-components for the nightly job because it removed a flaky dependency."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Elasticsearch 7 for the push token store because it halved cold-start time."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the thumbnail queue lives in design-system/src/shared; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the email templates got about 88% slower after the last SwiftUI upgrade."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the build cache lives in infra/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the feature-flag client lives in billing-worker/src/core; nothing else imports it."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 45 minutes; the slowest part is the cost dashboard."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: the onboarding flow is owned by #billing; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the CDN purge is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the email templates got about 55% slower after the last React 18 + Vite upgrade."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the font loading in S3; the key prefix is image_service:21."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Gatsby for the crash reporter because it supports offline mode."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 62 minutes; the slowest part is the A/B test bucketing."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over Redux for the export to CSV because it removed a flaky dependency."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: the the export to CSV lives in analytics-events/src/lib; nothing else imports it."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the dark-mode tokens got about 26% slower after the last OpenSearch 2.13 upgrade."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the reindex leaves an orphan alias roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the search reindex is owned by #data; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over BigQuery for the onboarding flow because it let us drop a sidecar."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 13 minutes; the slowest part is the build cache."}
+{"component": "infra", "claim_type": "hypothesis", "layer": "project", "content": "infra: the crash reporter might move to Firebase-free tooling next quarter; not decided."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the build cache got about 48% slower after the last Next.js 14 upgrade."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the push token store is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over Gatsby for the offline cache because it made screenshots deterministic."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: dark mode flickers on first paint roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: releases go out through Terraform on Tuesdays only, never on Fridays after 3pm."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: on-call for the crash reporter is #messaging; the runbook is docs/runbooks/notifications-51.md."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the image resizer might move to a cron box-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the thumbnail queue in Kafka topics; the key prefix is analytics_events:55."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the build cache is #media; the runbook is docs/runbooks/image_service-40.md."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: builds hang at 'optimizing assets' roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: releases go out through GitHub Pages on Thursdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the search reindex is #internal-tools; the runbook is docs/runbooks/admin_console-89.md."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 48 minutes; the slowest part is the cost dashboard."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the A/B test bucketing is owned by #data; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the crash reporter lives in design-system/src/shared; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the build cache is #devrel; the runbook is docs/runbooks/docs_site-55.md."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the A/B test bucketing in S3 state bucket; the key prefix is infra:3."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the CDN purge in Snowflake schemas; the key prefix is data_warehouse:17."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the offline cache is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 77 minutes; the slowest part is the export to CSV."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 51 minutes; the slowest part is the webhook relay."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 53 minutes; the slowest part is the webhook relay."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the onboarding flow got about 12% slower after the last Docusaurus 3 upgrade."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the image resizer might move to styled-components-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: releases go out through ArgoCD on Fridays only, never on Fridays after 3pm."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the CDN purge is #web; the runbook is docs/runbooks/web_app-53.md."}
+{"component": "infra", "claim_type": "hypothesis", "layer": "project", "content": "infra: the CDN purge might move to styled-components-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the push token store is #mobile; the runbook is docs/runbooks/mobile_android-80.md."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the A/B test bucketing got about 9% slower after the last Terraform + EKS upgrade."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: thumbnails come out rotated roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: the CDN purge is owned by #billing; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the feature-flag client lives in notifications/src/shared; nothing else imports it."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Redux for the image resizer because it made screenshots deterministic."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the thumbnail queue is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over CloudFormation for the email templates because it has first-class TypeScript types."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: on-call for the search reindex is #data; the runbook is docs/runbooks/data_warehouse-12.md."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the thumbnail queue might move to CloudFormation-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the offline cache might move to Redux-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the thumbnail queue is #mobile; the runbook is docs/runbooks/mobile_android-2.md."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the font loading in design tokens JSON; the key prefix is design_system:86."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the reindex leaves an orphan alias roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the cost dashboard is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the font loading might move to Jest-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 38 minutes; the slowest part is the A/B test bucketing."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the search reindex lives in billing-worker/src/features; nothing else imports it."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Redux for the feature-flag client because it made screenshots deterministic."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: releases go out through ArgoCD on Wednesdays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 25 minutes; the slowest part is the search reindex."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: builds hang at 'optimizing assets' roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: Storybook shows stale tokens roughly once a week; the workaround is to restart the simulator."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the first push after install is dropped roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Firebase for the deep-link router because it works behind the corporate proxy."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the CDN serves a stale bundle roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the search reindex got about 63% slower after the last Docusaurus 3 upgrade."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the nightly job is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the webhook relay in Room; the key prefix is mobile_android:34."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the build cache got about 30% slower after the last Next.js 14 upgrade."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: releases go out through TestFlight on Fridays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the thumbnail queue lives in search/src/lib; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the feature-flag client got about 87% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the A/B test bucketing might move to a cron box-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app keeps the offline cache in Zustand; the key prefix is web_app:12."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the webhook relay might move to Firebase-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: on-call for the cost dashboard is #messaging; the runbook is docs/runbooks/notifications-15.md."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 36 minutes; the slowest part is the build cache."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the feature-flag client is owned by #media; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the A/B test bucketing got about 45% slower after the last Go 1.22 upgrade."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over Mixpanel for the sitemap generator because it supports offline mode."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: the nightly job got about 2% slower after the last dbt + Snowflake upgrade."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the font loading got about 64% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the CDN serves a stale bundle roughly once a week; the workaround is to restart the simulator."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: releases go out through Play Console internal track on Tuesdays only, never on Fridays after 3pm."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the export to CSV got about 45% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the push token store lives in image-service/src/shared; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the image resizer in Kafka topics; the key prefix is analytics_events:68."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the deep-link router is #mobile; the runbook is docs/runbooks/mobile_ios-15.md."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the A/B test bucketing in MDX; the key prefix is docs_site:42."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the cost dashboard might move to styled-components-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the webhook relay might move to Lambda-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the webhook relay got about 13% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the A/B test bucketing is #devrel; the runbook is docs/runbooks/docs_site-21.md."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: releases go out through npm publish on Mondays only, never on Fridays after 3pm."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: dark mode flickers on first paint roughly once a week; the workaround is to re-run the job once."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Lambda for the A/B test bucketing because the team already knew it."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over styled-components for the dark-mode tokens because it supports offline mode."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the feature-flag client is #devrel; the runbook is docs/runbooks/docs_site-4.md."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the build cache is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the crash reporter might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the thumbnail queue might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: builds hang at 'optimizing assets' roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: thumbnails come out rotated roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the CDN purge might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the offline cache might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the dark-mode tokens got about 51% slower after the last SwiftUI upgrade."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: releases go out through npm publish on Tuesdays only, never on Fridays after 3pm."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over styled-components for the thumbnail queue because it has first-class TypeScript types."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the nightly job got about 21% slower after the last Rust + axum upgrade."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the webhook relay is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Webpack for the sitemap generator because it removed a flaky dependency."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Firebase for the CDN purge because it let us drop a sidecar."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: deep links open the home screen instead roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: the cost dashboard is owned by #platform-infra; changes need a review from someone in that channel."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the sitemap generator in Core Data; the key prefix is mobile_ios:88."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app keeps the sitemap generator in Zustand; the key prefix is web_app:19."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the webhook relay got about 38% slower after the last Next.js 14 upgrade."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: deep links open the home screen instead roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the export to CSV might move to CloudFormation-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the dark-mode tokens lives in billing-worker/src/features; nothing else imports it."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Redux for the onboarding flow because the team already knew it."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over CircleCI for the email templates because it has first-class TypeScript types."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the deep-link router is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: CSV exports lose leading zeros roughly once a week; the workaround is to re-run the job once."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: dbt models time out on Mondays roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the push token store might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the export to CSV might move to Lambda-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the onboarding flow in MDX; the key prefix is docs_site:35."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the dark-mode tokens in S3 state bucket; the key prefix is infra:40."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the search reindex got about 21% slower after the last SwiftUI upgrade."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the deep-link router is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the build cache in MDX; the key prefix is docs_site:17."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the first push after install is dropped roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the dark-mode tokens is #devrel; the runbook is docs/runbooks/docs_site-48.md."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the cost dashboard in Room; the key prefix is mobile_android:50."}
+{"component": "infra", "claim_type": "hypothesis", "layer": "project", "content": "infra: the build cache might move to styled-components-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the dark-mode tokens might move to Mixpanel-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the deep-link router in MDX; the key prefix is docs_site:8."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the export to CSV is #platform-infra; the runbook is docs/runbooks/infra-48.md."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: the cost dashboard is owned by #billing; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the build cache is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 64 minutes; the slowest part is the sitemap generator."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Sentry for the crash reporter because it removed a flaky dependency."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: deep links open the home screen instead roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the feature-flag client is #platform-infra; the runbook is docs/runbooks/infra-67.md."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: on-call for the nightly job is #data; the runbook is docs/runbooks/data_warehouse-89.md."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the A/B test bucketing in Kafka topics; the key prefix is analytics_events:54."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the push token store got about 16% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the sitemap generator is #web; the runbook is docs/runbooks/web_app-72.md."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Mixpanel for the dark-mode tokens because it made screenshots deterministic."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the search reindex in Kafka topics; the key prefix is analytics_events:50."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the thumbnail queue is owned by #data; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: on-call for the push token store is #search; the runbook is docs/runbooks/search-79.md."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: the image resizer got about 5% slower after the last SwiftUI upgrade."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the font loading is #design; the runbook is docs/runbooks/design_system-45.md."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the CDN purge in MDX; the key prefix is docs_site:55."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over a cron box for the search reindex because it removed a flaky dependency."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: releases go out through Atlantis on Wednesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the A/B test bucketing lives in admin-console/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "decision", "layer": "project", "content": "billing-worker: we chose Python 3.12 + Celery over Webpack for the sitemap generator because it has first-class TypeScript types."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the push token store in Kafka topics; the key prefix is analytics_events:77."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the offline cache got about 23% slower after the last Jetpack Compose upgrade."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the webhook relay got about 83% slower after the last Go 1.22 upgrade."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: releases go out through Airflow on Thursdays only, never on Fridays after 3pm."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the email templates lives in design-system/src/lib; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over Jest for the A/B test bucketing because it cut the monthly bill by about 40%."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the font loading got about 26% slower after the last Terraform + EKS upgrade."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the feature-flag client got about 20% slower after the last React 18 + Vite upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 47 minutes; the slowest part is the push token store."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the email templates in design tokens JSON; the key prefix is design_system:42."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the first push after install is dropped roughly once a week; the workaround is to re-run the job once."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over ImageMagick for the offline cache because the old one was unmaintained."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 62 minutes; the slowest part is the cost dashboard."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the A/B test bucketing lives in admin-console/src/lib; nothing else imports it."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the export to CSV is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the nightly job in MDX; the key prefix is docs_site:70."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the sitemap generator might move to Redux-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the build cache in design tokens JSON; the key prefix is design_system:60."}
+{"component": "design-system", "claim_type": "hypothesis", "layer": "project", "content": "design-system: the search reindex might move to Lambda-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the offline cache is #platform-infra; the runbook is docs/runbooks/infra-59.md."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over Puppeteer for the export to CSV because it let us drop a sidecar."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the image resizer is #devrel; the runbook is docs/runbooks/docs_site-63.md."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the crash reporter in index aliases; the key prefix is search:41."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the dark-mode tokens is #devrel; the runbook is docs/runbooks/docs_site-24.md."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: the CDN serves a stale bundle roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: deep links open the home screen instead roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the push token store might move to Sentry-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the CDN purge got about 13% slower after the last Jetpack Compose upgrade."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the sitemap generator got about 69% slower after the last Next.js 14 upgrade."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the export to CSV might move to Webpack-free tooling next quarter; not decided."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 3 minutes; the slowest part is the CDN purge."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: releases go out through TestFlight on Mondays only, never on Fridays after 3pm."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the CDN purge in Core Data; the key prefix is mobile_ios:68."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the search reindex is owned by #design; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the nightly job is #design; the runbook is docs/runbooks/design_system-20.md."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over ImageMagick for the onboarding flow because it removed a flaky dependency."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: dbt models time out on Mondays roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: Storybook shows stale tokens roughly once a week; the workaround is to restart the simulator."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the export to CSV might move to Webpack-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the sitemap generator is #media; the runbook is docs/runbooks/image_service-2.md."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the email templates got about 30% slower after the last Go 1.22 upgrade."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the email templates is owned by #data; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over ImageMagick for the offline cache because it made screenshots deterministic."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the build cache in S3 state bucket; the key prefix is infra:24."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the push token store might move to Lambda-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the font loading might move to Mixpanel-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the A/B test bucketing got about 75% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the email templates is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the offline cache might move to Sentry-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 64 minutes; the slowest part is the image resizer."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the crash reporter lives in billing-worker/src/core; nothing else imports it."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications: the the deep-link router lives in notifications/src/features; nothing else imports it."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the sitemap generator might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the onboarding flow got about 25% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: releases go out through ArgoCD on Tuesdays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the offline cache is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: releases go out through Vercel on Tuesdays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: releases go out through Play Console internal track on Wednesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the email templates got about 17% slower after the last Next.js 14 upgrade."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the email templates lives in mobile-ios/src/lib; nothing else imports it."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the crash reporter got about 63% slower after the last Docusaurus 3 upgrade."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the font loading is owned by #design; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the font loading in MDX; the key prefix is docs_site:66."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: Storybook shows stale tokens roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the offline cache in index aliases; the key prefix is search:23."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: releases go out through Atlantis on Fridays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: thumbnails come out rotated roughly once a week; the workaround is to restart the simulator."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 12 minutes; the slowest part is the push token store."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 88 minutes; the slowest part is the cost dashboard."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: releases go out through Confluent Cloud on Mondays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the webhook relay lives in mobile-android/src/core; nothing else imports it."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the sitemap generator got about 57% slower after the last React 18 + Vite upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the dark-mode tokens lives in billing-worker/src/shared; nothing else imports it."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the build cache is #internal-tools; the runbook is docs/runbooks/admin_console-76.md."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the A/B test bucketing might move to a cron box-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: on-call for the crash reporter is #media; the runbook is docs/runbooks/image_service-86.md."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the CDN purge is owned by #media; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 22 minutes; the slowest part is the push token store."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the font loading in Snowflake schemas; the key prefix is data_warehouse:10."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the cost dashboard in design tokens JSON; the key prefix is design_system:2."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the webhook relay is #web; the runbook is docs/runbooks/web_app-18.md."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Elasticsearch 7 for the thumbnail queue because it works behind the corporate proxy."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the export to CSV is #platform-infra; the runbook is docs/runbooks/infra-61.md."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the A/B test bucketing is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the dark-mode tokens in S3 state bucket; the key prefix is infra:62."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Lambda for the dark-mode tokens because it removed a flaky dependency."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the email templates is #devrel; the runbook is docs/runbooks/docs_site-28.md."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 34 minutes; the slowest part is the offline cache."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Firebase for the cost dashboard because the team already knew it."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the first push after install is dropped roughly once a week; the workaround is to re-run the job once."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the image resizer got about 7% slower after the last OpenSearch 2.13 upgrade."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 60 minutes; the slowest part is the push token store."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the search reindex lives in admin-console/src/features; nothing else imports it."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the cost dashboard is #platform-infra; the runbook is docs/runbooks/infra-85.md."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 37 minutes; the slowest part is the email templates."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 57 minutes; the slowest part is the dark-mode tokens."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 36 minutes; the slowest part is the image resizer."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: we chose dbt + Snowflake over Firebase for the crash reporter because it halved cold-start time."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the push token store lives in image-service/src/core; nothing else imports it."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the CDN serves a stale bundle roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the webhook relay got about 19% slower after the last Rust + axum upgrade."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the crash reporter got about 22% slower after the last React 18 + Vite upgrade."}
+{"component": "docs-site", "claim_type": "hypothesis", "layer": "project", "content": "docs-site: the image resizer might move to Lambda-free tooling next quarter; not decided."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console keeps the image resizer in tRPC; the key prefix is admin_console:48."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the CDN purge in Room; the key prefix is mobile_android:14."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the A/B test bucketing lives in billing-worker/src/lib; nothing else imports it."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the onboarding flow is #mobile; the runbook is docs/runbooks/mobile_android-28.md."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 62 minutes; the slowest part is the font loading."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the email templates lives in image-service/src/shared; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 9 minutes; the slowest part is the export to CSV."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: the crash reporter is owned by #data; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over Redux for the search reindex because it has first-class TypeScript types."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over Lambda for the nightly job because it made screenshots deterministic."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Elasticsearch 7 for the feature-flag client because it made screenshots deterministic."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the image resizer in Redis streams; the key prefix is notifications:89."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: dark mode flickers on first paint roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the email templates in index aliases; the key prefix is search:35."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Gatsby for the image resizer because it supports offline mode."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the font loading got about 35% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 22 minutes; the slowest part is the push token store."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the thumbnail queue is #platform-infra; the runbook is docs/runbooks/infra-2.md."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the first push after install is dropped roughly once a week; the workaround is to re-run the job once."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over Redux for the onboarding flow because it made screenshots deterministic."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: Storybook shows stale tokens roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: dbt models time out on Mondays roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Sentry for the export to CSV because it cut the monthly bill by about 40%."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the image resizer lives in web-app/src/core; nothing else imports it."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: we chose Segment + Kafka over ImageMagick for the dark-mode tokens because it cut the monthly bill by about 40%."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: deep links open the home screen instead roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the CDN purge in Room; the key prefix is mobile_android:12."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: the the font loading lives in admin-console/src/lib; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: dark mode flickers on first paint roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 77 minutes; the slowest part is the feature-flag client."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the export to CSV is #mobile; the runbook is docs/runbooks/mobile_android-70.md."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the export to CSV is #mobile; the runbook is docs/runbooks/mobile_android-63.md."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the offline cache is #design; the runbook is docs/runbooks/design_system-40.md."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 45 minutes; the slowest part is the deep-link router."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over BigQuery for the search reindex because it removed a flaky dependency."}
+{"component": "web-app", "claim_type": "hypothesis", "layer": "project", "content": "web-app: the email templates might move to Jest-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the onboarding flow got about 70% slower after the last Segment + Kafka upgrade."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: releases go out through GitHub Pages on Wednesdays only, never on Fridays after 3pm."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: dark mode flickers on first paint roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the deep-link router got about 44% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the feature-flag client might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the crash reporter is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: dbt models time out on Mondays roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search keeps the offline cache in index aliases; the key prefix is search:89."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: thumbnails come out rotated roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: the cost dashboard is owned by #web; changes need a review from someone in that channel."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the feature-flag client is #web; the runbook is docs/runbooks/web_app-38.md."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the image resizer lives in web-app/src/shared; nothing else imports it."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the cost dashboard might move to Sentry-free tooling next quarter; not decided."}
+{"component": "analytics-events", "claim_type": "decision", "layer": "project", "content": "analytics-events: releases go out through Confluent Cloud on Wednesdays only, never on Fridays after 3pm."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the image resizer is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 30 minutes; the slowest part is the nightly job."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: the dark-mode tokens got about 77% slower after the last React 18 + Vite upgrade."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the offline cache in Room; the key prefix is mobile_android:79."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 88 minutes; the slowest part is the cost dashboard."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the CDN purge in Snowflake schemas; the key prefix is data_warehouse:36."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over CircleCI for the dark-mode tokens because it removed a flaky dependency."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the build cache is #mobile; the runbook is docs/runbooks/mobile_ios-75.md."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the crash reporter might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the search reindex is #internal-tools; the runbook is docs/runbooks/admin_console-6.md."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the onboarding flow is owned by #data; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the export to CSV might move to Redux-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the CDN purge is #devrel; the runbook is docs/runbooks/docs_site-70.md."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the push token store got about 16% slower after the last Segment + Kafka upgrade."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: we chose React 18 + Vite over Redux for the webhook relay because it works behind the corporate proxy."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the CDN serves a stale bundle roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the sitemap generator is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the build cache lives in design-system/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the A/B test bucketing in Redis; the key prefix is billing_worker:63."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the export to CSV in Kafka topics; the key prefix is analytics_events:74."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the search reindex might move to styled-components-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the push token store lives in infra/src/core; nothing else imports it."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 36 minutes; the slowest part is the crash reporter."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 13 minutes; the slowest part is the export to CSV."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the sitemap generator got about 28% slower after the last Go 1.22 upgrade."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse: the the offline cache lives in data-warehouse/src/lib; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: on-call for the CDN purge is #billing; the runbook is docs/runbooks/billing_worker-28.md."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: on-call for the image resizer is #billing; the runbook is docs/runbooks/billing_worker-62.md."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 55 minutes; the slowest part is the CDN purge."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 14 minutes; the slowest part is the build cache."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: dbt models time out on Mondays roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: the first push after install is dropped roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: on-call for the search reindex is #billing; the runbook is docs/runbooks/billing_worker-89.md."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console runs its Cypress suite in about 24 minutes; the slowest part is the email templates."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the export to CSV got about 35% slower after the last Rust + axum upgrade."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: the image resizer got about 83% slower after the last OpenSearch 2.13 upgrade."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the A/B test bucketing might move to Sentry-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the build cache is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the A/B test bucketing might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the cost dashboard might move to Firebase-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site runs its link checker suite in about 28 minutes; the slowest part is the image resizer."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Sentry for the dark-mode tokens because it made screenshots deterministic."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra keeps the export to CSV in S3 state bucket; the key prefix is infra:38."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: on-call for the webhook relay is #search; the runbook is docs/runbooks/search-38.md."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 62 minutes; the slowest part is the cost dashboard."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 89 minutes; the slowest part is the build cache."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios keeps the deep-link router in Core Data; the key prefix is mobile_ios:24."}
+{"component": "admin-console", "claim_type": "hypothesis", "layer": "project", "content": "admin-console: the push token store might move to Sentry-free tooling next quarter; not decided."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 58 minutes; the slowest part is the search reindex."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the offline cache got about 2% slower after the last Next.js 14 upgrade."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: the A/B test bucketing got about 47% slower after the last Next.js 14 upgrade."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: thumbnails come out rotated roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events keeps the webhook relay in Kafka topics; the key prefix is analytics_events:57."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 15 minutes; the slowest part is the nightly job."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site keeps the dark-mode tokens in MDX; the key prefix is docs_site:81."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the A/B test bucketing in design tokens JSON; the key prefix is design_system:28."}
+{"component": "analytics-events", "claim_type": "hypothesis", "layer": "project", "content": "analytics-events: the export to CSV might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "observation", "layer": "project", "content": "web-app: builds hang at 'optimizing assets' roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the push token store might move to Elasticsearch 7-free tooling next quarter; not decided."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: thumbnails come out rotated roughly once a week; the workaround is to restart the simulator."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse keeps the deep-link router in Snowflake schemas; the key prefix is data_warehouse:28."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 31 minutes; the slowest part is the email templates."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: releases go out through Atlantis on Thursdays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Webpack for the cost dashboard because it supports offline mode."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the cost dashboard lives in billing-worker/src/features; nothing else imports it."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: the A/B test bucketing is owned by #devrel; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 59 minutes; the slowest part is the deep-link router."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the crash reporter is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 39 minutes; the slowest part is the offline cache."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the build cache in design tokens JSON; the key prefix is design_system:47."}
+{"component": "infra", "claim_type": "hypothesis", "layer": "project", "content": "infra: the push token store might move to Gatsby-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 63 minutes; the slowest part is the export to CSV."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Mixpanel for the sitemap generator because it let us drop a sidecar."}
+{"component": "notifications", "claim_type": "observation", "layer": "project", "content": "notifications: the nightly job got about 59% slower after the last Go 1.22 upgrade."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: dark mode flickers on first paint roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the sitemap generator is owned by #media; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the image resizer in Room; the key prefix is mobile_android:81."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: on-call for the email templates is #devrel; the runbook is docs/runbooks/docs_site-18.md."}
+{"component": "search", "claim_type": "hypothesis", "layer": "project", "content": "search: the push token store might move to Webpack-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 14 minutes; the slowest part is the build cache."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 18 minutes; the slowest part is the offline cache."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 18 minutes; the slowest part is the feature-flag client."}
+{"component": "web-app", "claim_type": "hypothesis", "layer": "project", "content": "web-app: the deep-link router might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the CDN purge lives in design-system/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker runs its pytest suite in about 29 minutes; the slowest part is the webhook relay."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 71 minutes; the slowest part is the sitemap generator."}
+{"component": "mobile-ios", "claim_type": "hypothesis", "layer": "project", "content": "mobile-ios: the cost dashboard might move to CircleCI-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over Jest for the export to CSV because the team already knew it."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: we chose Jetpack Compose over ImageMagick for the webhook relay because the old one was unmaintained."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the dark-mode tokens might move to Firebase-free tooling next quarter; not decided."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the image resizer is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: releases go out through Airflow on Tuesdays only, never on Fridays after 3pm."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 22 minutes; the slowest part is the A/B test bucketing."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: CSV exports lose leading zeros roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: releases go out through Terraform on Fridays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: the build cache is owned by #search; changes need a review from someone in that channel."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: the thumbnail queue is owned by #media; changes need a review from someone in that channel."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the webhook relay lives in billing-worker/src/lib; nothing else imports it."}
+{"component": "notifications", "claim_type": "hypothesis", "layer": "project", "content": "notifications: the push token store might move to styled-components-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service keeps the cost dashboard in S3; the key prefix is image_service:7."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the first push after install is dropped roughly once a week; the workaround is to clear the cache volume and rebuild."}
+{"component": "mobile-ios", "claim_type": "observation", "layer": "project", "content": "mobile-ios: deep links open the home screen instead roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: releases go out through Vercel on Tuesdays only, never on Fridays after 3pm."}
+{"component": "admin-console", "claim_type": "assertion", "layer": "project", "content": "admin-console: on-call for the image resizer is #internal-tools; the runbook is docs/runbooks/admin_console-2.md."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: the webhook relay got about 62% slower after the last Jetpack Compose upgrade."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system keeps the search reindex in design tokens JSON; the key prefix is design_system:16."}
+{"component": "web-app", "claim_type": "decision", "layer": "project", "content": "web-app: the search reindex is owned by #web; changes need a review from someone in that channel."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications runs its go test suite in about 44 minutes; the slowest part is the email templates."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the thumbnail queue got about 22% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "data-warehouse", "claim_type": "decision", "layer": "project", "content": "data-warehouse: the offline cache is owned by #data; changes need a review from someone in that channel."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the webhook relay might move to BigQuery-free tooling next quarter; not decided."}
+{"component": "mobile-android", "claim_type": "decision", "layer": "project", "content": "mobile-android: the feature-flag client is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the CDN serves a stale bundle roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 8 minutes; the slowest part is the deep-link router."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over Sentry for the feature-flag client because it made screenshots deterministic."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the offline cache lives in search/src/lib; nothing else imports it."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: the the deep-link router lives in mobile-ios/src/core; nothing else imports it."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app keeps the thumbnail queue in Zustand; the key prefix is web_app:76."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the thumbnail queue lives in design-system/src/core; nothing else imports it."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the crash reporter lives in infra/src/features; nothing else imports it."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: on-call for the thumbnail queue is #mobile; the runbook is docs/runbooks/mobile_android-52.md."}
+{"component": "mobile-android", "claim_type": "observation", "layer": "project", "content": "mobile-android: Storybook shows stale tokens roughly once a week; the workaround is to purge the CDN path by hand."}
+{"component": "image-service", "claim_type": "decision", "layer": "project", "content": "image-service: we chose Rust + axum over ImageMagick for the CDN purge because it halved cold-start time."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: Storybook shows stale tokens roughly once a week; the workaround is to restart the simulator."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: the the search reindex lives in design-system/src/features; nothing else imports it."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: the the export to CSV lives in infra/src/core; nothing else imports it."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the build cache is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over a cron box for the search reindex because it supports offline mode."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service runs its cargo test suite in about 18 minutes; the slowest part is the sitemap generator."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: the deep-link router is owned by #mobile; changes need a review from someone in that channel."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: the export to CSV is owned by #search; changes need a review from someone in that channel."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over styled-components for the thumbnail queue because it let us drop a sidecar."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over Firebase for the export to CSV because it halved cold-start time."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the onboarding flow lives in image-service/src/features; nothing else imports it."}
+{"component": "infra", "claim_type": "observation", "layer": "project", "content": "infra: CSV exports lose leading zeros roughly once a week; the workaround is to add the missing intent filter."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system: on-call for the webhook relay is #design; the runbook is docs/runbooks/design_system-44.md."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search runs its pytest suite in about 52 minutes; the slowest part is the thumbnail queue."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: releases go out through GitHub Pages on Tuesdays only, never on Fridays after 3pm."}
+{"component": "search", "claim_type": "observation", "layer": "project", "content": "search: deep links open the home screen instead roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "image-service", "claim_type": "observation", "layer": "project", "content": "image-service: the CDN serves a stale bundle roughly once a week; the workaround is to pin the plugin to the previous minor."}
+{"component": "billing-worker", "claim_type": "observation", "layer": "project", "content": "billing-worker: the feature-flag client got about 16% slower after the last Python 3.12 + Celery upgrade."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: we chose Go 1.22 over Webpack for the font loading because it made screenshots deterministic."}
+{"component": "mobile-ios", "claim_type": "decision", "layer": "project", "content": "mobile-ios: we chose SwiftUI over CloudFormation for the crash reporter because the team already knew it."}
+{"component": "infra", "claim_type": "decision", "layer": "project", "content": "infra: we chose Terraform + EKS over Webpack for the cost dashboard because it cut the monthly bill by about 40%."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over BigQuery for the webhook relay because it let us drop a sidecar."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 82 minutes; the slowest part is the nightly job."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: Storybook shows stale tokens roughly once a week; the workaround is to restart the simulator."}
+{"component": "notifications", "claim_type": "decision", "layer": "project", "content": "notifications: the A/B test bucketing is owned by #messaging; changes need a review from someone in that channel."}
+{"component": "docs-site", "claim_type": "decision", "layer": "project", "content": "docs-site: we chose Docusaurus 3 over Puppeteer for the search reindex because it halved cold-start time."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: the the export to CSV lives in web-app/src/features; nothing else imports it."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app: on-call for the search reindex is #web; the runbook is docs/runbooks/web_app-64.md."}
+{"component": "notifications", "claim_type": "assertion", "layer": "project", "content": "notifications keeps the CDN purge in Redis streams; the key prefix is notifications:17."}
+{"component": "search", "claim_type": "assertion", "layer": "project", "content": "search: the the sitemap generator lives in search/src/features; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "hypothesis", "layer": "project", "content": "billing-worker: the build cache might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "image-service", "claim_type": "assertion", "layer": "project", "content": "image-service: the the offline cache lives in image-service/src/lib; nothing else imports it."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the nightly job might move to Firebase-free tooling next quarter; not decided."}
+{"component": "docs-site", "claim_type": "observation", "layer": "project", "content": "docs-site: the CDN serves a stale bundle roughly once a week; the workaround is to set the CSV column type to text."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android: the the crash reporter lives in mobile-android/src/features; nothing else imports it."}
+{"component": "docs-site", "claim_type": "assertion", "layer": "project", "content": "docs-site: the the crash reporter lives in docs-site/src/shared; nothing else imports it."}
+{"component": "data-warehouse", "claim_type": "assertion", "layer": "project", "content": "data-warehouse runs its dbt tests suite in about 4 minutes; the slowest part is the thumbnail queue."}
+{"component": "design-system", "claim_type": "observation", "layer": "project", "content": "design-system: the export to CSV got about 23% slower after the last Storybook 8 + Radix upgrade."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 15 minutes; the slowest part is the offline cache."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios runs its XCUITest suite in about 16 minutes; the slowest part is the dark-mode tokens."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: we chose Storybook 8 + Radix over Redux for the export to CSV because it has first-class TypeScript types."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android keeps the crash reporter in Room; the key prefix is mobile_android:7."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the feature-flag client is #platform-infra; the runbook is docs/runbooks/infra-20.md."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the email templates lives in billing-worker/src/shared; nothing else imports it."}
+{"component": "infra", "claim_type": "assertion", "layer": "project", "content": "infra: on-call for the offline cache is #platform-infra; the runbook is docs/runbooks/infra-21.md."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker: the the deep-link router lives in billing-worker/src/shared; nothing else imports it."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the push token store in Redis; the key prefix is billing_worker:86."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events runs its schema registry checks suite in about 17 minutes; the slowest part is the dark-mode tokens."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 69 minutes; the slowest part is the CDN purge."}
+{"component": "billing-worker", "claim_type": "assertion", "layer": "project", "content": "billing-worker keeps the deep-link router in Redis; the key prefix is billing_worker:14."}
+{"component": "mobile-android", "claim_type": "assertion", "layer": "project", "content": "mobile-android runs its Espresso suite in about 36 minutes; the slowest part is the build cache."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: the export to CSV got about 59% slower after the last Segment + Kafka upgrade."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the feature-flag client is owned by #design; changes need a review from someone in that channel."}
+{"component": "design-system", "claim_type": "decision", "layer": "project", "content": "design-system: the cost dashboard is owned by #design; changes need a review from someone in that channel."}
+{"component": "mobile-android", "claim_type": "hypothesis", "layer": "project", "content": "mobile-android: the crash reporter might move to Redux-free tooling next quarter; not decided."}
+{"component": "data-warehouse", "claim_type": "hypothesis", "layer": "project", "content": "data-warehouse: the cost dashboard might move to RabbitMQ-free tooling next quarter; not decided."}
+{"component": "search", "claim_type": "decision", "layer": "project", "content": "search: we chose OpenSearch 2.13 over Firebase for the build cache because it supports offline mode."}
+{"component": "mobile-ios", "claim_type": "assertion", "layer": "project", "content": "mobile-ios: on-call for the sitemap generator is #mobile; the runbook is docs/runbooks/mobile_ios-67.md."}
+{"component": "analytics-events", "claim_type": "observation", "layer": "project", "content": "analytics-events: dbt models time out on Mondays roughly once a week; the workaround is to regenerate the tokens with the design script."}
+{"component": "analytics-events", "claim_type": "assertion", "layer": "project", "content": "analytics-events: on-call for the thumbnail queue is #data; the runbook is docs/runbooks/analytics_events-14.md."}
+{"component": "design-system", "claim_type": "assertion", "layer": "project", "content": "design-system runs its Chromatic suite in about 53 minutes; the slowest part is the email templates."}
+{"component": "admin-console", "claim_type": "observation", "layer": "project", "content": "admin-console: thumbnails come out rotated roughly once a week; the workaround is to bump the worker memory to 2 GB."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: the nightly job is owned by #internal-tools; changes need a review from someone in that channel."}
+{"component": "image-service", "claim_type": "hypothesis", "layer": "project", "content": "image-service: the nightly job might move to a cron box-free tooling next quarter; not decided."}
+{"component": "web-app", "claim_type": "assertion", "layer": "project", "content": "web-app runs its Playwright suite in about 82 minutes; the slowest part is the nightly job."}
+{"component": "data-warehouse", "claim_type": "observation", "layer": "project", "content": "data-warehouse: Storybook shows stale tokens roughly once a week; the workaround is to delete the orphan alias with the cleanup script."}
+{"component": "admin-console", "claim_type": "decision", "layer": "project", "content": "admin-console: we chose Next.js 14 over Puppeteer for the cost dashboard because it cut the monthly bill by about 40%."}

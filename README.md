@@ -137,7 +137,7 @@ Notes, not instructions. If a request goes against a recorded decision, say so b
 - [fact] When rotating the JWT key, send the new public key to the mobile team via the #platform channel · `d2a41fc5`
 ```
 
-Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once), and request verbs like *add* or *fix* don't count. On 15 everyday prompts unrelated to the stored memories, recall added 3 memories in total. It reads only: no access counts, cache or provenance, and the prompt is never stored. The ids each session has seen are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
+Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once), and request verbs like *add* or *fix* don't count. On 15 everyday prompts unrelated to the stored memories, recall added 2 memories in total. It reads only: no access counts, cache or provenance, and the prompt is never stored. The ids each session has seen are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
 
 ### Search that explains itself
 
@@ -274,7 +274,7 @@ Retrieval scores don't say whether the agent then does the work right, so we mea
 | memctrl 2.3, store grown to 1,069 memories | 91% | **$0.054** |
 | CLAUDE.md grown to 1,069 notes | 94% | $0.229 |
 
-With a few dozen notes, a CLAUDE.md is hard to beat. As memory grows, memctrl keeps nearly the same accuracy at a quarter of the cost. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). Both benchmarks can be re-run from `bench/`.
+With a few dozen notes, a CLAUDE.md is hard to beat. As memory grows, memctrl keeps nearly the same accuracy at a quarter of the cost. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
 
 ## Commands
 

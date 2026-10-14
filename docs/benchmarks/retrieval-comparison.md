@@ -1,6 +1,6 @@
 # Retrieval compared with other memory tools
 
-Each system got the same memories and the same questions and was scored by the same code (`bench/retrieval/compare.py`). There was no network and no LLM. Raw numbers are in `retrieval-comparison-2.2.json`, measured with memctrl 2.2.0. 2.3 returns identical results for `query`; its new `recall` uses the same search.
+Each system got the same memories and the same questions and was scored by the same code. There was no network and no LLM. The suites are in `bench/retrieval/suites/`, where `memctrl eval --file` reproduces memctrl's side. The other tools need Python, so the comparison script lives outside this Rust-only repository. Raw numbers are in `retrieval-comparison-2.2.json`, measured with memctrl 2.2.0. 2.3 returns identical results for `query`; its new `recall` uses the same search.
 
 **What was compared**
 
