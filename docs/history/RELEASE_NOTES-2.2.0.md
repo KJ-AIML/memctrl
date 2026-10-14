@@ -19,7 +19,7 @@ We ran memctrl 2.1.0 through a real-world review: five testers played real use c
 
 ## Upgrade notes
 
-Read the 2.1 → 2.2 section of [MIGRATION.md](MIGRATION.md). The changes you'll notice:
+Read the 2.1 → 2.2 section of [MIGRATION.md](../../MIGRATION.md). The changes you'll notice:
 
 - **Team:** run `memctrl sync` after pulling, and `sync --accept` in a terminal once you've read the diff. memctrl 2.1 can't read the new file format and its export drops retraction records, so upgrade together and add `memctrl check --base origin/main` to CI. The first export rewrites the file once in the new order; commit that on its own.
 - **Settings:** if your `.memoryrc` sets `[guard] mode = "off"`, move that line to `~/.config/memctrl/config.toml`.
@@ -34,4 +34,4 @@ curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | s
 
 Windows: download `memctrl-x86_64-pc-windows-msvc.zip` from the release and put `memctrl.exe` on your `PATH`.
 
-Previous release notes live in [docs/history](docs/history).
+Previous release notes live in this folder.

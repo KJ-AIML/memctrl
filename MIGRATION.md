@@ -131,6 +131,35 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Faster start.** The committed-database check reads `.git/index` before starting `git`, and starts git only when the index might list the database: a linked worktree, a split index, index version 4, or a match.
 - **Library:** `memctrl::recall` (`recall`, `Recall`, `RecallEntry`, `session_file`, `shown_in`, `remember`); `installer::{install_recall_hook, recall_hook_command}`; `context::FENCE` and `search::ParsedQuery::gate_units` are public.
 
+## 2.3 → 2.4
+
+2.4 adds optional search by meaning. Nothing changes until you add `[semantic]` to your user config: with it off, every command returns what 2.3 returned, and the eval suites give identical results. The database gains a table only when semantic search first stores a vector, so 2.0 through 2.4 keep sharing one store.
+
+- **Turn it on** in `~/.config/memctrl/config.toml` (`%APPDATA%\memctrl\config.toml` on Windows):
+
+  ```toml
+  [semantic]
+  model = "embeddinggemma"                  # required; the name your server knows the model by
+  base_url = "http://localhost:11434/v1"    # default; any OpenAI-compatible /embeddings server
+  # threshold = 0.455          # similarity a match by meaning alone needs in query
+  # recall_threshold = 0.56    # the same for the prompt hook; never below threshold
+  # query_prefix = "..."       # and document_prefix: set from the model name when known
+  # dimensions = 256           # keep the first N dimensions (Matryoshka models)
+  # timeout_ms = 3000          # per search; indexing waits up to 120 s
+  # api_key_env = "OPENAI_API_KEY"   # variable holding a key, sent as a bearer token
+  # allow_remote = true        # required for a server off this machine, which must use HTTPS
+  # enabled = false            # keep the section but turn it off
+  ```
+
+  Unknown keys and invalid values in `[semantic]` are errors, so a typo can't quietly leave it off. Without a measured or configured threshold (anything but EmbeddingGemma and multilingual-e5-small), semantic search stays off with a warning until you add the values `memctrl semantic tune` prints. `MEMCTRL_SEMANTIC=off` turns it off for one command.
+- **A repository can't turn it on.** A `[semantic]` section in `.memoryrc` is ignored with a warning, even in a repository listed under `[trust] repos`.
+- **New commands:** `memctrl semantic status`, `semantic index [--layer]`, `semantic tune [--file] [--top-k]` and `semantic clear`.
+- **`query` and MCP `memctrl_query`** fuse lexical results with matches by meaning (reciprocal rank fusion, k = 60, ties to the lexical match). `why.matched` can include `similar meaning (0.62)`. A memory found by meaning alone has `coverage` 0 and its similarity as `score`. `trace` adds `semantic` and `vector_hits:N`, or `semantic_unavailable: <reason>` when the model can't be reached (results are then lexical), and `semantic_unindexed:N` when memories still lack vectors. Provenance records method `lexical_bm25+semantic`. Results that used the model aren't cached.
+- **`recall` and the prompt hook** add a memory close in meaning to a piece of the request (at or above `recall_threshold`) even when it shares no topic word. Recall still never stores the prompt; with semantic search on, it can cache vectors of memories that had none.
+- **`eval --retriever semantic`** measures fused results and **`eval --retriever recall`** measures what the prompt hook adds; `--min-hit-rate` applies to the retriever you chose.
+- **Storage:** `semantic_vectors(memory_id, space, vector, created_at)`, where `space` identifies the model, document prefix and dimensions, and `vector` is little-endian `f32` of unit length. Triggers `semantic_vectors_delete` and `semantic_vectors_update` drop a memory's vectors when it is deleted or its text changes, also when an older memctrl makes the change. `semantic clear` drops the table and both triggers.
+- **Library:** `memctrl::semantic` (`Settings`, `Engine`, `Client`, `Prepared`, `fuse`, `tune`, `clear`, `stored`), `retriever::hybrid_retrieve`, `SearchOptions::semantic`, `Rules::semantic`, `UserConfig::semantic`, and `eval::Retriever::{Semantic, Recall}`.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.

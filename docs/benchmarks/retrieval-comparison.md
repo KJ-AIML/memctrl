@@ -37,7 +37,7 @@ hit@5 is the share of answerable questions whose memory is in the top 5. "Says n
 - **memctrl both finds and declines.** It finds the memory about as often as the others, and it is the only system here that also answers vague questions with nothing, in Thai and English.
 - **Vector search finds paraphrases but never declines.** It always returns 5 notes, about twice the text. A cutoff stops that, but on the Thai suite it drops recall to 55%.
 - **basic-memory's default is weak in Thai**, because its embedding model is English.
-- **memctrl plus embeddings**, as rank fusion, closes the paraphrase gap and still declines vague Thai questions. Held-out vague questions drop from 92% to 85%, so semantic search should stay optional.
+- **memctrl plus embeddings**, as rank fusion, closes the paraphrase gap and still declines vague Thai questions. Held-out vague questions drop from 92% to 85%, so semantic search should stay optional. memctrl 2.4 ships this as optional [search by meaning](semantic-search.md): with EmbeddingGemma it reproduces this row's hit@5 and decline rates on every suite (hit@1 differs by one real-dev question, from how ties are broken).
 - **Speed.** A memctrl search takes 0.14 ms in process, and a CLI call takes about 10 ms end to end. EmbeddingGemma adds about 10 ms per query. A basic-memory CLI call takes seconds, mostly Python start-up; its MCP server mode wasn't measured.
 
 ## Caveats

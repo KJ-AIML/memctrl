@@ -10,6 +10,7 @@ use memctrl::{
     review::{self, Release},
     rules::{Rules, UserConfig, DEFAULT_RULES},
     sanitize::{sanitize_text, sanitize_value, validate_identifier},
+    semantic,
     store::MemoryStore,
     telemetry, tree,
 };
@@ -112,6 +113,10 @@ enum EvalRetriever {
     Lexical,
     Legacy,
     Both,
+    /// Lexical fused with matches by meaning; needs [semantic] in your user config.
+    Semantic,
+    /// What the prompt hook would add (semantic too when [semantic] is on).
+    Recall,
 }
 #[derive(Subcommand)]
 enum Command {
@@ -463,6 +468,30 @@ enum Command {
         #[command(subcommand)]
         command: AgentCommand,
     },
+    /// Optional semantic search, set up under [semantic] in your user config.
+    Semantic {
+        #[command(subcommand)]
+        command: SemanticCommand,
+    },
+}
+#[derive(Subcommand)]
+enum SemanticCommand {
+    /// Settings, whether the model answers, and how many memories have vectors.
+    Status,
+    /// Embed every memory without a vector (searches embed a few on the spot).
+    Index {
+        #[arg(long)]
+        layer: Option<String>,
+    },
+    /// Measure similarity thresholds for your model on an eval suite (built in, or --file).
+    Tune {
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long, default_value_t = 5)]
+        top_k: usize,
+    },
+    /// Delete every stored vector; they're rebuilt as you search while [semantic] is on.
+    Clear,
 }
 #[derive(Subcommand)]
 enum ReviewCommand {
@@ -1483,6 +1512,71 @@ async fn execute(
             repo.as_deref(),
             &rules.guard,
         )?,
+        Command::Semantic { command } => match command {
+            SemanticCommand::Status => {
+                let user = UserConfig::load()?;
+                let config = user.path.as_ref().map(|p| p.display().to_string());
+                let stored = semantic::stored(store)?;
+                match (&user.semantic, &rules.semantic) {
+                    (None, _) => {
+                        json!({"enabled": false, "config": config, "stored_vectors": stored,
+                               "reason": "no [semantic] section in your user config"})
+                    }
+                    (Some(settings), None) => {
+                        let reason = rules
+                            .warnings
+                            .iter()
+                            .find(|w| w.starts_with("semantic search is off"))
+                            .cloned()
+                            .unwrap_or_else(|| "turned off by MEMCTRL_SEMANTIC=off".into());
+                        json!({"enabled": false, "config": config, "settings": settings.summary(),
+                               "stored_vectors": stored, "reason": reason})
+                    }
+                    (Some(settings), Some(engine)) => {
+                        let started = Instant::now();
+                        let ping = engine.ping();
+                        let ms = started.elapsed().as_millis() as u64;
+                        let (indexed, eligible) = engine.coverage(store, None)?;
+                        let mut out = json!({"enabled": true, "config": config,
+                            "settings": settings.summary(), "indexed": indexed,
+                            "eligible": eligible, "stored_vectors": stored});
+                        match ping {
+                            Ok(dimensions) => {
+                                out["reachable"] = json!(true);
+                                out["dimensions"] = json!(dimensions);
+                                out["ping_ms"] = json!(ms);
+                            }
+                            Err(error) => {
+                                out["reachable"] = json!(false);
+                                out["error"] = json!(format!("{error:#}"));
+                            }
+                        }
+                        if indexed < eligible {
+                            out["hint"] = json!(format!("{} memories have no vector yet; run `memctrl semantic index` (searches embed up to {} at a time)", eligible - indexed, semantic::LAZY_LIMIT));
+                        }
+                        out
+                    }
+                }
+            }
+            SemanticCommand::Index { layer } => {
+                if let Some(layer) = layer {
+                    validate_identifier(layer, "layer")?;
+                }
+                let engine = rules.semantic.as_ref().with_context(|| {
+                    rules
+                        .warnings
+                        .iter()
+                        .find(|w| w.starts_with("semantic search is off"))
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            "semantic search is off: add [semantic] to your user config".into()
+                        })
+                })?;
+                engine.index(store, layer.as_deref())?
+            }
+            SemanticCommand::Clear => json!({"cleared": semantic::clear(store)?}),
+            SemanticCommand::Tune { .. } => bail!("tune is handled separately"),
+        },
         Command::Agent { command } => match command {
             AgentCommand::Put { thread_id, state } => {
                 validate_identifier(thread_id, "thread_id")?;
@@ -1520,6 +1614,12 @@ async fn run(cli: Cli) -> Result<()> {
         _ => Rules::load_with(&project.rc, &user)?,
     };
     for warning in &rules.warnings {
+        // `semantic` commands report why it's off themselves; tune is how you fix it.
+        if matches!(&cli.command, Command::Semantic { .. })
+            && warning.starts_with("semantic search is off")
+        {
+            continue;
+        }
         eprintln!("{}", json!({"warning": sanitize_text(warning)}));
     }
     rules.project_dir = Some(project.dir.clone());
@@ -1545,19 +1645,51 @@ async fn run(cli: Cli) -> Result<()> {
                 memctrl::eval::Retriever::Lexical,
                 memctrl::eval::Retriever::Legacy,
             ],
+            EvalRetriever::Semantic => vec![memctrl::eval::Retriever::Semantic],
+            EvalRetriever::Recall => vec![memctrl::eval::Retriever::Recall],
         };
         let options = retriever::SearchOptions::from_rules(&rules);
         let report = memctrl::eval::run(&suite, &retrievers, *top_k, &options)?;
         if let Some(floor) = min_hit_rate {
             memctrl::model::validate_confidence(*floor)?;
-            let rate = report["results"]["lexical"]["hit_at_k"]
+            let measured = match retriever {
+                EvalRetriever::Semantic => "semantic",
+                EvalRetriever::Recall => "recall",
+                _ => "lexical",
+            };
+            let rate = report["results"][measured]["hit_at_k"]
                 .as_f64()
-                .context("--min-hit-rate needs the lexical retriever and answerable cases")?;
+                .context("--min-hit-rate needs answerable cases")?;
             ensure!(
                 rate >= *floor,
-                "lexical hit@{top_k} is {rate}, below --min-hit-rate {floor}"
+                "{measured} hit@{top_k} is {rate}, below --min-hit-rate {floor}"
             );
         }
+        let encoded = serde_json::to_string(&sanitize_value(&report))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
+    // Tuning embeds a suite, never your memories, so it needs no store.
+    if let Command::Semantic {
+        command: SemanticCommand::Tune { file, top_k },
+    } = &cli.command
+    {
+        let settings = user.semantic.as_ref().with_context(|| {
+            format!(
+                "add [semantic] with a model to {} first",
+                user.path
+                    .as_ref()
+                    .map_or("your user config".into(), |p| p.display().to_string())
+            )
+        })?;
+        ensure!(*top_k > 0, "top-k must be at least 1");
+        let text = match file {
+            Some(path) => std::fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?,
+            None => memctrl::eval::BUILTIN_SUITE.to_string(),
+        };
+        let suite = memctrl::eval::parse_suite(&text)?;
+        let report = semantic::tune(settings, &suite, *top_k)?;
         let encoded = serde_json::to_string(&sanitize_value(&report))? + "\n";
         std::io::stdout().lock().write_all(encoded.as_bytes())?;
         return Ok(());
@@ -1797,6 +1929,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Serve => "serve",
         Command::Review { .. } => "review",
         Command::Agent { .. } => "agent",
+        Command::Semantic { .. } => "semantic",
     }
 }
 fn main() {

@@ -213,7 +213,10 @@ fn render(entries: &[RecallEntry]) -> String {
 
 /// The memories in `layers` that match `prompt`, best first, at most `limit`, leaving out the
 /// ids in `shown`. Reads only: access counts, the query cache and provenance are untouched, so
-/// recall never promotes what it surfaces and never stores the prompt.
+/// recall never promotes what it surfaces and never stores the prompt. With semantic search on,
+/// a memory close enough in meaning to a piece of the prompt (the model's recall threshold, which
+/// unrelated everyday prompts stay under) is added even when it shares no topic word, and vectors
+/// of memories that had none may be cached.
 #[allow(clippy::too_many_arguments)]
 pub fn recall(
     store: &MemoryStore,
@@ -240,14 +243,32 @@ pub fn recall(
     };
     // Room for matches that are filtered out below.
     let room = limit + shown.len().min(50) + 10;
+    let pieces = pieces(&sanitize_text(prompt), &|text| parse(text).gate_units());
+    // The model sees the pieces before the read snapshot opens, so a slow model never holds it.
+    // When it can't be reached, recall is lexical only.
+    let semantic = options
+        .semantic
+        .as_ref()
+        .map(|engine| {
+            let texts: Vec<&str> = pieces.iter().map(String::as_str).collect();
+            (engine, engine.prepare(store, &texts, None))
+        })
+        .filter(|(_, prepared)| prepared.ok());
     let snapshot = ReadSnapshot::new(&store.conn)?;
     // BM25 scores of different pieces aren't comparable, so a match ranks by its share of its
     // piece's best score, weighted by how much of the piece it covers.
     let mut best: HashMap<String, (f64, crate::search::Hit)> = HashMap::new();
     let mut known: HashMap<String, bool> = HashMap::new();
-    for piece in pieces(&sanitize_text(prompt), &|text| parse(text).gate_units()) {
-        let mut parsed = parse(&piece);
-        let groups = concepts(&piece);
+    for (index, piece) in pieces.iter().enumerate() {
+        let close = |id: &str| {
+            semantic.as_ref().and_then(|(engine, prepared)| {
+                prepared
+                    .similarity(index, id)
+                    .filter(|s| f64::from(*s) >= engine.threshold())
+            })
+        };
+        let mut parsed = parse(piece);
+        let groups = concepts(piece);
         // One shared concept is weak evidence that a memory is about the request, unless the
         // request names only one.
         let needed = topical_units(&parsed, &groups).min(MIN_MATCHED);
@@ -272,14 +293,18 @@ pub fn recall(
             }
         }
         parsed.terms = kept;
-        if parsed.is_empty() || parsed.only_generic() {
-            continue;
-        }
-        let found = crate::search::search(store, &parsed, None, room)?.0;
+        let found = if parsed.is_empty() || parsed.only_generic() {
+            Vec::new()
+        } else {
+            crate::search::search(store, &parsed, None, room)?.0
+        };
         let top = found.first().map_or(1.0, |h| h.why.score.max(f64::EPSILON));
-        for hit in found {
+        for mut hit in found {
             if matched_units(&hit.why.matched, &groups) < needed {
                 continue;
+            }
+            if let Some(s) = close(&hit.memory.id) {
+                hit.why.matched.push(format!("similar meaning ({s:.2})"));
             }
             let rank = hit.why.score / top * hit.why.coverage;
             if best
@@ -287,6 +312,29 @@ pub fn recall(
                 .is_none_or(|(known, _)| rank > *known)
             {
                 best.insert(hit.memory.id.clone(), (rank, hit));
+            }
+        }
+        if let Some((engine, prepared)) = &semantic {
+            for (id, s) in prepared.above(index, engine.recall_threshold(), room) {
+                // A word match already explains this memory better.
+                if best.contains_key(&id) {
+                    continue;
+                }
+                let rank = f64::from(s);
+                let Some(memory) = store
+                    .get_memory(&id, false)?
+                    .filter(crate::model::Memory::eligible)
+                else {
+                    continue;
+                };
+                let why = crate::model::Why {
+                    memory_id: id.clone(),
+                    score: (rank * 1000.0).round() / 1000.0,
+                    coverage: 0.0,
+                    matched: vec![format!("similar meaning ({s:.2})")],
+                    freshness: None,
+                };
+                best.insert(id, (rank, crate::search::Hit { memory, why }));
             }
         }
     }

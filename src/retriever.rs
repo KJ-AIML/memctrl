@@ -168,7 +168,7 @@ pub fn keyword_retrieve(
     }
 }
 
-/// Retrieval settings derived from `.memoryrc`.
+/// Retrieval settings derived from `.memoryrc`, plus semantic search from your user config.
 #[derive(Debug, Clone)]
 pub struct SearchOptions {
     pub alias_groups: Vec<Vec<String>>,
@@ -176,6 +176,8 @@ pub struct SearchOptions {
     pub generic_words: Vec<String>,
     /// `[retrieval] builtin_generic`: whether the built-in generic words apply.
     pub builtin_generic: bool,
+    /// Matches by meaning, fused with lexical results when your user config turns it on.
+    pub semantic: Option<crate::semantic::Engine>,
 }
 impl Default for SearchOptions {
     fn default() -> Self {
@@ -183,6 +185,7 @@ impl Default for SearchOptions {
             alias_groups: Vec::new(),
             generic_words: Vec::new(),
             builtin_generic: true,
+            semantic: None,
         }
     }
 }
@@ -192,6 +195,7 @@ impl SearchOptions {
             alias_groups: rules.alias_groups(),
             generic_words: rules.generic_words.clone(),
             builtin_generic: rules.builtin_generic,
+            semantic: rules.semantic.clone(),
         }
     }
     fn fingerprint(&self) -> String {
@@ -201,6 +205,9 @@ impl SearchOptions {
             self.builtin_generic,
             self.generic_words.join("\u{1f}")
         ));
+        if let Some(engine) = &self.semantic {
+            joined.push(format!("semantic:{}", engine.fingerprint()));
+        }
         let refs: Vec<&str> = joined.iter().map(String::as_str).collect();
         fingerprint(&refs)
     }
@@ -270,6 +277,93 @@ pub fn lexical_retrieve(
     })
 }
 
+/// Lexical results fused with matches by meaning, as `query` returns them when semantic search
+/// is on: reciprocal rank fusion of the lexical ranking and the memories above the model's
+/// similarity threshold, so a question with no close memory still gets nothing. Falls back to
+/// lexical results alone when the model couldn't be reached.
+pub fn hybrid_retrieve(
+    store: &MemoryStore,
+    query: &str,
+    layer: Option<&str>,
+    top_k: usize,
+    options: &SearchOptions,
+    prepared: &crate::semantic::Prepared,
+) -> Result<RetrievalResult> {
+    let Some(engine) = options.semantic.as_ref().filter(|_| prepared.ok()) else {
+        let mut result = lexical_retrieve(store, query, layer, top_k, options)?;
+        result.trace.extend(prepared.trace());
+        return Ok(result);
+    };
+    let wide = top_k.max(crate::semantic::VECTOR_HITS);
+    let lexical = lexical_retrieve(store, query, layer, wide, options)?;
+    let vector = prepared.above(0, engine.threshold(), crate::semantic::VECTOR_HITS);
+    let mut trace = lexical.trace.clone();
+    trace.extend(prepared.trace());
+    trace.push(format!("vector_hits:{}", vector.len()));
+    let similarity: BTreeMap<&str, f32> = vector.iter().map(|(id, s)| (id.as_str(), *s)).collect();
+    let fused = crate::semantic::fuse(&[
+        lexical.memory_ids.clone(),
+        vector.iter().map(|(id, _)| id.clone()).collect(),
+    ]);
+    let mut result = RetrievalResult {
+        trace,
+        ..Default::default()
+    };
+    let mut strength = 0.0;
+    for id in fused {
+        if result.memory_ids.len() == top_k {
+            break;
+        }
+        let label = similarity
+            .get(id.as_str())
+            .map(|s| format!("similar meaning ({s:.2})"));
+        let (fact, source, why, weight) = match lexical.memory_ids.iter().position(|x| *x == id) {
+            Some(i) => {
+                let mut why = lexical.why[i].clone();
+                why.matched.extend(label);
+                let weight = why.coverage;
+                (
+                    lexical.facts[i].clone(),
+                    lexical.sources[i].clone(),
+                    why,
+                    weight,
+                )
+            }
+            None => {
+                let Some(memory) = store.get_memory(&id, false)?.filter(Memory::eligible) else {
+                    continue;
+                };
+                let s = f64::from(similarity[id.as_str()]);
+                let why = crate::model::Why {
+                    memory_id: id.clone(),
+                    score: (s * 1000.0).round() / 1000.0,
+                    coverage: 0.0,
+                    matched: label.into_iter().collect(),
+                    freshness: None,
+                };
+                (
+                    sanitize_text(&memory.content),
+                    sanitize_text(&memory.source),
+                    why,
+                    s,
+                )
+            }
+        };
+        if result.facts.contains(&fact) {
+            continue;
+        }
+        strength += weight;
+        result.facts.push(fact);
+        result.sources.push(source);
+        result.memory_ids.push(id);
+        result.why.push(why);
+    }
+    if !result.facts.is_empty() {
+        result.confidence = (strength / result.facts.len() as f64 * 100.0).round() / 100.0;
+    }
+    Ok(result)
+}
+
 /// Retrieval with built-in aliases. Prefer `retrieve_with` when `.memoryrc` is available.
 pub fn retrieve(
     store: &mut MemoryStore,
@@ -337,6 +431,12 @@ pub fn retrieve_with(
         validate_identifier(layer, "layer")?;
     }
     let store: &MemoryStore = store;
+    // The model is asked before the read snapshot opens, so a slow model never holds it. Results
+    // that depend on the model aren't cached: the query embedding is most of their cost anyway.
+    let prepared = options
+        .semantic
+        .as_ref()
+        .map(|engine| engine.prepare(store, &[&sanitize_text(query)], layer));
     let snapshot = crate::store::ReadSnapshot::new(&store.conn)?;
     let revision = store.revision()?;
     let mut eligible = store.eligible_ids(layer)?;
@@ -356,7 +456,10 @@ pub fn retrieve_with(
         options.fingerprint(),
     ))?;
     let timestamp = Utc::now().timestamp_millis() as f64 / 1000.0;
-    let cached: Option<String> = store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?;
+    let cached: Option<String> = match prepared {
+        Some(_) => None,
+        None => store.conn.query_row("SELECT result_json FROM rust_query_cache WHERE key=?1 AND revision=?2 AND cached_at>=?3", params![key, revision, timestamp - 300.0], |r| r.get(0)).optional()?,
+    };
     let hit = match cached.map(|json| serde_json::from_str::<Cached>(&json)) {
         Some(Ok(entry)) => entry.load(store)?,
         _ => None,
@@ -368,20 +471,34 @@ pub fn retrieve_with(
             trace: vec!["no_eligible_memories".into()],
             ..Default::default()
         },
-        None => lexical_retrieve(store, &sanitize_text(query), layer, top_k, options)?,
+        None => match &prepared {
+            Some(prepared) => hybrid_retrieve(
+                store,
+                &sanitize_text(query),
+                layer,
+                top_k,
+                options,
+                prepared,
+            )?,
+            None => lexical_retrieve(store, &sanitize_text(query), layer, top_k, options)?,
+        },
     };
     let searched = eligible.len();
+    let method = match &prepared {
+        Some(p) if p.ok() => SEMANTIC_METHOD,
+        _ => METHOD,
+    };
     snapshot.finish()?;
     store.side_write(|| {
         for id in &result.memory_ids {
             store.record_access(id)?;
         }
-        store.save_provenance(query, &result, searched, METHOD)?;
+        store.save_provenance(query, &result, searched, method)?;
         // Publish only if nothing changed since the snapshot; access columns don't bump the
         // revision, so an unchanged revision proves the result still describes the store.
         let current = store.revision()?;
         let entry = serde_json::to_string(&Cached::of(&result))?;
-        if fresh && current == revision && entry.len() <= MAX_CACHED_BYTES {
+        if fresh && prepared.is_none() && current == revision && entry.len() <= MAX_CACHED_BYTES {
             store.conn.execute("INSERT INTO rust_query_cache(key,result_json,revision,cached_at) VALUES(?1,?2,?3,?4) ON CONFLICT(key) DO UPDATE SET result_json=excluded.result_json,revision=excluded.revision,cached_at=excluded.cached_at", params![key, entry, current, timestamp])?;
         }
         store.conn.execute(
@@ -438,6 +555,8 @@ const RETRIEVAL_VERSION: &str = "lexical-v2";
 const CACHE_FORMAT: &str = "ids-v1";
 /// Provenance method recorded for `retrieve`.
 pub const METHOD: &str = "lexical_bm25";
+/// Provenance method when matches by meaning were fused in.
+pub const SEMANTIC_METHOD: &str = "lexical_bm25+semantic";
 
 /// Stable 64-bit FNV-1a over sorted ids. Not a security boundary: entries are also bound to
 /// the store revision and a 300s TTL, and ids are random v4 UUIDs.

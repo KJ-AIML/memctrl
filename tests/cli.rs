@@ -11,6 +11,7 @@ fn invoke(dir: &TempDir, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_memctrl"))
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
         .env_remove("MEMCTRL_LLM_API_KEY")
         .env_remove("OPENAI_API_KEY")
         .args(args)
@@ -31,6 +32,7 @@ fn invoke_in(path: &std::path::Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_memctrl"))
         .current_dir(path)
         .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
         .env_remove("MEMCTRL_PROJECT_ROOT")
         .args(args)
         .output()
@@ -248,6 +250,7 @@ impl StdioServer {
         let mut child = Command::new(env!("CARGO_BIN_EXE_memctrl"))
             .current_dir(dir.path())
             .env_remove("MEMCTRL_DB_PATH")
+            .env("MEMCTRL_SEMANTIC", "off")
             .args(["--db", "mcp.db", "serve"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -381,6 +384,7 @@ fn llm_is_opt_in_and_installer_respects_scope() {
         command
             .current_dir(dir.path())
             .env_remove("MEMCTRL_DB_PATH")
+            .env("MEMCTRL_SEMANTIC", "off")
             .env("MEMCTRL_LLM_API_KEY", "configured-key")
             .env("MEMCTRL_LLM_BASE_URL", "http://invalid.example");
         command
@@ -410,6 +414,7 @@ fn llm_is_opt_in_and_installer_respects_scope() {
     let output = Command::new(env!("CARGO_BIN_EXE_memctrl"))
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
         .env("HOME", &home)
         .args(["install", "--tool", "codex"])
         .output()
@@ -537,6 +542,7 @@ fn hook(dir: &TempDir, args: &[&str], input: &Value) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_memctrl"))
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
