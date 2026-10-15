@@ -1240,7 +1240,8 @@ fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Re
         .flatten()
         .filter_map(|e| e["id"].as_str())
         .collect();
-    // (id, text) of each memory recall adds beyond the brief.
+    // (id, text) of each memory recall matches. One the brief showed is marked ↺: hooks from 2.5
+    // point it out again, older ones skipped it.
     let recall = |prompt: &str| -> Result<Vec<(String, String)>> {
         let text = format!("{prompt}{SUFFIX}");
         let out: Value = serde_json::from_str(&sh_with(
@@ -1253,7 +1254,6 @@ fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Re
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|e| !shown.contains(e["id"].as_str().unwrap_or("")))
             .map(|e| {
                 // Matches by meaning are marked with their similarity.
                 let similar = e["matched"]
@@ -1267,7 +1267,13 @@ fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Re
                     Some(s) => format!("{text} ≈{}", s.trim_matches(['(', ')'])),
                     None => text,
                 };
-                (e["id"].as_str().unwrap_or("").to_string(), text)
+                let id = e["id"].as_str().unwrap_or("").to_string();
+                let text = if shown.contains(id.as_str()) {
+                    format!("↺ {text}")
+                } else {
+                    text
+                };
+                (id, text)
             })
             .collect())
     };
@@ -1279,14 +1285,31 @@ fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Re
             texts.join(" | ")
         }
     };
-    let mut total = 0;
-    println!("### benchmark tasks: what recall adds beyond the brief");
+    // Memories beyond the brief, and brief memories pointed out again.
+    let count = |found: &[(String, String)]| -> (usize, usize) {
+        let again = found
+            .iter()
+            .filter(|(id, _)| shown.contains(id.as_str()))
+            .count();
+        (found.len() - again, again)
+    };
+    let (mut total, mut again) = (0, 0);
+    println!(
+        "### benchmark tasks: what recall adds (↺ = in the brief: 2.5 points it out again, 2.4 skipped it)"
+    );
     let file = tasks.map_or_else(default_tasks, Path::to_path_buf);
     for task in load_tasks(&file)? {
         let found = recall(task["prompt"].as_str().unwrap_or(""))?;
-        total += found.len();
+        let (new, old) = count(&found);
+        (total, again) = (total + new, again + old);
         // A task may name the memory it needs (an id prefix): say whether the agent gets it.
         let needs = match task["needs"].as_str() {
+            Some(n)
+                if shown.iter().any(|id| id.starts_with(n))
+                    && found.iter().any(|(id, _)| id.starts_with(n)) =>
+            {
+                "[needed: in brief, pointed out] "
+            }
             Some(n) if shown.iter().any(|id| id.starts_with(n)) => "[needed: in brief] ",
             Some(n) if found.iter().any(|(id, _)| id.starts_with(n)) => "[needed: added] ",
             Some(_) => "[needed: missing] ",
@@ -1298,15 +1321,19 @@ fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Re
             join(&found)
         );
     }
-    println!("added {total} memories over the tasks\n\n### unrelated everyday prompts");
-    total = 0;
+    println!(
+        "added {total} memories beyond the brief and pointed out {again} from it over the tasks\n\n\
+         ### unrelated everyday prompts"
+    );
+    (total, again) = (0, 0);
     for prompt in EVERYDAY {
         let found = recall(prompt)?;
-        total += found.len();
+        let (new, old) = count(&found);
+        (total, again) = (total + new, again + old);
         println!("{:52} {}", clip(prompt, 50), join(&found));
     }
     println!(
-        "added {total} memories over {} unrelated prompts",
+        "added {total} memories beyond the brief and pointed out {again} from it over {} unrelated prompts",
         EVERYDAY.len()
     );
     Ok(())
