@@ -1,6 +1,7 @@
 //! Agent benchmark: does Claude Code do real tasks right more often with memory?
 //!
-//! Each task in `bench/agent/tasks.json` runs as a fresh, isolated `claude -p` session in its
+//! Each task in `bench/agent/tasks.json` (or the file given to `setup --tasks`) runs as a fresh,
+//! isolated `claude -p` session in its
 //! own copy of a starting point (none, CLAUDE.md, memctrl, ...), then a blind judge grades the
 //! result. See `bench/README.md` and `docs/benchmarks/agent-benchmark.md`.
 //!
@@ -78,6 +79,10 @@ enum Step {
         /// setups with this user config, whose [semantic] points at a running embedding server.
         #[arg(long)]
         semantic: Option<PathBuf>,
+        /// The tasks to run (default bench/agent/tasks.json). Copied to WORK/tasks.json, which
+        /// run, grade and summary read.
+        #[arg(long)]
+        tasks: Option<PathBuf>,
     },
     /// Run every task in every starting point once, as round REP.
     Run {
@@ -120,6 +125,9 @@ enum Step {
         /// User config folder (XDG_CONFIG_HOME), e.g. WORK/xdg-memctrl-semantic.
         #[arg(long)]
         config_home: Option<PathBuf>,
+        /// The tasks to probe (default bench/agent/tasks.json).
+        #[arg(long)]
+        tasks: Option<PathBuf>,
     },
 }
 
@@ -131,12 +139,14 @@ fn main() -> Result<()> {
             baseline,
             scale,
             semantic,
+            tasks,
         } => setup(
             &work,
             &memctrl,
             baseline.as_deref(),
             scale,
             semantic.as_deref(),
+            tasks.as_deref(),
         ),
         Step::Run {
             work,
@@ -165,7 +175,8 @@ fn main() -> Result<()> {
         Step::Probe {
             memctrl,
             config_home,
-        } => probe(&memctrl, config_home.as_deref()),
+            tasks,
+        } => probe(&memctrl, config_home.as_deref(), tasks.as_deref()),
     }
 }
 
@@ -177,8 +188,20 @@ fn home() -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
 }
 
-fn tasks() -> Result<Vec<Value>> {
-    let text = std::fs::read_to_string(Path::new(HERE).join("tasks.json"))?;
+fn default_tasks() -> PathBuf {
+    Path::new(HERE).join("tasks.json")
+}
+
+/// The tasks a WORK folder was set up with; folders set up before `--tasks` ran the default.
+fn tasks(work: &Path) -> Result<Vec<Value>> {
+    let copy = work.join("tasks.json");
+    let file = if copy.exists() { copy } else { default_tasks() };
+    load_tasks(&file)
+}
+
+fn load_tasks(file: &Path) -> Result<Vec<Value>> {
+    let text =
+        std::fs::read_to_string(file).with_context(|| format!("cannot read {}", file.display()))?;
     Ok(serde_json::from_str(&text)?)
 }
 
@@ -333,9 +356,17 @@ fn setup(
     baseline: Option<&Path>,
     scale: bool,
     semantic: Option<&Path>,
+    tasks: Option<&Path>,
 ) -> Result<()> {
     std::fs::create_dir_all(work.join("templates"))?;
     let work = work.canonicalize()?;
+    let tasks = tasks.map_or_else(default_tasks, Path::to_path_buf);
+    ensure!(
+        !load_tasks(&tasks)?.is_empty(),
+        "{} has no tasks",
+        tasks.display()
+    );
+    std::fs::copy(&tasks, work.join("tasks.json"))?;
     let memctrl = memctrl.canonicalize()?;
     let m = with_memctrl(&work, "memctrl", &memctrl)?;
     let listed = sh(
@@ -672,7 +703,7 @@ fn run_all(
     }
     let only: HashSet<&str> = only.split(',').filter(|c| !c.is_empty()).collect();
     let mut list = Vec::new();
-    for task in tasks()? {
+    for task in tasks(&work)? {
         for cond in &conds {
             let cell = format!("{cond}/{}", task["id"].as_str().unwrap_or_default());
             if only.is_empty() || only.contains(cell.as_str()) {
@@ -770,7 +801,7 @@ fn rules(task: &str, repo: &Path, diff: &str, last: &str) -> (bool, String) {
                 format!("scoped={scoped} session_set={session}"),
             )
         }
-        "format-amount" => {
+        "format-amount" | "money-th" => {
             let got = run_money(repo);
             let ok = got.as_ref().is_some_and(|g| {
                 g.len() == 4
@@ -798,7 +829,7 @@ fn rules(task: &str, repo: &Path, diff: &str, last: &str) -> (bool, String) {
                 format!("code_changed={}", !add.is_empty()),
             )
         }
-        "key-rotation" => {
+        "key-rotation" | "key-rotation-th" => {
             let ok = last.contains("#platform");
             (ok, format!("#platform={ok}"))
         }
@@ -839,6 +870,59 @@ fn rules(task: &str, repo: &Path, diff: &str, last: &str) -> (bool, String) {
             let schema = read(repo, "src/config.ts").contains("BODY_LIMIT_BYTES");
             let readme = read(repo, "README.md").contains("BODY_LIMIT_BYTES");
             (schema && readme, format!("schema={schema} readme={readme}"))
+        }
+        // bench/agent/tasks-paraphrase.json: requests worded unlike the memory they need.
+        "auth-reason" => {
+            let src = added(diff, "src/");
+            let leak = re(r"(?i)\b(error|message|reason|details?|description|cause|hint)\s*:\s*[^,}\n]*\.(message|code|claim|reason)\b|send\(\s*[\w.]*\.message").is_match(&src);
+            let cited = re(r"(?i)\bjose\b|leak").is_match(last);
+            (
+                !leak && (!src.is_empty() || cited),
+                format!("changed={} leak={leak} cited={cited}", !src.is_empty()),
+            )
+        }
+        "shared-db" => {
+            let pointed = add.contains("pg-team.internal");
+            let warned = re(r"(?i)TRUNCATE|wipe|destroy|erase|delete").is_match(last);
+            (
+                !pointed && warned,
+                format!("pointed={pointed} warned={warned}"),
+            )
+        }
+        "contributing" => {
+            let doc = read(repo, "CONTRIBUTING.md");
+            let make = doc.contains("make db-up") && doc.contains("make test-int");
+            let raw = re(r"(?m)^\s*(\$ )?npm (test|run (test:int|migrate))").is_match(&doc);
+            (
+                make && !raw,
+                format!("make_targets={make} raw_npm_lines={raw}"),
+            )
+        }
+        "ci-flake" => {
+            let health = re(r"(?i)health").is_match(last);
+            let rerun = re(r"(?i)re-?run|run (it|the job) again").is_match(last);
+            (
+                health && rerun && add.is_empty(),
+                format!(
+                    "health={health} rerun={rerun} code_changed={}",
+                    !add.is_empty()
+                ),
+            )
+        }
+        "rate-limit-th" => {
+            let said = re(r"(?i)not (currently |yet |actually )?(enforc|wired|applied|active|install)|isn't (enforc|wired|install)|no rate limit|does(n't| not) (enforce|limit)|nothing enforces|ยังไม่(ได้|มี)|ไม่ได้(ถูก)?(บังคับ|จำกัด|เปิด|ติดตั้ง|ใช้งาน)|ไม่มีการ(บังคับ|จำกัด)").is_match(last);
+            (
+                said && add.is_empty(),
+                format!("not_enforced={said} code_changed={}", !add.is_empty()),
+            )
+        }
+        "shutdown-th" => {
+            let s = read(repo, "src/server.ts");
+            let kept = matches!(
+                (s.find("app.close()"), s.rfind("closePool()")),
+                (Some(a), Some(p)) if a < p
+            );
+            (kept, format!("server closed before pool: {kept}"))
         }
         "control-test" => {
             let t = read(repo, "tests/config.test.ts");
@@ -907,7 +991,13 @@ fn judge(
     ))
 }
 
-fn grade_one(dir: &Path, judged: bool, claude: &Path, cwd: &Path) -> Result<Value> {
+fn grade_one(
+    dir: &Path,
+    tasks: &[Value],
+    judged: bool,
+    claude: &Path,
+    cwd: &Path,
+) -> Result<Value> {
     let grade_file = dir.join("grade.json");
     let mut result: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("result.json"))?)?;
@@ -915,8 +1005,8 @@ fn grade_one(dir: &Path, judged: bool, claude: &Path, cwd: &Path) -> Result<Valu
         serde_json::from_str(&std::fs::read_to_string(&grade_file)?)?
     } else {
         let task_id = result["task"].as_str().unwrap_or_default().to_string();
-        let task = tasks()?
-            .into_iter()
+        let task = tasks
+            .iter()
             .find(|t| t["id"] == task_id.as_str())
             .with_context(|| format!("unknown task {task_id}"))?;
         let diff = std::fs::read_to_string(dir.join("diff.patch")).unwrap_or_default();
@@ -924,7 +1014,7 @@ fn grade_one(dir: &Path, judged: bool, claude: &Path, cwd: &Path) -> Result<Valu
         let (ok, why) = rules(&task_id, &dir.join("repo"), &diff, &last);
         let mut grade = json!({"rules_pass": ok, "rules_why": why});
         if judged {
-            match judge(&task, &diff, &last, claude, cwd) {
+            match judge(task, &diff, &last, claude, cwd) {
                 Ok((pass, reason, cost)) => {
                     grade["judge_pass"] = json!(pass);
                     grade["judge_why"] = json!(reason);
@@ -965,9 +1055,10 @@ fn grade_all(work: &Path, jobs: usize, judged: bool, claude: &Path) -> Result<()
     let work = work.canonicalize()?;
     let cwd = work.join("judge-cwd");
     std::fs::create_dir_all(&cwd)?;
+    let tasks = tasks(&work)?;
     let rows = Mutex::new(Vec::new());
     parallel(run_dirs(&work)?, jobs, |dir| {
-        match grade_one(&dir, judged, claude, &cwd) {
+        match grade_one(&dir, &tasks, judged, claude, &cwd) {
             Ok(row) => {
                 let line = match row.get("judge_pass") {
                     Some(j) if !j.is_null() && j.as_bool() != row["rules_pass"].as_bool() => {
@@ -1048,7 +1139,7 @@ fn summary(work: &Path, reps: &str) -> Result<()> {
     let mut conds: Vec<&str> = rows.iter().filter_map(|r| r["cond"].as_str()).collect();
     conds.sort_by_key(|c| (order.iter().position(|o| o == c).unwrap_or(order.len()), *c));
     conds.dedup();
-    let kinds: BTreeMap<String, String> = tasks()?
+    let kinds: BTreeMap<String, String> = tasks(work)?
         .iter()
         .map(|t| {
             (
@@ -1135,7 +1226,7 @@ const EVERYDAY: [&str; 15] = [
     "Write unit tests for loadConfig covering the default values.",
 ];
 
-fn probe(memctrl: &Path, config_home: Option<&Path>) -> Result<()> {
+fn probe(memctrl: &Path, config_home: Option<&Path>, tasks: Option<&Path>) -> Result<()> {
     let here = std::env::current_dir()?;
     let brief: Value = serde_json::from_str(&sh_with(
         memctrl,
@@ -1149,7 +1240,8 @@ fn probe(memctrl: &Path, config_home: Option<&Path>) -> Result<()> {
         .flatten()
         .filter_map(|e| e["id"].as_str())
         .collect();
-    let recall = |prompt: &str| -> Result<Vec<String>> {
+    // (id, text) of each memory recall adds beyond the brief.
+    let recall = |prompt: &str| -> Result<Vec<(String, String)>> {
         let text = format!("{prompt}{SUFFIX}");
         let out: Value = serde_json::from_str(&sh_with(
             memctrl,
@@ -1171,36 +1263,47 @@ fn probe(memctrl: &Path, config_home: Option<&Path>) -> Result<()> {
                     .filter_map(Value::as_str)
                     .find_map(|m| m.strip_prefix("similar meaning "));
                 let text = clip(e["content"].as_str().unwrap_or(""), 60);
-                match similar {
+                let text = match similar {
                     Some(s) => format!("{text} ≈{}", s.trim_matches(['(', ')'])),
                     None => text,
-                }
+                };
+                (e["id"].as_str().unwrap_or("").to_string(), text)
             })
             .collect())
     };
-    let mut total = 0;
-    println!("### benchmark tasks: what recall adds beyond the brief");
-    for task in tasks()? {
-        let found = recall(task["prompt"].as_str().unwrap_or(""))?;
-        total += found.len();
-        let shown = if found.is_empty() {
+    let join = |found: &[(String, String)]| -> String {
+        if found.is_empty() {
             "(nothing)".into()
         } else {
-            found.join(" | ")
+            let texts: Vec<&str> = found.iter().map(|(_, t)| t.as_str()).collect();
+            texts.join(" | ")
+        }
+    };
+    let mut total = 0;
+    println!("### benchmark tasks: what recall adds beyond the brief");
+    let file = tasks.map_or_else(default_tasks, Path::to_path_buf);
+    for task in load_tasks(&file)? {
+        let found = recall(task["prompt"].as_str().unwrap_or(""))?;
+        total += found.len();
+        // A task may name the memory it needs (an id prefix): say whether the agent gets it.
+        let needs = match task["needs"].as_str() {
+            Some(n) if shown.iter().any(|id| id.starts_with(n)) => "[needed: in brief] ",
+            Some(n) if found.iter().any(|(id, _)| id.starts_with(n)) => "[needed: added] ",
+            Some(_) => "[needed: missing] ",
+            None => "",
         };
-        println!("{:18} {shown}", task["id"].as_str().unwrap_or(""));
+        println!(
+            "{:18} {needs}{}",
+            task["id"].as_str().unwrap_or(""),
+            join(&found)
+        );
     }
     println!("added {total} memories over the tasks\n\n### unrelated everyday prompts");
     total = 0;
     for prompt in EVERYDAY {
         let found = recall(prompt)?;
         total += found.len();
-        let shown = if found.is_empty() {
-            "(nothing)".into()
-        } else {
-            found.join(" | ")
-        };
-        println!("{:52} {shown}", clip(prompt, 50));
+        println!("{:52} {}", clip(prompt, 50), join(&found));
     }
     println!(
         "added {total} memories over {} unrelated prompts",

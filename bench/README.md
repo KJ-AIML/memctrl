@@ -30,6 +30,7 @@ $B summary $W
   - **`--semantic FILE`** adds `memctrl-semantic` (and `memctrl-semantic-scale` with `--scale`): copies of the memctrl setups whose user config is FILE, a `[semantic]` section pointing at an embedding server that must be running for setup and runs. Setup embeds every memory first, the way `memctrl semantic index` would.
 - **`run`** copies a template for each task and starts `claude -p` with only that template's settings: no user settings, plugins, MCP servers or auto memory. `--only setup/task` reruns single cells. A run interrupted halfway is set aside, not deleted.
 - **`probe BIN`** shows what the prompt hook adds for each task and for 15 unrelated everyday prompts; matches by meaning are marked `≈` with their similarity. Run it inside a copy of a memctrl template, because queries in the template itself change what later runs see. Pass `--config-home WORK/xdg-memctrl-semantic` to probe a semantic setup.
+- **`--tasks FILE`** on `setup` runs another task set; setup copies it to `WORK/tasks.json`, which `run`, `grade` and `summary` read. `agent/tasks-paraphrase.json` holds 8 tasks whose requests are worded unlike the memory they need, 4 of them in Thai, none of those memories in the session brief: they measure search by meaning. Each names the memory it needs (`needs`), and `probe --tasks FILE` says whether the agent gets it.
 
 To add a task, add an entry to `agent/tasks.json` with a prompt and a rubric the judge can apply from the final message and the diff. Then add its rule check to `rules` in `examples/agent_bench.rs`.
 
