@@ -1,8 +1,9 @@
 //! Per-prompt recall: the memories that match what the person just asked, added to the agent's
 //! context by a prompt hook. Agents rarely search memory on their own, so a memory that missed
 //! the session brief otherwise never reaches them. Recall is quiet by design: it uses the same
-//! gated search as `query`, so a prompt that names nothing specific adds nothing, and it skips
-//! what this session was already shown.
+//! gated search as `query`, so a prompt that names nothing specific adds nothing, and it never
+//! adds a memory twice in a session. A memory the brief showed is pointed out once more when a
+//! request matches it: one line among dozens at session start is easy to miss by then.
 use crate::context::{one_line, FENCE};
 use crate::guard::Policy;
 use crate::model::{ClaimType, Memory, VerificationState};
@@ -34,12 +35,15 @@ pub struct RecallEntry {
     pub stale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
+    /// The session brief showed it; recall points it out again for this request.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub in_brief: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Recall {
     pub entries: Vec<RecallEntry>,
-    /// Matches left out because this session already saw them.
+    /// Matches left out because recall already added them in this session.
     pub already_shown: usize,
     /// Matches left out because the guard flags them now and no person released them.
     pub withheld: usize,
@@ -201,6 +205,9 @@ fn render(entries: &[RecallEntry]) -> String {
         if let Some(caution) = &entry.caution {
             notes.push(caution.clone());
         }
+        if entry.in_brief {
+            notes.push("also in the session brief".into());
+        }
         text.push_str(&format!(
             "- [{}] {} · {}\n",
             label(entry),
@@ -211,8 +218,17 @@ fn render(entries: &[RecallEntry]) -> String {
     text
 }
 
-/// The memories in `layers` that match `prompt`, best first, at most `limit`, leaving out the
-/// ids in `shown`. Reads only: access counts, the query cache and provenance are untouched, so
+/// What a session's context already holds.
+#[derive(Debug, Clone, Default)]
+pub struct Seen {
+    /// Shown by the session brief: pointed out once more when a request matches.
+    pub briefed: HashSet<String>,
+    /// Added by recall: never added again in the session.
+    pub recalled: HashSet<String>,
+}
+
+/// The memories in `layers` that match `prompt`, best first, at most `limit`, leaving out what
+/// recall already added in this session (`seen`). Reads only: access counts, the query cache and provenance are untouched, so
 /// recall never promotes what it surfaces and never stores the prompt. With semantic search on,
 /// a memory close enough in meaning to a piece of the prompt (the model's recall threshold, which
 /// unrelated everyday prompts stay under) is added even when it shares no topic word, and vectors
@@ -226,7 +242,7 @@ pub fn recall(
     options: &SearchOptions,
     policy: &Policy,
     stale: &dyn Fn(&[String]) -> HashMap<String, String>,
-    shown: &HashSet<String>,
+    seen: &Seen,
 ) -> Result<Recall> {
     if limit == 0 || !worth_searching(prompt) {
         return Ok(Recall::default());
@@ -242,7 +258,7 @@ pub fn recall(
         )
     };
     // Room for matches that are filtered out below.
-    let room = limit + shown.len().min(50) + 10;
+    let room = limit + seen.recalled.len().min(50) + 10;
     let pieces = pieces(&sanitize_text(prompt), &|text| parse(text).gate_units());
     // The model sees the pieces before the read snapshot opens, so a slow model never holds it.
     // When it can't be reached, recall is lexical only.
@@ -351,7 +367,7 @@ pub fn recall(
         if !layers.contains(&hit.memory.layer) {
             continue;
         }
-        if shown.contains(&hit.memory.id) {
+        if seen.recalled.contains(&hit.memory.id) {
             out.already_shown += 1;
             continue;
         }
@@ -375,6 +391,7 @@ pub fn recall(
                 .any(|t| t.starts_with("guard:"))
                 .then(|| "looked like instructions; a person released it".to_string()),
             content: one_line(&sanitize_text(&m.content)),
+            in_brief: seen.briefed.contains(&m.id),
             id: m.id,
             layer: m.layer,
             claim_type: m.claim_type,
@@ -399,28 +416,51 @@ pub fn session_file(store_dir: &Path, session_id: &str) -> Option<PathBuf> {
     plain.then(|| store_dir.join("sessions").join(session_id))
 }
 
-/// Ids recorded for a session; empty when there is no record.
-pub fn shown_in(path: &Path) -> HashSet<String> {
-    std::fs::read_to_string(path)
-        .map(|text| text.lines().map(str::to_string).collect())
-        .unwrap_or_default()
+/// Marks a line of a session record as a memory the brief showed. A plain line is one recall
+/// added; records from before 2.5 hold only plain lines, so recall skips what they list.
+const BRIEFED: &str = "brief ";
+
+/// What a session's record says its context holds; empty when there is no record.
+pub fn seen_in(path: &Path) -> Seen {
+    let mut seen = Seen::default();
+    for line in std::fs::read_to_string(path).unwrap_or_default().lines() {
+        match line.strip_prefix(BRIEFED) {
+            Some(id) => seen.briefed.insert(id.to_string()),
+            None if !line.is_empty() => seen.recalled.insert(line.to_string()),
+            None => false,
+        };
+    }
+    seen
 }
 
-/// Records `ids` as shown in a session. `fresh` starts the record over (a session start, or
-/// context lost to /clear or compaction) and clears out records of old sessions.
-pub fn remember(path: &Path, ids: &[String], fresh: bool) -> Result<()> {
+/// Starts a session's record with the memories its brief showed (a session start, or context
+/// lost to /clear or compaction) and clears out records of old sessions.
+pub fn remember_brief(path: &Path, ids: &[String]) -> Result<()> {
+    let lines: Vec<String> = ids.iter().map(|id| format!("{BRIEFED}{id}")).collect();
+    write_record(path, lines, true)
+}
+
+/// Adds memories recall put in a session's context to its record.
+pub fn remember_recalled(path: &Path, ids: &[String]) -> Result<()> {
+    write_record(path, ids.to_vec(), false)
+}
+
+fn write_record(path: &Path, lines: Vec<String>, fresh: bool) -> Result<()> {
     let dir = path.parent().expect("session files live in a folder");
     std::fs::create_dir_all(dir)?;
     let mut all: Vec<String> = if fresh {
         Vec::new()
     } else {
-        let mut known: Vec<String> = shown_in(path).into_iter().collect();
-        known.sort();
-        known
+        std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect()
     };
-    for id in ids {
-        if !all.contains(id) {
-            all.push(id.clone());
+    for line in lines {
+        if !all.contains(&line) {
+            all.push(line);
         }
     }
     let mut text = all.join("\n");
@@ -489,23 +529,13 @@ mod tests {
         );
         let options = SearchOptions::default();
         let policy = Policy::default();
-        let run = |prompt: &str, shown: &HashSet<String>| {
-            recall(
-                &store,
-                prompt,
-                &layers(),
-                5,
-                &options,
-                &policy,
-                &none,
-                shown,
-            )
-            .unwrap()
+        let run = |prompt: &str, seen: &Seen| {
+            recall(&store, prompt, &layers(), 5, &options, &policy, &none, seen).unwrap()
         };
 
         let found = run(
             "We need to rotate the JWT signing key; give me the steps",
-            &HashSet::new(),
+            &Seen::default(),
         );
         assert_eq!(found.entries[0].id, rotation);
         assert!(found.markdown.contains("#platform"));
@@ -514,17 +544,34 @@ mod tests {
 
         let decision = run(
             "Add a cleanup job that removes idempotency keys older than 90 days",
-            &HashSet::new(),
+            &Seen::default(),
         );
         assert_eq!(decision.entries.len(), 1, "session layer stays out");
         assert_eq!(decision.entries[0].id, cleanup);
         assert!(decision.markdown.contains("- [decision] Idempotency keys"));
 
-        // Already in this session's context: nothing new to add.
-        let shown: HashSet<String> = [cleanup.clone()].into();
+        // Shown by the brief: pointed out again next to the request that needs it.
+        let briefed = Seen {
+            briefed: [cleanup.clone()].into(),
+            ..Default::default()
+        };
+        let pointed = run(
+            "Add a cleanup job that removes idempotency keys older than 90 days",
+            &briefed,
+        );
+        assert_eq!(pointed.entries.len(), 1);
+        assert!(pointed.entries[0].in_brief);
+        assert!(pointed.markdown.contains("also in the session brief"));
+        assert!(!decision.markdown.contains("also in the session brief"));
+
+        // Already added by recall in this session: nothing new to add.
+        let recalled = Seen {
+            recalled: [cleanup.clone()].into(),
+            ..Default::default()
+        };
         let again = run(
             "Add a cleanup job that removes idempotency keys older than 90 days",
-            &shown,
+            &recalled,
         );
         assert!(again.entries.is_empty());
         assert_eq!(again.already_shown, 1);
@@ -536,7 +583,7 @@ mod tests {
             "thanks, looks good",
             "summarize the project for me",
         ] {
-            assert!(run(quiet, &HashSet::new()).markdown.is_empty(), "{quiet}");
+            assert!(run(quiet, &Seen::default()).markdown.is_empty(), "{quiet}");
         }
     }
 
@@ -570,7 +617,7 @@ mod tests {
             &SearchOptions::default(),
             &Policy::default(),
             &stale,
-            &HashSet::new(),
+            &Seen::default(),
         )
         .unwrap();
         assert!(found.entries.iter().all(|e| e.id != planted));
@@ -620,7 +667,7 @@ mod tests {
             &SearchOptions::default(),
             &Policy::default(),
             &none,
-            &HashSet::new(),
+            &Seen::default(),
         )
         .unwrap();
         assert_eq!(found.entries.len(), 1, "{}", found.markdown);
@@ -633,10 +680,18 @@ mod tests {
         assert!(session_file(dir.path(), "../../etc/passwd").is_none());
         assert!(session_file(dir.path(), "").is_none());
         let path = session_file(dir.path(), "4f0c2a7e-91b3-4b8e-a1d2-0c9b7e5d3f10").unwrap();
-        remember(&path, &["a".into(), "b".into()], true).unwrap();
-        remember(&path, &["c".into(), "a".into()], false).unwrap();
-        assert_eq!(shown_in(&path), ["a", "b", "c"].map(String::from).into());
-        remember(&path, &["d".into()], true).unwrap();
-        assert_eq!(shown_in(&path), ["d"].map(String::from).into());
+        let set = |ids: &[&str]| -> HashSet<String> { ids.iter().map(|s| s.to_string()).collect() };
+        remember_brief(&path, &["a".into(), "b".into()]).unwrap();
+        remember_recalled(&path, &["c".into(), "a".into()]).unwrap();
+        let seen = seen_in(&path);
+        assert_eq!(seen.briefed, set(&["a", "b"]));
+        assert_eq!(seen.recalled, set(&["c", "a"]));
+        remember_brief(&path, &["d".into()]).unwrap();
+        let seen = seen_in(&path);
+        assert_eq!(seen.briefed, set(&["d"]));
+        assert!(seen.recalled.is_empty());
+        // A record written before 2.5 lists brief and recall alike: recall skips all of them.
+        std::fs::write(&path, "e\nf\n").unwrap();
+        assert_eq!(seen_in(&path).recalled, set(&["e", "f"]));
     }
 }

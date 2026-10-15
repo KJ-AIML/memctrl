@@ -637,6 +637,47 @@ fn the_prompt_hook_recalls_what_the_brief_left_out_once_per_session() {
     assert!(plain["entries"][0]["matched"].as_array().unwrap().len() >= 2);
 }
 
+/// A memory the brief showed is one line among many by the time the request comes, so the
+/// prompt hook points it out once more, then not again in that session.
+#[test]
+fn the_prompt_hook_points_out_a_brief_memory_once_when_the_request_needs_it() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let rotation = success(
+        &dir,
+        &[
+            "add",
+            "When rotating the JWT signing key, send the new public key to the mobile team via #platform",
+            "--layer",
+            "project",
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let start = hook(
+        &dir,
+        &["context", "--format", "hook"],
+        &json!({"session_id": "s-1", "hook_event_name": "SessionStart", "source": "startup"}),
+    );
+    let brief = String::from_utf8_lossy(&start.stdout);
+    assert!(brief.contains("#platform"), "the brief shows it: {brief}");
+
+    let prompt = json!({"session_id": "s-1", "hook_event_name": "UserPromptSubmit",
+        "prompt": "We need to rotate the JWT signing key. Give me the exact steps."});
+    let first = hook(&dir, &["recall", "--format", "hook"], &prompt);
+    let output: Value = serde_json::from_slice(&first.stdout).expect("hook JSON");
+    let context = output["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        context.contains(&rotation[..8]) && context.contains("also in the session brief"),
+        "{context}"
+    );
+    let again = hook(&dir, &["recall", "--format", "hook"], &prompt);
+    assert!(again.stdout.is_empty(), "pointed out once per session");
+}
+
 #[test]
 fn memory_text_cannot_forge_the_context_markers() {
     let dir = TempDir::new().unwrap();

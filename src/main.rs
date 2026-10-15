@@ -856,7 +856,7 @@ fn recall_command(
         })
         .unwrap_or_default();
     let record = session_record(&input, db);
-    let shown = record.as_deref().map(recall::shown_in).unwrap_or_default();
+    let seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
     let root = project_root(rules).ok();
     let stale = |ids: &[String]| -> std::collections::HashMap<String, String> {
         let Some(root) = root.as_deref() else {
@@ -879,11 +879,11 @@ fn recall_command(
         &retriever::SearchOptions::from_rules(rules),
         &rules.guard,
         &stale,
-        &shown,
+        &seen,
     )?;
     if let Some(record) = record.filter(|_| !found.entries.is_empty()) {
         let ids: Vec<String> = found.entries.iter().map(|e| e.id.clone()).collect();
-        if let Err(error) = recall::remember(&record, &ids, false) {
+        if let Err(error) = recall::remember_recalled(&record, &ids) {
             eprintln!(
                 "{}",
                 json!({"warning": sanitize_text(&format!("cannot record recalled memories: {error:#}"))})
@@ -897,12 +897,12 @@ fn recall_command(
     })
 }
 
-/// Notes which memories the brief put in this session's context, so the prompt hook skips them.
+/// Notes which memories the brief put in this session's context, so the prompt hook knows.
 fn record_brief(brief: &context::Brief, db: &Path) {
     let input = hook_input(std::time::Duration::from_millis(500));
     if let Some(record) = session_record(&input, db) {
         let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
-        if let Err(error) = recall::remember(&record, &ids, true) {
+        if let Err(error) = recall::remember_brief(&record, &ids) {
             eprintln!(
                 "{}",
                 json!({"warning": sanitize_text(&format!("cannot record the session brief: {error:#}"))})
