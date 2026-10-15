@@ -160,6 +160,13 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Storage:** `semantic_vectors(memory_id, space, vector, created_at)`, where `space` identifies the model, document prefix and dimensions, and `vector` is little-endian `f32` of unit length. Triggers `semantic_vectors_delete` and `semantic_vectors_update` drop a memory's vectors when it is deleted or its text changes, also when an older memctrl makes the change. `semantic clear` drops the table and both triggers.
 - **Library:** `memctrl::semantic` (`Settings`, `Engine`, `Client`, `Prepared`, `fuse`, `tune`, `clear`, `stored`), `retriever::hybrid_retrieve`, `SearchOptions::semantic`, `Rules::semantic`, `UserConfig::semantic`, and `eval::Retriever::{Semantic, Recall}`.
 
+## 2.4 → 2.5
+
+- **The session brief holds up to 3,000 tokens** (1,500 before), about 70 one-line memories, so a small store arrives whole, the way a CLAUDE.md would. `memctrl context` and MCP `memctrl_context` use the new default, and so do hooks set up by `install --hook`, which don't pass a budget. To keep the old size, add `--budget 1500` to the SessionStart command in `.claude/settings.local.json`.
+- **The prompt hook points out a brief memory a request needs.** It used to skip everything the brief had shown. Now it adds such a memory once per session when a request matches it, marked `also in the session brief`; `recall --format json` gives these entries `"in_brief": true`. It still never adds a memory twice in a session.
+- **Session records** (`.memctrl/sessions/<session id>`) mark the brief's memories with a `brief ` prefix. A record written by 2.4 reads as before: recall skips everything it lists.
+- **Library:** `recall::recall` takes `&recall::Seen` (`briefed`, `recalled`) instead of a set of ids; `recall::shown_in` and `recall::remember` are replaced by `seen_in`, `remember_brief` and `remember_recalled`.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.

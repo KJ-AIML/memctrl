@@ -117,7 +117,7 @@ Everything runs locally in one binary. Responses are structured JSON (except the
 
 ### Session brief
 
-Agents skip optional lookups, so memory has to arrive without being asked for. `memctrl context` prints the highest-trust memories that fit a token budget (default 1500, from the `project` and `user` layers). Ranking weighs verification, claim type, confidence and how often retrieval returns a memory. Output is grouped into Decisions, Facts and conventions, Lessons and Open hypotheses; disputed memories, and memories whose cited code changed, go under **Check before trusting**.
+Agents skip optional lookups, so memory has to arrive without being asked for. `memctrl context` prints the highest-trust memories that fit a token budget (default 3000, from the `project` and `user` layers). Ranking weighs verification, claim type, confidence and how often retrieval returns a memory. Output is grouped into Decisions, Facts and conventions, Lessons and Open hypotheses; disputed memories, and memories whose cited code changed, go under **Check before trusting**.
 
 However many decisions you save, the warnings and your preferences keep reserved room, and the header says what didn't fit ("Not shown for space: 3 to check before trusting, 12 decisions") and when memories wait for your review.
 

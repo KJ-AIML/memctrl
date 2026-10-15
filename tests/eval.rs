@@ -96,7 +96,10 @@ fn lexical_beats_the_legacy_scorer_where_it_matters() {
         metric(&report, "lexical", &["avg_tokens"]) < metric(&report, "legacy", &["avg_tokens"]),
         "fewer, better facts: {report}"
     );
-    assert!(report["brief"]["approx_tokens"].as_u64().unwrap() <= 1500);
+    assert!(
+        report["brief"]["approx_tokens"].as_u64().unwrap()
+            <= memctrl::context::DEFAULT_BUDGET as u64
+    );
 }
 
 #[test]
