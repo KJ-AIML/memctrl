@@ -202,7 +202,7 @@ pub fn run(
     layers.sort();
     layers.dedup();
     let policy = crate::guard::Policy::default();
-    let shown = std::collections::HashSet::new();
+    let seen = crate::recall::Seen::default();
     let mut results = serde_json::Map::new();
     for &retriever in retrievers {
         let mut total = Tally::default();
@@ -231,7 +231,7 @@ pub fn run(
                         options,
                         &policy,
                         &|_| HashMap::new(),
-                        &shown,
+                        &seen,
                     )?;
                     crate::model::RetrievalResult {
                         memory_ids: found.entries.iter().map(|e| e.id.clone()).collect(),

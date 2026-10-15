@@ -365,7 +365,7 @@ fn stale_memory_survives_a_crowded_brief() {
         .as_str()
         .unwrap()
         .to_string();
-    for n in 0..60 {
+    for n in 0..160 {
         ok(
             &dir,
             &[

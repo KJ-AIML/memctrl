@@ -7,7 +7,9 @@ use anyhow::Result;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
 
-pub const DEFAULT_BUDGET: usize = 1500;
+/// About 70 one-line memories: a small store fits whole, the way a CLAUDE.md would. In the agent
+/// benchmark 1,500 left out the memory half of the reworded tasks needed.
+pub const DEFAULT_BUDGET: usize = 3000;
 pub const DEFAULT_LAYERS: [&str; 2] = ["project", "user"];
 pub const BEGIN_MARKER: &str = "<!-- memctrl:context:begin -->";
 pub const END_MARKER: &str = "<!-- memctrl:context:end -->";

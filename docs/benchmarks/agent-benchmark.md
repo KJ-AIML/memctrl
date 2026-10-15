@@ -76,3 +76,7 @@ memctrl's cost per task didn't change from the 70-memory store, but CLAUDE.md's 
 ## Reproduce
 
 `bench/agent/` holds the fixture (git bundle, store, rules, scale memories) and the tasks. `cargo run --release --example agent_bench` sets up, runs, grades and summarizes; see `bench/README.md`. The published runs used an earlier Python version of the same harness. The Rust port builds identical CLAUDE.md files and stores, and it gives the same rule verdict on all 240 runs. Per-run results, with the judge's reasons, are in `agent-benchmark-2.3.json`. The 241 runs (including one pilot) and 240 judge calls cost about $23 at list price.
+
+## Reworded requests
+
+These tasks name what they need. [reworded-tasks.md](reworded-tasks.md) adds 8 tasks worded unlike their memories, 4 of them in Thai, and measures 2.5's larger brief and prompt hook against 2.4 on both sets.

@@ -312,7 +312,7 @@ fn tools() -> Vec<Tool> {
         (
             "memctrl_context",
             "Brief of the highest-trust project memories within a token budget; call at session start",
-            json!({"layers":{"type":"array","items":{"type":"string"},"default":["project","user"]},"budget":{"type":"integer","minimum":0,"maximum":100000,"default":1500}}),
+            json!({"layers":{"type":"array","items":{"type":"string"},"default":["project","user"]},"budget":{"type":"integer","minimum":0,"maximum":100000,"default":crate::context::DEFAULT_BUDGET}}),
             vec![],
         ),
         (

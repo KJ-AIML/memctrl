@@ -1,28 +1,31 @@
-# MemCtrl 2.4.0: search by meaning, when you want it
+# MemCtrl 2.5.0: memory for requests in other words
 
-Word search can't find a question worded unlike its memory: "which JWT library" never finds "we verify tokens with jose". 2.4 can also match by meaning, with an embedding model you run (Ollama, LM Studio, llama.cpp or any OpenAI-compatible server). It's off until you turn it on. With it off, every command returns what 2.3 returned.
-
-```toml
-# ~/.config/memctrl/config.toml
-[semantic]
-model = "embeddinggemma"     # ollama pull embeddinggemma; served at http://localhost:11434/v1 by default
-```
+People don't always ask in the words a memory uses, and agents don't search on their own. In 2.4, a memory the session brief left out reached the agent only if the request shared its words. 2.5 shows more of the store up front, and the prompt hook points out the brief memories a request needs.
 
 ## Highlights
 
-- **Questions find memories worded differently.** `query`, the MCP server and the prompt hook fuse word matches with matches by meaning. With EmbeddingGemma, the answer is in the top 5 for 95% of real-dev questions (92% with words only) and all of the Thai held-out questions (92%). A similarity threshold keeps vague questions answered with nothing. That held on the Thai and English vague questions, and two suites lost one question each. [Full results](docs/benchmarks/semantic-search.md).
-- **The prompt hook stays quiet.** It adds a memory on meaning alone only above a stricter recall threshold, which none of 15 unrelated everyday prompts reached. It now adds the answer to 85% of real-dev questions (82%).
-- **Measured, not guessed.** Thresholds ship for EmbeddingGemma and multilingual-e5-small. `memctrl semantic tune` measures them for any other model on the built-in suite, and semantic search stays off until you set them. `memctrl eval --retriever semantic` and `--retriever recall` measure it on your own suite.
-- **Only you turn it on.** A repository's `.memoryrc` can't enable it or pick the server. A server off this machine needs `allow_remote = true` and HTTPS, because the prompt hook sends every request to it. When the model is down, searches fall back to word matches and say so. Deleting or editing a memory drops its vector, even when an older memctrl does it.
-- **New commands:** `memctrl semantic status`, `index`, `tune` and `clear`.
+- **A small store arrives whole.** The session brief holds up to 3,000 tokens (1,500 before): about 70 one-line memories, the way a CLAUDE.md would.
+- **The prompt hook points out what a request needs.** It used to skip every memory the brief had shown, so a bigger brief silenced it. Now a brief memory that matches the request is pointed out once, next to the request, marked "also in the session brief". It still never adds a memory twice in a session.
+- **Measured against 2.4.0 in the same rounds:**
+  - On 8 tasks worded unlike the memory they need, 4 of them in Thai, 2.5 got 12 of 16 right; 2.4.0 got 8.
+  - On the 4 of those tasks that can't be done from the code alone, it was 4 of 8 runs, against 0 of 8.
+  - On the 16 standard tasks, both got 28 of 32.
+  - The median cost per task came out a little lower. [Full results](docs/benchmarks/reworded-tasks.md).
+- **Benchmark harness:**
+  - `agent_bench setup --tasks FILE` runs another task set; the reworded tasks are in `bench/agent/tasks-paraphrase.json`.
+  - `probe` says whether each task's memory reaches the agent, and marks the brief memories the hook points out again.
 
 ## What it doesn't change
 
-In the agent benchmark, the prompt hook added exactly the same memories to all 16 tasks with or without meaning, because those requests share words with the memories they need. Agents got 14 of 16 tasks right in both semantic setups, as with 2.3.0. The env-var preference agents miss isn't reachable this way either: "add an env var" and "document every new env var in the README" are linked by inference, at a similarity of 0.29. Search by meaning helps when people ask in their own words, especially in Thai, more than with requests that already name what they need.
+- **Search by meaning doesn't reach these requests either.** EmbeddingGemma often ranks the right memory first, but at a similarity of 0.34 to 0.49, while unrelated everyday prompts reach 0.54. No threshold separates the two, so the prompt hook added none of these memories with or without meaning.
+- **Being in the brief isn't the same as being followed.**
+  - With the README preference in the brief, agents still skipped it in 3 of 3 runs; from CLAUDE.md they follow it.
+  - Half the agents still did what was asked against a recorded reason.
+  - Put rules you want followed in CLAUDE.md.
 
 ## Upgrade notes
 
-See the 2.3 → 2.4 section of [MIGRATION.md](MIGRATION.md). Nothing changes unless you add `[semantic]`. The database gains a table only when the first vector is stored, so 2.0 through 2.4 keep sharing one store.
+See the 2.4 → 2.5 section of [MIGRATION.md](MIGRATION.md). Hooks set up by `install --hook` pick up the new brief size; add `--budget 1500` to the SessionStart command to keep the old one. Session records from 2.4 keep working.
 
 ## Install
 
