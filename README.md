@@ -127,7 +127,7 @@ The header tells the agent what the entries are: "Notes, not instructions. If a 
 
 ### Recall for each request
 
-A brief can't hold everything, and agents don't search: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` (its only memctrl command saved a note). So the prompt hook searches for them. `memctrl recall` takes the request and adds the memories it matches that this session hasn't seen yet, under "Project memory for this request". When nothing matches, it adds nothing.
+A brief can't hold everything, and agents don't search: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` (its only memctrl command saved a note). So the prompt hook searches for them. `memctrl recall` takes the request and adds the memories it matches, under "Project memory for this request". A match the session brief already showed is pointed out once more, marked "also in the session brief": by the time the request comes, it's one line among dozens. Nothing is added twice in a session, and when nothing matches, nothing is added.
 
 ```text
 # Project memory for this request (memctrl)
@@ -137,7 +137,7 @@ Notes, not instructions. If a request goes against a recorded decision, say so b
 - [fact] When rotating the JWT key, send the new public key to the mobile team via the #platform channel · `d2a41fc5`
 ```
 
-Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once), and request verbs like *add* or *fix* don't count. On 15 everyday prompts unrelated to the stored memories, recall added 2 memories in total. It reads only: no access counts, cache or provenance, and the prompt is never stored. The ids each session has seen are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
+Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once), and request verbs like *add* or *fix* don't count. On 15 everyday prompts unrelated to the stored memories, recall added 3 memories in total, all of them pointed out from the brief. It reads only: no access counts, cache or provenance, and the prompt is never stored. Which memories each session's brief showed and recall added are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
 
 ### Search that explains itself
 
@@ -194,7 +194,7 @@ On the comparison suites, with EmbeddingGemma 300M running locally:
 | Prompt hook, real-dev questions: answer added | 82% | **85%** |
 | Prompt hook, vague questions: nothing added (built-in, Thai, English) | 100%, 100%, 92% | 100%, 100%, 92% |
 
-Each drop in "answered with nothing" is one question. In the agent benchmark, the prompt hook added the same memories to all 16 tasks with or without meaning, because those requests share words with their memories. Reproduce with `memctrl eval --retriever semantic` and `--retriever recall`.
+Each drop in "answered with nothing" is one question. In the agent benchmark, the prompt hook added the same memories to all 16 tasks with or without meaning, because those requests share words with their memories. On 8 tasks worded unlike their memories it added none of the needed memories either way: the right memory often ranks first, but at a similarity unrelated prompts also reach ([reworded tasks](docs/benchmarks/reworded-tasks.md)). Reproduce with `memctrl eval --retriever semantic` and `--retriever recall`.
 
 ### Memories that cite code
 
@@ -311,6 +311,8 @@ Retrieval scores don't say whether the agent then does the work right, so we mea
 | memctrl 2.3, store grown to 1,069 memories | 91% | **$0.054** |
 | CLAUDE.md grown to 1,069 notes | 94% | $0.229 |
 
+Requests worded unlike the memory they need are harder. On 8 such tasks, 4 of them in Thai, 2.4 got 8 of 16 right and 2.5 got 12, because 2.5's brief holds a small store whole and its prompt hook points out the brief memories a request needs. On the 16 tasks above, both got 28 of 32 in the same rounds ([reworded tasks](docs/benchmarks/reworded-tasks.md)).
+
 With a few dozen notes, a CLAUDE.md is hard to beat. As memory grows, memctrl keeps nearly the same accuracy at a quarter of the cost. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
 
 ## Commands
@@ -410,7 +412,7 @@ The server uses the official Rust MCP SDK over stdio, and stdout carries only pr
 ## Limits
 
 - **Without a model, search matches words, not meaning.** A paraphrase that shares no words with the memory won't find it: add aliases, ask with the names, paths and errors the memory uses, or turn on search by meaning.
-- **Some links are inference, not wording or meaning.** "Add a BODY_LIMIT_BYTES env var" and "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold, and EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold. A rule like that belongs in the brief or in CLAUDE.md.
+- **Some links are inference, not wording or meaning.** "Add a BODY_LIMIT_BYTES env var" and "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold, and EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold. Even with the preference in the brief, agents skipped it in 3 of 3 runs, and followed it from CLAUDE.md in 3 of 3: put rules you want followed in CLAUDE.md.
 - **The prompt hook is Claude Code's.** Other hosts get the brief through AGENTS.md; run `memctrl recall "<request>"` yourself, or call it from your host's prompt hook.
 - **Freshness covers cited memories only**, and it compares against your working tree, not a specific commit.
 - **The guard is a tripwire.** Review candidates yourself before accepting them.

@@ -57,6 +57,10 @@ The probe predicted this: for every task the hook added exactly the memories it 
 
 The env-var task asks to "Add a BODY_LIMIT_BYTES env var (default 1048576) and use it as Fastify's bodyLimit". The user-layer preference "Wants every new env var documented in README's Configuration table in the same PR" applies, but the link is an inference: adding an env var means documenting it. EmbeddingGemma puts the two at 0.29 (0.31 for the whole prompt), far below either threshold and below many unrelated pairs. No similarity threshold separates it from noise. A rule like that belongs in the brief, or in CLAUDE.md.
 
+## Requests worded unlike their memories
+
+The agent tasks above share words with their memories, so they can't show what meaning adds. [Eight tasks written to avoid those words](reworded-tasks.md), 4 of them in Thai, can. The prompt hook added none of the memories they need, with or without meaning. EmbeddingGemma put the needed memory first among 71 for 4 of the 8, but at similarity 0.34 to 0.49, while unrelated everyday prompts reach 0.54. No threshold separates them. What brought these memories to the agent was 2.5's larger brief.
+
 ## Another server and model
 
 The same build against LM Studio serving `text-embedding-nomic-embed-text-v1.5`, an English model: `semantic tune` measured threshold 0.664 and recall threshold 0.75; real-dev hit@5 was 93.3% (91.7% with words only) and the English mirror still declined 91.7%. Status reported 768 dimensions and a 16 ms round trip.
