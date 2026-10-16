@@ -1,5 +1,7 @@
 # Agent benchmark: does memory help Claude Code finish tasks?
 
+> **Latest full run:** [release-2.6.md](release-2.6.md) measures 2.6.1 against 2.5.0, CLAUDE.md and no memory, at 70 and 1,069 memories. This page describes the method and the 2.2 and 2.3 rounds.
+
 Retrieval scores say whether the right memory comes back. This benchmark asks the question that matters: does an agent with memory do the task right more often? Claude Code worked 16 tasks on a real TypeScript project, once per setup, in fresh isolated sessions. Each task contains a trap that only the project's history reveals.
 
 **Short answer.** Memory more than pays for itself. Without it, the agent got 56% of tasks right. With every note pasted into CLAUDE.md it got 97%, and with memctrl 2.2 it got 81%. memctrl 2.3 adds a prompt hook (recall) and stronger wording for decisions, and gets 91%. On a small store, CLAUDE.md is still the strongest and simplest choice. With 1,069 memories, CLAUDE.md and memctrl 2.3 are about equally accurate (94% and 91%), but CLAUDE.md costs 4.2× as much per task because every session reads all of it.
