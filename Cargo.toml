@@ -1,6 +1,6 @@
 [package]
 name = "memctrl"
-version = "2.6.0"
+version = "2.6.1"
 edition = "2021"
 description = "Local explainable memory infrastructure for AI agents"
 license = "MIT"

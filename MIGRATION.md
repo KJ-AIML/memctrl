@@ -185,6 +185,10 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 - **Size.** The longer header costs about 60 tokens. A 3,000-token brief has room for one or two fewer memories.
 - **Library:** `context::Section::User`, `context::from_user`, `context::Extras::from_user` and `recall::RecallEntry::from_user` are new.
 
+## 2.6.0 → 2.6.1
+
+- **A stricter user config no longer warns about the init template.** `memctrl init` writes the built-in `[guard]` settings (`mode = "flag"`, `trusted_sources = ["manual", "user", "cli"]`) into `.memoryrc`. If your user config tightened them, as 2.6 suggests for `trusted_sources`, every command in that repository warned that its `.memoryrc` tried to loosen them. A `.memoryrc` that holds only the built-in values now yields to your config without a warning. One that asks for more than the built-ins, such as `trusted_sources` with `mcp` or `mode = "off"`, still warns and is still ignored.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.
