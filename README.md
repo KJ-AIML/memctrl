@@ -314,20 +314,22 @@ The same author wrote that suite and the retriever, so treat these as regression
 
 Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team, and [search by meaning](#search-by-meaning-optional) closes more.
 
-Retrieval scores don't say whether the agent then does the work right, so we measured that too. Claude Code worked 16 tasks on a real project, each with a trap only the project's history reveals, in fresh sessions ([method and per-task results](docs/benchmarks/agent-benchmark.md)):
+Retrieval scores don't say whether the agent then does the work right, so we measured that too. Claude Code worked 16 tasks on a real project, each with a trap only the project's history reveals, in fresh sessions, two rounds per setup ([method](docs/benchmarks/agent-benchmark.md), [2.6.1 results](docs/benchmarks/release-2.6.md)):
 
 | Memory the agent had | Tasks right | Median cost per task |
 | --- | ---: | ---: |
-| None | 56% | $0.044 |
-| memctrl 2.2 | 81% | $0.052 |
-| memctrl 2.3 (brief + recall) | 91% | $0.051 |
-| All 70 notes in CLAUDE.md | **97%** | $0.064 |
-| memctrl 2.3, store grown to 1,069 memories | 91% | **$0.054** |
-| CLAUDE.md grown to 1,069 notes | 94% | $0.229 |
+| None | 59% | $0.048 |
+| memctrl 2.5.0 | 88% | $0.050 |
+| memctrl 2.6.1 | **97%** | **$0.047** |
+| All 70 notes in CLAUDE.md | **97%** | $0.068 |
+| memctrl 2.6.1, store grown to 1,069 memories | **100%** | **$0.047** |
+| CLAUDE.md grown to 1,069 notes | 88% | $0.231 |
 
-Requests worded unlike the memory they need are harder. On 8 such tasks, 4 of them in Thai, 2.4 got 8 of 16 right and 2.5 got 12, because 2.5's brief holds a small store whole and its prompt hook points out the brief memories a request needs. On the 16 tasks above, both got 28 of 32 in the same rounds ([reworded tasks](docs/benchmarks/reworded-tasks.md)). 2.6 lets the user's preferences and the team's decisions carry weight: against 2.5.0 in the same rounds it got 29 of 32 and 13 of 16, where 2.5.0 got 28 and 10. Those rounds ran a first wording; the shipped one was rechecked on the four tasks it changes ([brief authority](docs/benchmarks/brief-authority.md)).
+Earlier releases on the same tasks: memctrl 2.2 got 81% and 2.3 got 91% ([history](docs/benchmarks/agent-benchmark.md)).
 
-With a few dozen notes, a CLAUDE.md is hard to beat. As memory grows, memctrl keeps nearly the same accuracy at a quarter of the cost. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
+Requests worded unlike the memory they need are harder. On 8 such tasks, 4 of them in Thai, 2.4 got 8 of 16 right and 2.5 got 12, because 2.5's brief holds a small store whole and its prompt hook points out the brief memories a request needs. On the 16 tasks above, both got 28 of 32 in the same rounds ([reworded tasks](docs/benchmarks/reworded-tasks.md)). 2.6 lets the user's preferences and the team's decisions carry weight: against 2.5.0 in the same rounds it got 29 of 32 and 13 of 16, where 2.5.0 got 28 and 10. Those rounds ran a first wording; the shipped one was rechecked on the four tasks it changes ([brief authority](docs/benchmarks/brief-authority.md)). In the full round of the 2.6.1 release it got 13 of 16, 2.5.0 got 11 and CLAUDE.md 15 ([2.6.1 results](docs/benchmarks/release-2.6.md)).
+
+With a few dozen notes, memctrl 2.6 and a CLAUDE.md get the same tasks right, and memctrl costs a little less. As memory grows, memctrl stays as accurate at a fifth of the cost. With 1,069 notes, CLAUDE.md agents missed the rejected cleanup job and the README preference in every run. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
 
 ## Commands
 
