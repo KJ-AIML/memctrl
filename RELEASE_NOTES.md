@@ -1,31 +1,26 @@
-# MemCtrl 2.5.0: memory for requests in other words
+# MemCtrl 2.6.0: preferences and decisions that carry weight
 
-People don't always ask in the words a memory uses, and agents don't search on their own. In 2.4, a memory the session brief left out reached the agent only if the request shared its words. 2.5 shows more of the store up front, and the prompt hook points out the brief memories a request needs.
+Up to 2.5, the session brief called every entry "Notes, not instructions". Agents read your preferences and your team's decisions there, and still went against them as soon as someone asked. 2.6 keeps the brief as notes, with two exceptions that do what a CLAUDE.md would.
 
 ## Highlights
 
-- **A small store arrives whole.** The session brief holds up to 3,000 tokens (1,500 before): about 70 one-line memories, the way a CLAUDE.md would.
-- **The prompt hook points out what a request needs.** It used to skip every memory the brief had shown, so a bigger brief silenced it. Now a brief memory that matches the request is pointed out once, next to the request, marked "also in the session brief". It still never adds a memory twice in a session.
-- **Measured against 2.4.0 in the same rounds:**
-  - On 8 tasks worded unlike the memory they need, 4 of them in Thai, 2.5 got 12 of 16 right; 2.4.0 got 8.
-  - On the 4 of those tasks that can't be done from the code alone, it was 4 of 8 runs, against 0 of 8.
-  - On the 16 standard tasks, both got 28 of 32.
-  - The median cost per task came out a little lower. [Full results](docs/benchmarks/reworded-tasks.md).
-- **Benchmark harness:**
-  - `agent_bench setup --tasks FILE` runs another task set; the reworded tasks are in `bench/agent/tasks-paraphrase.json`.
-  - `probe` says whether each task's memory reaches the agent, and marks the brief memories the hook points out again.
+- **Your preferences apply.** User-layer memories you saved come first, under "From the user", and the brief says to follow them unless the request says otherwise. The prompt hook labels them `[from the user]`.
+- **Recorded decisions wait for you.** If what's asked can't be done without going against a recorded decision, or without repeating what a memory says failed, the agent names the memory and asks before changing anything. A request that can be done another way, such as a stale test that expects the old behaviour, goes ahead.
+- **Measured against 2.5.0 in the same rounds:**
+  - On the 16 standard tasks, 29 of 32 right; 2.5.0 got 28.
+  - On 8 tasks worded unlike their memories, 13 of 16; 2.5.0 got 10.
+  - The rejected cleanup job and the reversed shutdown order went from 0 of 2 to 2 of 2 each.
+  - [Full results](docs/benchmarks/brief-authority.md).
 
 ## What it doesn't change
 
-- **Search by meaning doesn't reach these requests either.** EmbeddingGemma often ranks the right memory first, but at a similarity of 0.34 to 0.49, while unrelated everyday prompts reach 0.54. No threshold separates the two, so the prompt hook added none of these memories with or without meaning.
-- **Being in the brief isn't the same as being followed.**
-  - With the README preference in the brief, agents still skipped it in 3 of 3 runs; from CLAUDE.md they follow it.
-  - Half the agents still did what was asked against a recorded reason.
-  - Put rules you want followed in CLAUDE.md.
+- **Everything else is still notes.** Facts, lessons and hypotheses are things to check against the code. So is anything an agent saves over MCP or that arrives in a plain-text import.
+- **memctrl doesn't know who typed a memory.** An agent running `memctrl add --layer user` in its shell is counted as you. To count only your own, set `trusted_sources = ["user"]` under `[guard]` in your user config and add preferences with `--source user`. The guard still re-checks every entry as the brief is built.
+- **A preference isn't always followed.** Agents now mention the README preference in the benchmark, where 2.5.0 ignored it, but they still didn't create the README it asks for. Put rules that must hold in CLAUDE.md.
 
 ## Upgrade notes
 
-See the 2.4 → 2.5 section of [MIGRATION.md](MIGRATION.md). Hooks set up by `install --hook` pick up the new brief size; add `--budget 1500` to the SessionStart command to keep the old one. Session records from 2.4 keep working.
+See the 2.5 → 2.6 section of [MIGRATION.md](MIGRATION.md). The header still starts with "Notes, not instructions". The longer header costs about 60 tokens, and user-layer facts move to the new section. Nothing in the database changes.
 
 ## Install
 
