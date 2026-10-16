@@ -1224,15 +1224,12 @@ async fn execute(
         Command::List(options) | Command::Candidates(options) => {
             validate_layer(options.layer.as_deref())?;
             let candidate = matches!(&cli.command, Command::Candidates(_));
-            let memories: Vec<_> = store
-                .list_memories(
-                    options.layer.as_deref(),
-                    options.include_history || candidate,
-                )?
-                .into_iter()
-                .filter(|m| !candidate || m.lifecycle_state == LifecycleState::Candidate)
-                .take(options.limit)
-                .collect();
+            let memories = store.recent_memories(
+                options.layer.as_deref(),
+                options.include_history || candidate,
+                candidate,
+                options.limit,
+            )?;
             if candidate {
                 json!({"candidates":memories})
             } else {
