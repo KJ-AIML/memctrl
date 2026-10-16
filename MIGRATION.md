@@ -163,7 +163,7 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 ## 2.4 → 2.5
 
 - **The session brief holds up to 3,000 tokens** (1,500 before), about 70 one-line memories, so a small store arrives whole, the way a CLAUDE.md would. `memctrl context` and MCP `memctrl_context` use the new default, and so do hooks set up by `install --hook`, which don't pass a budget. To keep the old size, add `--budget 1500` to the SessionStart command in `.claude/settings.local.json`.
-- **The prompt hook points out a brief memory a request needs.** It used to skip everything the brief had shown. Now it adds such a memory once per session when a request matches it, marked `also in the session brief`; `recall --format json` gives these entries `"in_brief": true`. It still never adds a memory twice in a session.
+- **The prompt hook points out a brief memory a request needs.** It used to skip everything the brief had shown. Now it adds such a memory once per session when a request matches it, marked `also in the session brief` (`RecallEntry::in_brief` in the library). It still never adds a memory twice in a session. `memctrl recall "<request>"` run by hand has no session, so it lists every match, as before.
 - **Session records** (`.memctrl/sessions/<session id>`) mark the brief's memories with a `brief ` prefix. A record written by 2.4 reads as before: recall skips everything it lists.
 - **Library:** `recall::recall` takes `&recall::Seen` (`briefed`, `recalled`) instead of a set of ids; `recall::shown_in` and `recall::remember` are replaced by `seen_in`, `remember_brief` and `remember_recalled`.
 
