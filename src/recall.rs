@@ -38,6 +38,10 @@ pub struct RecallEntry {
     /// The session brief showed it; recall points it out again for this request.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub in_brief: bool,
+    /// The person's own preference or note (see `context::from_user`), labelled so the agent
+    /// follows it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub from_user: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -180,6 +184,9 @@ fn matched_units(matched: &[String], groups: &HashMap<String, usize>) -> usize {
 }
 
 fn label(entry: &RecallEntry) -> &'static str {
+    if entry.from_user {
+        return "from the user";
+    }
     match entry.claim_type {
         ClaimType::Decision => "decision",
         ClaimType::DerivedLesson => "lesson",
@@ -390,6 +397,13 @@ pub fn recall(
                 .iter()
                 .any(|t| t.starts_with("guard:"))
                 .then(|| "looked like instructions; a person released it".to_string()),
+            // As in the brief: decisions keep their label, and anything to check first is
+            // never presented as the person's word.
+            from_user: crate::context::from_user(&m, policy)
+                && matches!(m.claim_type, ClaimType::Assertion | ClaimType::Observation)
+                && m.verification_state != VerificationState::Disputed
+                && !notes.contains_key(&m.id)
+                && !m.tags.iter().any(|t| t.starts_with("guard:")),
             content: one_line(&sanitize_text(&m.content)),
             in_brief: seen.briefed.contains(&m.id),
             id: m.id,
@@ -503,6 +517,44 @@ mod tests {
 
     fn none(_: &[String]) -> HashMap<String, String> {
         HashMap::new()
+    }
+
+    #[test]
+    fn recall_labels_the_users_own_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::open(dir.path().join("m.db")).unwrap();
+        let own = add(
+            &store,
+            "Wants every new env var documented in the README Configuration table",
+            "user",
+            ClaimType::Assertion,
+        );
+        let from_agent = store
+            .insert_memory(NewMemory {
+                layer: "user".into(),
+                content: "New env var names use the APP_ prefix in the README table".into(),
+                source: "mcp".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let found = recall(
+            &store,
+            "Add a BODY_LIMIT env var and document it in the README",
+            &layers(),
+            5,
+            &SearchOptions::default(),
+            &Policy::default(),
+            &none,
+            &Seen::default(),
+        )
+        .unwrap();
+        let entry = |id: &str| found.entries.iter().find(|e| e.id == id).unwrap();
+        assert!(entry(&own).from_user);
+        assert!(!entry(&from_agent).from_user);
+        assert!(found
+            .markdown
+            .contains("- [from the user] Wants every new env var"));
+        assert!(found.markdown.contains("- [fact] New env var names"));
     }
 
     #[test]

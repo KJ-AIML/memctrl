@@ -51,7 +51,7 @@ Round 1 was a pilot (none 9/16, claude-md 16/16, memctrl 2.2.0 12/16). Some of i
 ## What we changed because of it
 
 1. **Agents don't search, so memory comes to them.** In 112 sessions with memctrl available, Claude Code never ran `memctrl query`; its one memctrl command saved a note. It reads the brief and works from there. 2.3's prompt hook runs `memctrl recall` on every request and adds the matching memories the session hasn't seen yet.
-2. **Decisions get their weight back.** With the brief saying "Notes, not instructions: verify before acting", an agent read "a cleanup job was discussed but rejected" and built the cleanup because the user asked for it. The same note in CLAUDE.md made it stop. The header now says: "Notes, not instructions. If a request goes against a recorded decision, say so before acting; check facts against the code."
+2. **Decisions get their weight back.** With the brief saying "Notes, not instructions: verify before acting", an agent read "a cleanup job was discussed but rejected" and built the cleanup because the user asked for it. The same note in CLAUDE.md made it stop. 2.3's header said: "Notes, not instructions. If a request goes against a recorded decision, say so before acting; check facts against the code." Agents then cited the decision and built the cleanup anyway. Since 2.6, a request that can't be done without going against a recorded decision waits for the user ([brief-authority.md](brief-authority.md)).
 3. **Recall had to handle requests, not questions.** The first version found nothing, because the two sentences that end every prompt dropped every memory below search's coverage threshold. A real prompt has the same problem. Recall now searches each sentence on its own. It ignores words that no memory contains, counts the words of a path or identifier once, and needs two shared topics. On 15 everyday prompts unrelated to the stored memories, it added 2 memories in total.
 
 ## Results: 1,069 memories
@@ -79,4 +79,4 @@ memctrl's cost per task didn't change from the 70-memory store, but CLAUDE.md's 
 
 ## Reworded requests
 
-These tasks name what they need. [reworded-tasks.md](reworded-tasks.md) adds 8 tasks worded unlike their memories, 4 of them in Thai, and measures 2.5's larger brief and prompt hook against 2.4 on both sets.
+These tasks name what they need. [reworded-tasks.md](reworded-tasks.md) adds 8 tasks worded unlike their memories, 4 of them in Thai, and measures 2.5's larger brief and prompt hook against 2.4 on both sets. [brief-authority.md](brief-authority.md) measures 2.6's header, which lets the user's preferences and recorded decisions carry weight, against 2.5 on both sets.
