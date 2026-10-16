@@ -189,6 +189,11 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
 
 - **A stricter user config no longer warns about the init template.** `memctrl init` writes the built-in `[guard]` settings (`mode = "flag"`, `trusted_sources = ["manual", "user", "cli"]`) into `.memoryrc`. If your user config tightened them, as 2.6 suggests for `trusted_sources`, every command in that repository warned that its `.memoryrc` tried to loosen them. A `.memoryrc` that holds only the built-in values now yields to your config without a warning. One that asks for more than the built-ins, such as `trusted_sources` with `mcp` or `mode = "off"`, still warns and is still ignored.
 
+## 2.6.1 → 2.6.2
+
+- **`list` and `candidates` read only what they show.** They used to load every memory and then keep the first `--limit`. On a store of 100,000 memories, `list --limit 20` drops from about 800 ms to about 240 ms, and `candidates` from about 820 ms to about 75 ms. The output is the same: the newest first, ties by id.
+- **Library:** `MemoryStore::recent_memories(layer, include_history, candidates_only, limit)` is new. `list_memories` still returns every memory.
+
 ## Recovery note
 
 The initial local migration checkout expired before GitHub publication. This branch reconstructs the native runtime from the unchanged original repository and retained design/review findings. Its verification is fresh; previous local build numbers are not used as evidence for this checkout.
