@@ -639,6 +639,39 @@ impl MemoryStore {
             .filter(|m| include_history || m.eligible())
             .collect())
     }
+    /// The newest memories first, at most `limit`: eligible ones, every lifecycle state with
+    /// `include_history`, or only candidates. Rows are read one at a time and the read stops at
+    /// `limit`, so a large store isn't loaded whole to list a few.
+    pub fn recent_memories(
+        &self,
+        layer: Option<&str>,
+        include_history: bool,
+        candidates_only: bool,
+        limit: usize,
+    ) -> Result<Vec<Memory>> {
+        if let Some(layer) = layer {
+            validate_identifier(layer, "layer")?;
+        }
+        let mut statement = self.conn.prepare(
+            "SELECT * FROM memories WHERE (?1 IS NULL OR layer=?1) \
+             AND (?2=0 OR lifecycle_state='candidate') \
+             AND (?3=1 OR (lifecycle_state='accepted' AND verification_state!='refuted')) \
+             ORDER BY created_at DESC,id",
+        )?;
+        let rows =
+            statement.query_map(params![layer, candidates_only, include_history], memory_row)?;
+        let mut memories = Vec::new();
+        for row in rows {
+            if memories.len() == limit {
+                break;
+            }
+            let memory = row?;
+            if include_history || memory.eligible() {
+                memories.push(memory);
+            }
+        }
+        Ok(memories)
+    }
     fn require_memory(&self, id: &str) -> Result<()> {
         if self.get_memory(id, true)?.is_none() {
             bail!("memory does not exist")

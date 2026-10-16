@@ -318,3 +318,65 @@ fn unattributed_legacy_memory_remains_unknown_origin() -> anyhow::Result<()> {
     );
     Ok(())
 }
+/// `list` and `candidates` read only as many rows as they show. They must still return what
+/// loading every memory and then cutting to the limit returned.
+#[test]
+fn recent_memories_match_listing_everything_then_cutting() -> anyhow::Result<()> {
+    let store = MemoryStore::open(":memory:")?;
+    for i in 0..12 {
+        let layer = if i % 3 == 0 { "user" } else { "project" };
+        let lifecycle = match i % 4 {
+            0 => LifecycleState::Candidate,
+            1 => LifecycleState::Archived,
+            _ => LifecycleState::Accepted,
+        };
+        store.insert_memory(NewMemory {
+            layer: layer.into(),
+            lifecycle_state: lifecycle,
+            ..mem(&format!("memory number {i}"))
+        })?;
+    }
+    let refuted = store.insert_memory(mem("refuted claim"))?;
+    store.refute_memory(&refuted, "wrong", None)?;
+    store.insert_memory(NewMemory {
+        expires_at: Some("2000-01-01T00:00:00Z".into()),
+        ..mem("expired fact")
+    })?;
+    store.insert_memory(NewMemory {
+        valid_from: Some("2099-01-01T00:00:00Z".into()),
+        ..mem("future fact")
+    })?;
+    let ids = |memories: Vec<Memory>| memories.into_iter().map(|m| m.id).collect::<Vec<_>>();
+    for layer in [None, Some("user"), Some("project")] {
+        for limit in [0, 1, 3, 50] {
+            for history in [false, true] {
+                let expected: Vec<Memory> = store
+                    .list_memories(layer, history)?
+                    .into_iter()
+                    .take(limit)
+                    .collect();
+                assert_eq!(
+                    ids(store.recent_memories(layer, history, false, limit)?),
+                    ids(expected),
+                    "layer {layer:?}, limit {limit}, history {history}"
+                );
+            }
+            let candidates: Vec<Memory> = store
+                .list_memories(layer, true)?
+                .into_iter()
+                .filter(|m| m.lifecycle_state == LifecycleState::Candidate)
+                .take(limit)
+                .collect();
+            assert_eq!(
+                ids(store.recent_memories(layer, true, true, limit)?),
+                ids(candidates),
+                "candidates, layer {layer:?}, limit {limit}"
+            );
+        }
+    }
+    assert_eq!(store.recent_memories(None, false, false, 50)?.len(), 6);
+    assert!(store
+        .recent_memories(Some("session\nextra"), false, false, 5)
+        .is_err());
+    Ok(())
+}
