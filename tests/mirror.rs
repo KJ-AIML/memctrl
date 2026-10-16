@@ -408,6 +408,36 @@ fn guard_modes_come_from_the_rules_file() {
     }
 }
 
+/// `memctrl init` writes the built-in guard settings into .memoryrc. A user config that tightens
+/// them (as MIGRATION suggests for `trusted_sources`) wins without a warning on every command;
+/// a repository that asks for more than the built-ins still gets one.
+#[test]
+fn the_init_template_yields_to_a_stricter_user_config_quietly() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("repo/.git")).unwrap();
+    let rc = dir.path().join("repo/.memoryrc");
+    std::fs::write(&rc, memctrl::rules::DEFAULT_RULES).unwrap();
+    let strict = UserConfig {
+        guard_mode: Some(memctrl::guard::Mode::Strict),
+        trusted_sources: Some(vec!["user".into()]),
+        ..UserConfig::default()
+    };
+    let rules = Rules::load_with(&rc, &strict).unwrap();
+    assert!(rules.warnings.is_empty(), "{:#?}", rules.warnings);
+    assert_eq!(rules.guard.mode, memctrl::guard::Mode::Strict);
+    assert_eq!(rules.guard.trusted_sources, ["user"]);
+
+    let template = memctrl::rules::DEFAULT_RULES.replace(
+        r#"trusted_sources = ["manual", "user", "cli"]"#,
+        r#"trusted_sources = ["manual", "user", "cli", "mcp"]"#,
+    );
+    std::fs::write(&rc, template).unwrap();
+    let rules = Rules::load_with(&rc, &strict).unwrap();
+    assert_eq!(rules.guard.trusted_sources, ["user"]);
+    assert_eq!(rules.warnings.len(), 1, "{:#?}", rules.warnings);
+    assert!(rules.warnings[0].contains("mcp"));
+}
+
 /// A repository's .memoryrc arrives with every clone. The review showed it could switch the guard
 /// off, trust any source, widen where export writes and point at another database. It may now
 /// only tighten, unless you trust the repository in your user config.

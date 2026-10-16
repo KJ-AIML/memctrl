@@ -356,8 +356,14 @@ impl Rules {
     /// repository, and no trigger moves personal notes into a shared layer.
     fn only_tighten(&mut self, base: &Rules, path: &Path, user: &UserConfig) {
         let mut ignored = Vec::new();
+        // `memctrl init` writes the built-in guard settings into every .memoryrc. They don't ask
+        // for anything looser than the defaults, so a user config that tightens them replaces
+        // them without a warning on every command.
+        let builtin = crate::guard::Policy::default();
         if self.guard.mode < base.guard.mode {
-            ignored.push(format!("[guard] mode = {:?}", self.guard.mode));
+            if self.guard.mode != builtin.mode {
+                ignored.push(format!("[guard] mode = {:?}", self.guard.mode));
+            }
             self.guard.mode = base.guard.mode;
         }
         let extra: Vec<String> = self
@@ -368,7 +374,9 @@ impl Rules {
             .cloned()
             .collect();
         if !extra.is_empty() {
-            ignored.push(format!("[guard] trusted_sources {extra:?}"));
+            if self.guard.trusted_sources != builtin.trusted_sources {
+                ignored.push(format!("[guard] trusted_sources {extra:?}"));
+            }
             self.guard
                 .trusted_sources
                 .retain(|s| base.guard.trusted_sources.contains(s));
