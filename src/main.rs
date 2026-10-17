@@ -1032,11 +1032,11 @@ fn recall_command(
         .unwrap_or_default();
     let record = session_record(&input, db);
     let mut seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
-    // A prompt that starts with `remember:` saves the note first. Only the hook does this: it's
-    // the prompt the user typed, while `recall "<text>"` by hand only looks things up.
+    // A prompt that starts with `remember:` saves the note first. Only the hook's own input does
+    // this: it's the prompt the user typed, while a PROMPT argument only looks things up.
     let mut kept = Vec::new();
     let captured = memctrl::capture::request(&text)
-        .filter(|_| format.hook() && rules.remember)
+        .filter(|_| format.hook() && prompt.is_none() && rules.remember)
         .map(
             |note| match memctrl::capture::save(store, &note, &rules.guard) {
                 Ok(saved) => {
@@ -2026,8 +2026,32 @@ async fn run(cli: Cli) -> Result<()> {
     }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
-    if let Command::Recall { format, .. } = &cli.command {
+    if let Command::Recall { format, prompt, .. } = &cli.command {
         if !db.exists() {
+            // Silent, unless the user asked to remember something: then the agent should know
+            // nothing was saved.
+            let asked = (format.hook() && prompt.is_none() && rules.remember)
+                .then(|| hook_input(std::time::Duration::from_secs(2)))
+                .and_then(|input| {
+                    input
+                        .get("prompt")?
+                        .as_str()
+                        .and_then(memctrl::capture::request)
+                });
+            if asked.is_some() {
+                let note = "# Note not saved (memctrl)\n\nThe user asked memctrl to remember something, but memctrl isn't set up in this project, so nothing was saved. Tell the user they can run `memctrl init` here first.\n";
+                let event = if *format == ContextFormat::Gemini {
+                    "BeforeAgent"
+                } else {
+                    "UserPromptSubmit"
+                };
+                let output =
+                    json!({"hookSpecificOutput":{"hookEventName":event,"additionalContext":note}});
+                std::io::stdout()
+                    .lock()
+                    .write_all((output.to_string() + "\n").as_bytes())?;
+                return Ok(());
+            }
             if *format == ContextFormat::Json {
                 std::io::stdout()
                     .lock()

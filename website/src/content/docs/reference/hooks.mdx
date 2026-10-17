@@ -129,10 +129,11 @@ A prompt that starts with `remember:` (any case), `จำไว้:` or `จำ�
 | Already saved with the same text | `# Already remembered (memctrl)` |
 | Held by the guard | `# Note held for the user's review (memctrl)`, the reason, and `memctrl accept <id>` |
 | Couldn't be saved | `# Note not saved (memctrl)` and the error, which also goes to stderr |
+| memctrl isn't set up in this project | `# Note not saved (memctrl)` and a hint to run `memctrl init`; nothing is created |
 
 Saved notes join the [session record](#session-records). Nothing else in a prompt is ever stored. `[capture] remember = false` in your [user config](/memctrl/reference/user-config/#capture) turns this off.
 
-Without a store, or with a store committed to an untrusted repository, it prints nothing and exits 0, like the session-start hook.
+Without a store, or with a store committed to an untrusted repository, it prints nothing and exits 0, like the session-start hook. The one exception is a prompt that starts with `remember:` in a project without a store: the agent is told nothing was saved.
 
 ## Session records
 

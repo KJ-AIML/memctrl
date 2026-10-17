@@ -996,11 +996,22 @@ fn agent_writes_are_the_agents_and_remember_saves_the_users_own() {
     // Saved notes are in the session's record, so recall won't add them again.
     let record = std::fs::read_to_string(dir.path().join(".memctrl/sessions/s-7")).unwrap();
     assert_eq!(record.lines().count(), 2, "{record}");
-    // `recall` by hand only looks things up.
+    // `recall` by hand only looks things up, and so does a PROMPT argument to the hook command.
     run(
         false,
         &["recall", "remember: typed by hand is a search, not a save"],
         None,
+    );
+    let session = json!({"session_id": "s-8"}).to_string();
+    run(
+        true,
+        &[
+            "recall",
+            "--format",
+            "hook",
+            "remember: an argument is a search too",
+        ],
+        Some(&session),
     );
 
     let brief = json(run(false, &["context", "--format", "json"], None));
@@ -1020,6 +1031,7 @@ fn agent_writes_are_the_agents_and_remember_saves_the_users_own() {
     assert_eq!(section("Prefers small PRs"), "facts");
     let listed = json(run(false, &["list", "--layer", "user"], None)).to_string();
     assert!(!listed.contains("typed by hand"));
+    assert!(!listed.contains("an argument is a search"));
 
     // `[capture] remember = false` turns it off.
     std::fs::create_dir_all(config.join("memctrl")).unwrap();
@@ -1074,6 +1086,26 @@ fn gemini_hooks_always_print_json_and_codex_and_gemini_install() {
         hook(&["recall", "--format", "gemini"], prompt("g-1", steps)),
         "{}\n"
     );
+    // A request to remember, with no store, says nothing was saved and creates nothing.
+    let unsaved: Value = serde_json::from_str(&hook(
+        &["recall", "--format", "gemini"],
+        prompt("g-1", "remember: we deploy on Tuesdays"),
+    ))
+    .unwrap();
+    assert_eq!(
+        unsaved["hookSpecificOutput"]["hookEventName"],
+        "BeforeAgent"
+    );
+    assert!(unsaved["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("memctrl init"));
+    assert!(hook(
+        &["recall", "--format", "hook"],
+        prompt("g-1", "remember: we deploy on Tuesdays")
+    )
+    .contains("UserPromptSubmit"));
+    assert!(!dir.path().join(".memctrl").exists(), "nothing was created");
 
     success(&dir, &["init"]);
     success(
