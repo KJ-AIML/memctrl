@@ -19,4 +19,4 @@ memctrl cite [OPTIONS] <MEMORY_ID> <PATH[:LINE[-LINE]]>...
 
 Every command also takes the [global options](/memctrl/reference/cli/#global-options) `--db` and `--rc`.
 
-<sub>Generated from `memctrl 2.6.2` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.6.3` by `website/scripts/gen-cli.mjs`.</sub>

@@ -115,7 +115,7 @@ After these steps, `git status` lists the files memctrl created. Some belong in 
 <FileTree>
 - .memoryrc commit: the project's memctrl rules
 - .memctrl/
-  - .gitignore commit: keeps the database files out of git
+  - .gitignore commit: keeps the database and session records out of git
   - memories.db local: ignored by `.memctrl/.gitignore`
   - sessions/ local: what each Claude Code session was shown
 - .claude/
@@ -129,11 +129,7 @@ After these steps, `git status` lists the files memctrl created. Some belong in 
 - **Commit `.claude/skills/memctrl/SKILL.md` if you like.** It tells the agent how to use memctrl and holds nothing specific to your machine.
 - **Don't commit `.claude/settings.local.json`.** The hook commands run plain `memctrl` when that is the binary you installed with, and otherwise its absolute path on your machine. memctrl doesn't add the file to any `.gitignore`, so add it yourself if `git status` lists it.
 - **Don't commit the database.** `.memctrl/.gitignore` ignores `*.db`, `*.db-wal`, `*.db-shm` and `*.db-journal`. memctrl refuses to load a database that git tracks, because anyone with push access could have written its memories.
-- **Don't commit `.memctrl/sessions/`.** The `.gitignore` that memctrl 2.6.2 writes doesn't cover it, so add a line:
-
-  ```bash
-  echo "sessions/" >> .memctrl/.gitignore
-  ```
+- **Session records stay local.** `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`, so a project set up by an older memctrl is covered too.
 
 To share memories themselves, export them to `.memctrl/memory.md` and commit that file. [Share with your team](/memctrl/guides/share-with-your-team/) walks through it.
 

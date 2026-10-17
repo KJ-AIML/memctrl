@@ -3,7 +3,7 @@ title: "Claude Code"
 description: "Give Claude Code the session brief and per-request recall with two hooks, and check, tune or remove them."
 ---
 
-import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 
 Claude Code is the host memctrl supports most fully. Two hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, and one adds the memories each prompt matches. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
 
@@ -89,10 +89,7 @@ brief 5f515c75-0c45-41ec-aa54-519d01f433b5
 - The record starts over whenever the brief runs again, such as after `/clear` or compaction, because the context it describes is gone.
 - Records older than three days are removed when a brief runs.
 - `memctrl recall` run by hand has no session, so it lists every match.
-
-<Aside type="caution">
-The `.memctrl/.gitignore` that memctrl 2.6.2 writes covers only the database files, so `git status` shows `.memctrl/sessions/`. Keep it out of git with `echo "sessions/" >> .memctrl/.gitignore`.
-</Aside>
+- Records stay out of git. `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`, so a project set up by an older memctrl is covered too.
 
 ## Check that it works
 
@@ -144,9 +141,7 @@ The brief holds up to about 3,000 tokens by default, about 70 one-line memories,
 
 The same way, `--layer project` keeps your `user` layer out of the brief. Whatever doesn't fit is named in the brief's header ("Not shown for space: …"), and up to 5 memories to check before trusting and 3 of your preferences keep reserved room.
 
-<Aside type="caution">
-Running `memctrl install --hook` again resets the command to `memctrl context --format hook`, dropping your `--budget`. Add it back afterwards.
-</Aside>
+Running `memctrl install --hook` again keeps the flags you added. It only updates how the command starts memctrl, such as a new path to the binary. (2.6.2 and earlier reset the command and dropped them.)
 
 ## Remove the hooks
 

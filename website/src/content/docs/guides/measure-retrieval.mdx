@@ -153,7 +153,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install memctrl
         run: |
-          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.6.2 sh
+          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.6.3 sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Measure retrieval
         run: |

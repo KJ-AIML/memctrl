@@ -1,6 +1,7 @@
 //! Install the bundled tool skill (and, for Claude Code, a session-start hook) under an explicit
 //! project or home root.
 use anyhow::{bail, ensure, Context, Result};
+use regex::Regex;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -131,16 +132,20 @@ pub fn recall_hook_command(executable: &Path) -> String {
 const BRIEF_ARGS: &str = "context --format hook";
 const RECALL_ARGS: &str = "recall --format hook";
 
-fn is_memctrl_hook(hook: &Value, args: &str) -> bool {
-    hook.get("command")
-        .and_then(Value::as_str)
-        .is_some_and(|c| c.contains("memctrl") && c.contains(args))
+/// What follows the subcommand in memctrl's hook for `args`: `--format hook` plus any flags you
+/// added by hand, such as `--budget 1500`. `None` when `hook` isn't that hook.
+fn hook_flags(hook: &Value, args: &str) -> Option<String> {
+    let command = hook.get("command")?.as_str()?;
+    let (subcommand, format) = args.split_once(' ')?;
+    let pattern = Regex::new(&format!(r#"memctrl(?:\.exe)?['"]?\s+{subcommand}(\s.*)?$"#)).ok()?;
+    let flags = pattern.captures(command)?.get(1)?.as_str();
+    flags.contains(format).then(|| flags.to_string())
 }
 
 /// Adds (or updates) a Claude Code SessionStart hook that injects `memctrl context`. The hook has
 /// no matcher, so it also runs after `/clear`, resume and compaction, when context was lost.
-/// Idempotent: an existing memctrl hook is updated in place, everything else is preserved in its
-/// original key order, and a file that isn't valid JSON is never rewritten.
+/// Idempotent: an existing memctrl hook gets the new program and keeps its flags, everything else
+/// is preserved in its original key order, and a file that isn't valid JSON is never rewritten.
 pub fn install_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
     install_event_hook(root, settings, "SessionStart", BRIEF_ARGS, command)
 }
@@ -182,14 +187,20 @@ fn install_event_hook(
         .or_insert_with(|| json!([]))
         .as_array_mut()
         .with_context(|| format!("settings.json \"hooks.{event}\" must be an array"))?;
+    let program = command.strip_suffix(args).unwrap_or(command).trim_end();
+    let subcommand = args.split(' ').next().unwrap_or(args);
     let mut found = false;
     let mut changed = false;
     for group in groups.iter_mut() {
         if let Some(list) = group.get_mut("hooks").and_then(Value::as_array_mut) {
-            for hook in list.iter_mut().filter(|h| is_memctrl_hook(h, args)) {
+            for hook in list.iter_mut() {
+                let Some(flags) = hook_flags(hook, args) else {
+                    continue;
+                };
                 found = true;
-                if hook.get("command").and_then(Value::as_str) != Some(command) {
-                    hook["command"] = json!(command);
+                let updated = format!("{program} {subcommand}{flags}");
+                if hook.get("command").and_then(Value::as_str) != Some(updated.as_str()) {
+                    hook["command"] = json!(updated);
                     changed = true;
                 }
             }
@@ -256,6 +267,44 @@ mod tests {
         // Original key order survives the rewrite.
         let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
         assert_eq!(keys, ["permissions", "hooks", "model"]);
+    }
+
+    #[test]
+    fn reinstalling_keeps_flags_added_by_hand() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = ".claude/settings.local.json";
+        std::fs::create_dir_all(dir.path().join(".claude")).unwrap();
+        std::fs::write(
+            dir.path().join(file),
+            r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"memctrl context --format hook --budget 1500"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"'/old/memctrl' recall --limit 3 --format hook"}]}]}}"#,
+        )
+        .unwrap();
+        let (_, changed) = install_hook(dir.path(), file, "memctrl context --format hook").unwrap();
+        assert!(
+            !changed,
+            "the same program with extra flags is already up to date"
+        );
+        let (_, changed) =
+            install_hook(dir.path(), file, "'/opt/memctrl' context --format hook").unwrap();
+        assert!(changed);
+        let (_, changed) =
+            install_recall_hook(dir.path(), file, "memctrl recall --format hook").unwrap();
+        assert!(changed);
+        let value: Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(file)).unwrap()).unwrap();
+        assert_eq!(
+            value["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "'/opt/memctrl' context --format hook --budget 1500"
+        );
+        assert_eq!(
+            value["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
+            "memctrl recall --limit 3 --format hook",
+            "flags before --format hook count too, and no second hook is added"
+        );
+        assert_eq!(
+            value["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
+            1
+        );
     }
 
     #[test]

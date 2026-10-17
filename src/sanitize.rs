@@ -169,7 +169,8 @@ fn redact_contextual(text: &str) -> String {
         .into_owned()
 }
 /// Payment cards (Visa, Mastercard, Amex, Discover prefixes, Luhn-checked, spaces or dashes
-/// allowed), phone numbers in `(555) 123-4567` and `+66 81 234 5678` form, and Thai national ids.
+/// allowed), phone numbers in `(555) 123-4567` and `+66 81 234 5678` form, and Thai national ids
+/// (see `redact_national_ids`).
 fn personal_data() -> &'static [Regex; 4] {
     static PERSONAL: OnceLock<[Regex; 4]> = OnceLock::new();
     PERSONAL.get_or_init(|| {
@@ -177,7 +178,7 @@ fn personal_data() -> &'static [Regex; 4] {
             Regex::new(r"\b(?:4|5[1-5]|3[47]|6011)(?:[ -]?\d){11,15}\b"),
             Regex::new(r"\(\d{3}\)\s?\d{3}[-.\s]\d{4}\b"),
             Regex::new(r"\+\d{1,3}(?:[\s.-]?\(?\d{1,4}\)?){2,5}\b"),
-            Regex::new(r"\b\d-\d{4}-\d{5}-\d{2}-\d\b"),
+            Regex::new(r"[0-9][ -][0-9]{4}[ -][0-9]{5}[ -][0-9]{2}[ -][0-9]|[0-9]{13,}"),
         ]
         .map(|r| r.expect("static personal-data regex"))
     })
@@ -201,6 +202,50 @@ fn luhn(digits: &[u32]) -> bool {
         .sum();
     sum.is_multiple_of(10)
 }
+/// The check digit of a Thai national id: the first twelve digits weighted 13 down to 2.
+fn thai_id(digits: &[u32]) -> bool {
+    if digits.len() != 13 || !(1..=8).contains(&digits[0]) {
+        return false;
+    }
+    let sum: u32 = digits[..12]
+        .iter()
+        .zip((2..=13).rev())
+        .map(|(d, w)| d * w)
+        .sum();
+    (11 - sum % 11) % 10 == digits[12]
+}
+/// Thai national ids written `1-2345-67890-12-3` or `1 2345 67890 12 3`, or as 13 digits in a row
+/// when the check digit is right, which rules out nine in ten other 13-digit numbers. Thai text may
+/// touch an id; letters, digits and `_-./` may not, so names, versions and paths keep their digits.
+fn redact_national_ids(pattern: &Regex, text: &str) -> String {
+    let joined = |c: char| c.is_ascii_alphanumeric() || "_-./".contains(c);
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for found in pattern.find_iter(text) {
+        if text[..found.start()]
+            .chars()
+            .next_back()
+            .is_some_and(joined)
+            || text[found.end()..].chars().next().is_some_and(joined)
+        {
+            continue;
+        }
+        let digits: Vec<u32> = found
+            .as_str()
+            .chars()
+            .filter_map(|c| c.to_digit(10))
+            .collect();
+        let separated = found.as_str().contains([' ', '-']);
+        if !separated && !thai_id(&digits) {
+            continue;
+        }
+        out.push_str(&text[last..found.start()]);
+        out.push_str("[REDACTED_NATIONAL_ID]");
+        last = found.end();
+    }
+    out.push_str(&text[last..]);
+    out
+}
 fn redact_personal(text: &str) -> String {
     let [card, phone, international, national_id] = personal_data();
     if text.bytes().filter(u8::is_ascii_digit).count() < 8 {
@@ -223,9 +268,7 @@ fn redact_personal(text: &str) -> String {
             c[0].to_string()
         }
     });
-    national_id
-        .replace_all(&text, "[REDACTED_NATIONAL_ID]")
-        .into_owned()
+    redact_national_ids(national_id, &text)
 }
 /// All fixed patterns at once: one scan finds which ones can match, so the rest are skipped.
 /// Every read re-sanitizes stored text, which made a pass per pattern the cost of a brief.

@@ -171,6 +171,9 @@ pub struct UserConfig {
     pub trusted_repos: Vec<PathBuf>,
     /// `[semantic]`: only you can turn on sending memory text to an embedding model.
     pub semantic: Option<crate::semantic::Settings>,
+    /// Why `[semantic]` was ignored. Search by meaning is optional, so a mistake there turns it off
+    /// with a warning instead of stopping every command, the hooks included.
+    pub semantic_error: Option<String>,
     /// Where the file is (or would be).
     pub path: Option<PathBuf>,
 }
@@ -242,8 +245,15 @@ impl UserConfig {
             }
         }
         if let Some(semantic) = raw.get("semantic") {
-            config.semantic = crate::semantic::Settings::parse(semantic)
-                .with_context(|| format!("invalid [semantic] in {}", path.display()))?;
+            match crate::semantic::Settings::parse(semantic) {
+                Ok(settings) => config.semantic = settings,
+                Err(error) => {
+                    config.semantic_error = Some(format!(
+                        "invalid [semantic] in {}: {error:#}",
+                        path.display()
+                    ))
+                }
+            }
         }
         Ok(config)
     }
@@ -339,6 +349,10 @@ impl Rules {
                     .push(format!("semantic search is off: {error:#}")),
             }
         }
+        if let Some(error) = user.semantic_error.as_ref().filter(|_| !off) {
+            base.warnings
+                .push(format!("semantic search is off: {error}"));
+        }
         let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(base),
@@ -346,24 +360,34 @@ impl Rules {
         };
         let mut rules = Self::parse(path, &text, base.clone())?;
         if !user.trusts(path) {
+            rules.yield_template_guard(&base, user);
             rules.only_tighten(&base, path, user);
         }
         Ok(rules)
+    }
+
+    /// `memctrl init` writes the built-in guard settings into every .memoryrc. Those values aren't
+    /// a choice the repository made, so where your user config sets one, yours applies, stricter
+    /// or looser. A repository that sets anything else keeps the usual rules, and a trusted
+    /// repository's file applies in full.
+    fn yield_template_guard(&mut self, base: &Rules, user: &UserConfig) {
+        let builtin = crate::guard::Policy::default();
+        if user.guard_mode.is_some() && self.guard.mode == builtin.mode {
+            self.guard.mode = base.guard.mode;
+        }
+        if user.trusted_sources.is_some() && self.guard.trusted_sources == builtin.trusted_sources {
+            self.guard.trusted_sources = base.guard.trusted_sources.clone();
+        }
     }
 
     /// A repository's rules may only tighten `base`: the guard stays at least as strict,
     /// trusted sources only narrow, `forget.never` only grows, paths stay inside the
     /// repository, and no trigger moves personal notes into a shared layer.
     fn only_tighten(&mut self, base: &Rules, path: &Path, user: &UserConfig) {
-        let mut ignored = Vec::new();
-        // `memctrl init` writes the built-in guard settings into every .memoryrc. They don't ask
-        // for anything looser than the defaults, so a user config that tightens them replaces
-        // them without a warning on every command.
-        let builtin = crate::guard::Policy::default();
+        // Each ignored setting, and whether your user config can set it instead.
+        let mut ignored: Vec<(String, bool)> = Vec::new();
         if self.guard.mode < base.guard.mode {
-            if self.guard.mode != builtin.mode {
-                ignored.push(format!("[guard] mode = {:?}", self.guard.mode));
-            }
+            ignored.push((format!("[guard] mode = {:?}", self.guard.mode), true));
             self.guard.mode = base.guard.mode;
         }
         let extra: Vec<String> = self
@@ -374,9 +398,7 @@ impl Rules {
             .cloned()
             .collect();
         if !extra.is_empty() {
-            if self.guard.trusted_sources != builtin.trusted_sources {
-                ignored.push(format!("[guard] trusted_sources {extra:?}"));
-            }
+            ignored.push((format!("[guard] trusted_sources {extra:?}"), true));
             self.guard
                 .trusted_sources
                 .retain(|s| base.guard.trusted_sources.contains(s));
@@ -388,15 +410,15 @@ impl Rules {
             .cloned()
             .collect();
         if !missing.is_empty() {
-            ignored.push(format!("removing {missing:?} from [forget] never"));
+            ignored.push((format!("removing {missing:?} from [forget] never"), false));
             self.forget_never.extend(missing);
         }
         let repo = repository_root(path);
         if let Some(root) = &self.citations_root {
             if root.canonicalize().is_ok_and(|r| !r.starts_with(&repo)) {
-                ignored.push(format!(
-                    "[citations] root = {:?} (outside the repository)",
-                    root
+                ignored.push((
+                    format!("[citations] root = {root:?} (outside the repository)"),
+                    false,
                 ));
                 self.citations_root = None;
             }
@@ -415,8 +437,9 @@ impl Rules {
                         )
                     })
             {
-                ignored.push(format!(
-                    "[memctrl] db_path = {db:?} (outside the repository)"
+                ignored.push((
+                    format!("[memctrl] db_path = {db:?} (outside the repository; --db and MEMCTRL_DB_PATH can point anywhere)"),
+                    false,
                 ));
                 self.db_path = None;
             }
@@ -428,16 +451,29 @@ impl Rules {
             .map(|(key, _)| key.clone())
             .collect();
         for key in leaks {
-            ignored.push(format!(
-                "[triggers] {key} (it moves personal user-layer notes into a shared layer)"
+            ignored.push((
+                format!(
+                    "[triggers] {key} (it moves personal user-layer notes into a shared layer)"
+                ),
+                false,
             ));
             self.triggers.remove(&key);
         }
-        for setting in ignored {
+        for (setting, yours) in ignored {
+            let allow = if yours {
+                format!(
+                    "set it in {}, or list this repository under [trust] repos there",
+                    user.describe()
+                )
+            } else {
+                format!(
+                    "list this repository under [trust] repos in {}",
+                    user.describe()
+                )
+            };
             self.warnings.push(format!(
-                "ignored {setting} from {}: a repository's .memoryrc can only tighten memctrl's defenses. To allow it, set it in {}, or list this repository under [trust] repos there",
+                "ignored {setting} from {}: a repository's .memoryrc can only tighten memctrl's defenses. To allow it, {allow}",
                 path.display(),
-                user.describe()
             ));
         }
     }

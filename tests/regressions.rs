@@ -662,6 +662,10 @@ fn sanitizer_catches_prefixed_keys_and_vendor_tokens() {
         ("Test card 4111 1111 1111 1111".into(), "4111 1111 1111 1111", "CARD"),
         ("On-call phone (555) 123-4567".into(), "123-4567", "PHONE"),
         ("Thai support line +66 81 234 5678".into(), "81 234 5678", "PHONE_INTL"),
+        ("Citizen id 1-2345-67890-12-1".into(), "67890", "NATIONAL_ID"),
+        ("บัตร 1 2345 67890 12 1".into(), "67890", "NATIONAL_ID"),
+        ("เลขบัตรประชาชน1234567890121".into(), "1234567890121", "NATIONAL_ID"),
+        (r#"{"citizen_id": "1234567890121"}"#.into(), "1234567890121", "NATIONAL_ID"),
     ];
     for (input, secret, label) in &cases {
         let out = sanitize_text(input);
@@ -695,6 +699,11 @@ fn sanitizer_leaves_prose_and_placeholders_alone() {
         "npm install from https://registry.npmjs.org/@babel/core",
         "Run with +1 retry and -2 jobs",
         "Version 1.2.3+build.45",
+        // 13 digits whose check digit is wrong, or that sit inside a name or path.
+        "Deployed at 1760745600000 ms",
+        "Order 1234567890120 shipped",
+        "run-1234567890121",
+        "/builds/1234567890121/log",
     ] {
         assert_eq!(sanitize_text(prose), prose);
         assert!(redactions(prose).is_empty(), "{prose:?}");

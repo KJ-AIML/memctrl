@@ -3,7 +3,7 @@ title: "MCP hosts"
 description: "Run memctrl as an MCP server over stdio for any client that speaks the Model Context Protocol."
 ---
 
-import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 
 `memctrl serve` runs memctrl as a Model Context Protocol server, so any MCP client can read the session brief, search, save and review memories as tools. Use it for hosts that have no memctrl hooks or AGENTS.md support. In Claude Code, prefer the [hooks](/memctrl/agents/claude-code/): over MCP the agent has to decide to call a tool, and agents skip optional lookups.
 
@@ -49,10 +49,7 @@ An MCP client starts the server from whatever folder it likes. Without `--db` an
 
 - **`--db` names the store.** Because you named it, memctrl opens it, or creates it if it doesn't exist. Run `memctrl init` first so the project also gets its `.gitignore`.
 - **`--rc` names the rules.** It keeps the project's guard, retrieval and layer settings, whatever folder the server runs in.
-
-<Aside type="caution" title="Citations need the project root">
-memctrl resolves cited paths against the project root, which it finds from the server's working folder: the nearest folder above it with `.git`. If your client starts the server outside the project, every citation reads `missing`. Set `MEMCTRL_PROJECT_ROOT` to the project's absolute path in the server's environment; many clients accept an `env` object next to `args`.
-</Aside>
+- **Citations follow `--rc`.** memctrl resolves cited paths against the project root: the nearest folder with `.git` at or above the `--rc` file's folder. So citations work wherever the client starts the server. To use another root, set `MEMCTRL_PROJECT_ROOT` in the server's environment; many clients accept an `env` object next to `args`. (2.6.2 and earlier looked from the server's working folder, so citations read `missing` unless you set `MEMCTRL_PROJECT_ROOT`.)
 
 ## How the server behaves
 

@@ -3,8 +3,6 @@ title: "Hooks"
 description: "The Claude Code hook commands memctrl installs, the JSON they read and print, and the session records that keep recall from repeating itself."
 ---
 
-import { Aside } from '@astrojs/starlight/components';
-
 memctrl reaches Claude Code through two hook commands: one prints the session brief when a session starts, and one adds the memories each prompt matches. This page is the exact contract: what `install` writes, what each command reads on stdin and prints on stdout, and the session records they share. For setting up and tuning the hooks, see [Claude Code](/memctrl/agents/claude-code/).
 
 ## What install writes
@@ -50,7 +48,7 @@ The settings file gets these two hooks:
 
 - **The command** starts with plain `memctrl` when the first `memctrl` on your `PATH` is the executable you ran `install` with, so upgrades keep working. Otherwise it's that executable's absolute path, quoted for the shell when needed.
 - **The `SessionStart` hook has no matcher**, so it runs at startup, on resume, after `/clear` and after compaction: every time the context starts over.
-- **Running `install` again is safe.** It finds its own hooks by their command and updates them in place, keeps every other hook and setting in their original order, and reports `"hook_changed":false` when nothing changed. Because it rewrites the command, flags you added by hand, such as `--budget 1500`, are reset; add them again afterwards.
+- **Running `install` again is safe.** It finds its own hooks by their command and updates how they start memctrl, keeping flags you added by hand, such as `--budget 1500`, wherever they are in the command. Every other hook and setting stays in its original order, and `install` reports `"hook_changed":false` when nothing changed. (2.6.2 and earlier reset the command, dropping those flags, and didn't recognize a hook with a flag before `--format hook`.)
 - **A settings file that isn't valid JSON is never rewritten.** `install` fails with the command to add by hand.
 
 ## Session-start hook
@@ -147,9 +145,7 @@ brief 4307083c-5ff2-41c9-8076-b94e335ccf5b
 
 A record written by memctrl 2.4, which has only plain lines, still works: recall skips everything it lists. A `session_id` that isn't a plain token (letters, digits, `-` and `_`, at most 128 characters) is never used as a file name, and that session gets no record.
 
-<Aside type="caution" title="Keep session records out of commits">
-The `.gitignore` that memctrl writes in `.memctrl/` lists only the database files, so git shows session records as untracked files. If you commit the `.memctrl/` folder for `memory.md`, add `sessions/` to `.memctrl/.gitignore` first.
-</Aside>
+Session records stay out of git. `.memctrl/.gitignore` lists `sessions/`, and the first record written in a folder comes with a `sessions/.gitignore` that ignores everything there, so a `.memctrl/.gitignore` from an older memctrl doesn't matter. Records that are already committed stay tracked until you run `git rm -r --cached .memctrl/sessions`.
 
 ## Calling recall from another host
 

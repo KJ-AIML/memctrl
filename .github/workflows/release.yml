@@ -1,8 +1,9 @@
 name: Release
 
-# Pull requests build and smoke-test every release target without publishing anything.
-# Pushing a `vX.Y.Z` tag builds the same artifacts and creates a *draft* GitHub release
-# with SHA256SUMS; a maintainer reviews the draft and publishes it by hand.
+# Pull requests build and smoke-test every release target, then collect and check the archives
+# the way a release does, without publishing anything. Pushing a `vX.Y.Z` tag builds the same
+# artifacts and creates a *draft* GitHub release with SHA256SUMS; a maintainer reviews the draft
+# and publishes it by hand.
 on:
   push:
     tags: ["v*"]
@@ -39,7 +40,7 @@ jobs:
           - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -76,31 +77,53 @@ jobs:
           fi
           rm -rf "dist/$name"
           ls -l dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: memctrl-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
 
+  # Runs on pull requests too, so a change in how artifacts download shows up before a tag.
   draft-release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # used only by the tag-only release step
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Tag must match the crate version
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           crate=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           test "${GITHUB_REF_NAME#v}" = "$crate" || { echo "tag $GITHUB_REF_NAME != Cargo.toml $crate"; exit 1; }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.1
         with:
           path: dist
           merge-multiple: true
+      - name: Check the archives
+        run: |
+          export LC_ALL=C
+          expected=$(printf '%s\n' \
+            memctrl-aarch64-apple-darwin.tar.gz \
+            memctrl-aarch64-unknown-linux-musl.tar.gz \
+            memctrl-x86_64-apple-darwin.tar.gz \
+            memctrl-x86_64-pc-windows-msvc.zip \
+            memctrl-x86_64-unknown-linux-musl.tar.gz)
+          actual=$(ls dist | sort)
+          if [ "$actual" != "$expected" ]; then
+            printf 'dist should hold exactly:\n%s\nbut holds:\n%s\n' "$expected" "$actual"
+            exit 1
+          fi
+          for archive in dist/*.tar.gz; do
+            name=$(basename "$archive" .tar.gz)
+            tar -tzf "$archive" | grep -qx "$name/memctrl" || { echo "$archive has no $name/memctrl"; exit 1; }
+          done
+          unzip -l dist/memctrl-x86_64-pc-windows-msvc.zip | grep -q 'memctrl\.exe$' \
+            || { echo "the Windows zip has no memctrl.exe"; exit 1; }
       - name: Checksums
         run: cd dist && sha256sum memctrl-* > SHA256SUMS && cat SHA256SUMS
       - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

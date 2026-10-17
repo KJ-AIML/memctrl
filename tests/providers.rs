@@ -240,6 +240,32 @@ fn presets_and_precedence_resolve_like_grok_build() {
         LlmClient::from_config(remote).is_err(),
         "keyless requests only on loopback"
     );
+    // An OpenAI key in the environment never goes to a compatible server; only a key you name does.
+    let gateway = || {
+        settings(
+            "compatible",
+            Some("m"),
+            Some("https://gateway.example.com/v1".into()),
+        )
+    };
+    let openai_only = LlmConfig::resolve(&gateway(), env(&[("OPENAI_API_KEY", "k")])).unwrap();
+    assert!(LlmClient::from_config(openai_only)
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("--llm-api-key-env"));
+    let memctrl_key = LlmConfig::resolve(
+        &gateway(),
+        env(&[("OPENAI_API_KEY", "k"), ("MEMCTRL_LLM_API_KEY", "g")]),
+    )
+    .unwrap();
+    assert!(LlmClient::from_config(memctrl_key).is_ok());
+    let named = LlmSettings {
+        api_key_env: Some("GATEWAY_KEY".into()),
+        ..gateway()
+    };
+    let named = LlmConfig::resolve(&named, env(&[("GATEWAY_KEY", "g")])).unwrap();
+    assert!(LlmClient::from_config(named).is_ok());
 
     assert!(LlmConfig::resolve(
         &LlmSettings::default(),

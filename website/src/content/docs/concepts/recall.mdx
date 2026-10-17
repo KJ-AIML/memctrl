@@ -3,7 +3,7 @@ title: "Recall for each request"
 description: "How the prompt hook adds the memories a request needs, points out the ones the brief already showed, and stays quiet otherwise."
 ---
 
-import { Aside, Steps } from '@astrojs/starlight/components';
+import { Steps } from '@astrojs/starlight/components';
 
 Recall adds the memories a request needs to that request, so a memory the session brief left out, or showed among dozens of others, still reaches the agent when it matters. In Claude Code a prompt hook runs it on every prompt. When nothing matches, it adds nothing.
 
@@ -93,9 +93,7 @@ In Claude Code, recall knows what the session has already seen. The session-star
 
 `memctrl recall "<request>"` run by hand has no session, so it lists every match.
 
-<Aside type="note">
-The `.gitignore` that `memctrl init` writes in `.memctrl/` covers the database files, not the `sessions/` folder. If you commit `.memctrl/memory.md`, add `.memctrl/sessions/` to your `.gitignore` so session records stay local.
-</Aside>
+Session records stay local: `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`.
 
 ## Read-only
 

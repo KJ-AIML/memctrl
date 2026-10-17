@@ -459,9 +459,26 @@ pub fn remember_recalled(path: &Path, ids: &[String]) -> Result<()> {
     write_record(path, ids.to_vec(), false)
 }
 
+/// Session records name sessions and list what each one was shown: personal, never meant to be
+/// committed. A `.gitignore` inside the folder keeps them out of git in every project, including
+/// ones whose `.memctrl/.gitignore` an older memctrl wrote without them. Best effort: recording
+/// never fails over it.
+fn ignore_records(dir: &Path) {
+    // create_new never follows a symlink planted at the path, dangling or not.
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir.join(".gitignore"))
+    {
+        let _ =
+            std::io::Write::write_all(&mut file, b"# memctrl: session records stay local.\n*\n");
+    }
+}
+
 fn write_record(path: &Path, lines: Vec<String>, fresh: bool) -> Result<()> {
     let dir = path.parent().expect("session files live in a folder");
     std::fs::create_dir_all(dir)?;
+    ignore_records(dir);
     let mut all: Vec<String> = if fresh {
         Vec::new()
     } else {
@@ -483,11 +500,13 @@ fn write_record(path: &Path, lines: Vec<String>, fresh: bool) -> Result<()> {
     if fresh {
         let cutoff = SystemTime::now() - SESSION_TTL;
         for entry in std::fs::read_dir(dir)?.flatten() {
+            // Session ids are plain tokens, so a dotfile is never a record: keep the .gitignore.
+            let dotfile = entry.file_name().to_string_lossy().starts_with('.');
             let old = entry
                 .metadata()
                 .and_then(|m| m.modified())
                 .is_ok_and(|modified| modified < cutoff);
-            if old && entry.path() != path {
+            if old && !dotfile && entry.path() != path {
                 let _ = std::fs::remove_file(entry.path());
             }
         }

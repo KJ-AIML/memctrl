@@ -87,7 +87,7 @@ memctrl context
 
 ```bash
 # Any platform with a Rust toolchain
-cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.6.2 --locked
+cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.6.3 --locked
 
 # From source
 git clone https://github.com/KJ-AIML/memctrl.git && cd memctrl
@@ -439,7 +439,7 @@ The server uses the official Rust MCP SDK over stdio, and stdout carries only pr
 
 `make ci` runs exactly the checks GitHub CI runs: fmt, strict Clippy, tests, the release build and the Rust-only source check. `make hooks` makes git run it before every push. The built CLI is `target/release/memctrl` (`memctrl.exe` on Windows).
 
-**Further reading:** [MIGRATION.md](MIGRATION.md) before opening an existing database · [docs/PLAN-2.1.md](docs/PLAN-2.1.md) for the 2.1 design · [RUST-RESEARCH.md](RUST-RESEARCH.md) for research and tradeoffs · [docs/RUST-VERIFICATION.md](docs/RUST-VERIFICATION.md) for current checks and limits · [RELEASE_NOTES.md](RELEASE_NOTES.md) · historical documents in `docs/history`.
+**Further reading:** [MIGRATION.md](MIGRATION.md) before opening an existing database · [docs/PLAN-2.1.md](docs/PLAN-2.1.md) for the 2.1 design · [RUST-RESEARCH.md](RUST-RESEARCH.md) for research and tradeoffs · [docs/RUST-VERIFICATION.md](docs/RUST-VERIFICATION.md) for current checks and limits · [RELEASE_NOTES.md](RELEASE_NOTES.md) · [SECURITY.md](SECURITY.md) to report a vulnerability · historical documents in `docs/history`.
 
 ## License
 

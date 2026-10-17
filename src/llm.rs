@@ -95,10 +95,12 @@ impl Provider {
                 key_envs: &["ANTHROPIC_API_KEY"],
                 default_model: None,
             },
+            // No provider variable: a compatible server gets a key only when you name one, so an
+            // OpenAI key in the environment never goes to some other host.
             Self::Compatible => Preset {
                 base_url: None,
                 backend: Backend::ChatCompletions,
-                key_envs: &["OPENAI_API_KEY"],
+                key_envs: &[],
                 default_model: None,
             },
         }
@@ -303,7 +305,7 @@ impl LlmClient {
             // Keyless requests are only for local servers (Ollama, LM Studio, vLLM).
             ensure!(
                 loopback,
-                "LLM API key is required for non-loopback endpoints"
+                "LLM API key is required for non-loopback endpoints; pass --llm-api-key-env NAME or set MEMCTRL_LLM_API_KEY"
             );
         }
         validate_identifier(&config.model, "model")?;

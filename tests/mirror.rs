@@ -438,6 +438,46 @@ fn the_init_template_yields_to_a_stricter_user_config_quietly() {
     assert!(rules.warnings[0].contains("mcp"));
 }
 
+/// The init template doesn't outrank a looser user config either: `mode = "off"` or an extra
+/// trusted source in your config applies, while a repository that asks for `strict` still gets it.
+#[test]
+fn the_init_template_yields_to_a_looser_user_config() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(dir.path().join("repo/.git")).unwrap();
+    let rc = dir.path().join("repo/.memoryrc");
+    std::fs::write(&rc, memctrl::rules::DEFAULT_RULES).unwrap();
+    let loose = UserConfig {
+        guard_mode: Some(memctrl::guard::Mode::Off),
+        trusted_sources: Some(vec![
+            "manual".into(),
+            "user".into(),
+            "cli".into(),
+            "mcp".into(),
+        ]),
+        ..UserConfig::default()
+    };
+    let rules = Rules::load_with(&rc, &loose).unwrap();
+    assert!(rules.warnings.is_empty(), "{:#?}", rules.warnings);
+    assert_eq!(rules.guard.mode, memctrl::guard::Mode::Off);
+    assert!(rules.guard.trusted_sources.contains(&"mcp".to_string()));
+
+    // A repository that chose strict still tightens your config.
+    let strict = memctrl::rules::DEFAULT_RULES.replace(r#"mode = "flag""#, r#"mode = "strict""#);
+    std::fs::write(&rc, strict).unwrap();
+    let rules = Rules::load_with(&rc, &loose).unwrap();
+    assert_eq!(rules.guard.mode, memctrl::guard::Mode::Strict);
+
+    // A trusted repository's file applies in full, template lines included.
+    std::fs::write(&rc, memctrl::rules::DEFAULT_RULES).unwrap();
+    let trusting = UserConfig {
+        trusted_repos: vec![dir.path().join("repo").canonicalize().unwrap()],
+        ..loose
+    };
+    let rules = Rules::load_with(&rc, &trusting).unwrap();
+    assert_eq!(rules.guard.mode, memctrl::guard::Mode::Flag);
+    assert!(!rules.guard.trusted_sources.contains(&"mcp".to_string()));
+}
+
 /// A repository's .memoryrc arrives with every clone. The review showed it could switch the guard
 /// off, trust any source, widen where export writes and point at another database. It may now
 /// only tighten, unless you trust the repository in your user config.

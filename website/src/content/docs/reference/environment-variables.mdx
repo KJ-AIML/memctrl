@@ -26,7 +26,7 @@ These apply only to commands you run with `--llm`. A flag wins over its variable
 | `MEMCTRL_LLM_BASE_URL` | The API base URL. `--llm-base-url` wins. Required for `compatible`. Must use `https`, except on `localhost` or a loopback address. | `https://api.openai.com/v1`, `https://api.x.ai/v1` or `https://api.anthropic.com/v1` |
 | `MEMCTRL_LLM_API_KEY` | The API key, read when `--llm-api-key-env` isn't given, before the provider's own variable. | Unset |
 | `MEMCTRL_LLM_MAX_RETRIES` | How many times a transport error or 5xx response is retried, with exponential backoff. A nonnegative integer, capped at 5; anything else is an error. | `2` |
-| `OPENAI_API_KEY` | The key for `openai` and `compatible`. | Unset |
+| `OPENAI_API_KEY` | The key for `openai`. `compatible` never reads it (2.6.2 and earlier did); give it a key with `MEMCTRL_LLM_API_KEY` or `--llm-api-key-env`. | Unset |
 | `XAI_API_KEY` | The key for `xai`. | Unset |
 | `ANTHROPIC_API_KEY` | The key for `anthropic`. | Unset |
 | `OPENAI_MODEL` | The model for `openai` and `compatible`, after `MEMCTRL_LLM_MODEL`. | Unset |

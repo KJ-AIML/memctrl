@@ -14,9 +14,9 @@ Your user config holds the settings only you should make: how strict the write g
 | macOS, Linux | `$XDG_CONFIG_HOME/memctrl/config.toml` when `XDG_CONFIG_HOME` is set and not empty, else `~/.config/memctrl/config.toml` |
 | Windows | `%APPDATA%\memctrl\config.toml` |
 
-memctrl reads the file on every command, and the MCP server reads it again for every tool call. A missing file means the defaults. A file that isn't valid TOML, or holds an invalid value, makes every command fail with the reason on stderr, so a typo can't quietly weaken a setting. `memctrl semantic status` prints the path it uses under `config`.
+memctrl reads the file on every command, and the MCP server reads it again for every tool call. A missing file means the defaults. A file that isn't valid TOML, or holds an invalid value under `[guard]` or `[trust]`, makes every command fail with the reason on stderr, so a typo can't quietly weaken a setting. A mistake under `[semantic]` only turns search by meaning off, with a warning on stderr, so commands and hooks keep working without it (2.6.2 and earlier failed every command). `memctrl semantic status` prints the path it uses under `config`.
 
-The file has three sections. Other sections and keys are ignored, except in `[semantic]`, where an unknown key is an error.
+The file has three sections. Other sections and keys are ignored, except in `[semantic]`, where an unknown key turns search by meaning off with a warning.
 
 ## [guard]
 
@@ -55,16 +55,18 @@ In a repository you haven't trusted, memctrl starts from your user config and ap
 
 | Setting | Result |
 | --- | --- |
-| `[guard] mode` | The stricter of yours and the repository's. |
-| `[guard] trusted_sources` | If the `.memoryrc` lists sources, those that are also in yours. Otherwise yours. |
+| `[guard] mode` | The stricter of yours and the repository's. A `.memoryrc` with the built-in value, which `memctrl init` writes, yields to yours. |
+| `[guard] trusted_sources` | If the `.memoryrc` lists sources, those that are also in yours. Otherwise, or when it lists exactly the built-in sources, yours. |
 | `[forget] never` | The built-in words plus any the repository adds. |
 | `[semantic]` | Yours only. |
 
-<Aside type="caution" title="A looser user config needs a repository that doesn't ask for more">
-`memctrl init` writes `mode = "flag"` and `trusted_sources = ["manual", "user", "cli"]` into every `.memoryrc`, and the stricter value wins. So if your config sets `mode = "off"`, or adds `"mcp"` to `trusted_sources`, a repository whose `.memoryrc` still has the template lines keeps the guard at `flag` and doesn't trust `mcp`. To use your looser setting there, delete those lines from the repository's `.memoryrc`, set them to your value, or trust the repository.
+`memctrl init` writes `mode = "flag"` and `trusted_sources = ["manual", "user", "cli"]` into every `.memoryrc`. Those are the built-in values, not a choice the repository made, so where your config sets `mode` or `trusted_sources`, yours applies over them, looser or stricter, without a warning. With `mode = "off"` in your config, a repository whose `.memoryrc` still has the template lines runs with the guard off; with `trusted_sources = ["user"]`, it trusts only `user`. A repository that sets any other value keeps the usual rule: the stricter one wins. A repository you [trust](#trust) applies its file in full, template lines included.
+
+<Aside type="caution" title="2.6.2 and earlier">
+Before 2.6.3, the template's lines held a repository at the built-in values when your config was looser. To use `mode = "off"` or an extra trusted source there, delete those lines from its `.memoryrc`, or trust the repository.
 </Aside>
 
-Tightening works the other way round without any edits: with `trusted_sources = ["user"]` in your config, the template's three sources narrow to `user`, and since 2.6.1 that happens without a warning. The full list of what a repository can't loosen is in [`.memoryrc`](/memctrl/reference/memoryrc/#settings-a-repository-can-only-tighten).
+The full list of what a repository can't loosen is in [`.memoryrc`](/memctrl/reference/memoryrc/#settings-a-repository-can-only-tighten).
 
 ## [trust]
 
