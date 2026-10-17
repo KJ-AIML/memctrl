@@ -579,8 +579,8 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         .unwrap();
     assert!(recall.ends_with("recall --format hook"), "{recall}");
     assert!(
-        failure(&dir, &["install", "--tool", "codex", "--project", "--hook"])
-            .contains("only available for Claude Code")
+        failure(&dir, &["install", "--tool", "cursor", "--project", "--hook"])
+            .contains("--hook works with claude, codex and gemini")
     );
 }
 
@@ -1030,4 +1030,101 @@ fn agent_writes_are_the_agents_and_remember_saves_the_users_own() {
     assert_eq!(hook("remember: not while capture is off"), "");
     let listed = json(run(false, &["list", "--layer", "user"], None)).to_string();
     assert!(!listed.contains("capture is off"));
+}
+
+/// Gemini CLI reads only JSON from a hook, so `--format gemini` prints `{}` when there's nothing
+/// to add, and names its events SessionStart and BeforeAgent. Codex runs the Claude Code commands.
+#[test]
+fn gemini_hooks_always_print_json_and_codex_and_gemini_install() {
+    let dir = TempDir::new().unwrap();
+    let hook = |args: &[&str], input: Value| -> String {
+        let mut child = common::memctrl()
+            .current_dir(dir.path())
+            .env_remove("MEMCTRL_DB_PATH")
+            .env("MEMCTRL_SEMANTIC", "off")
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(input.to_string().as_bytes()).unwrap();
+        drop(stdin);
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let start =
+        json!({"session_id": "g-1", "hook_event_name": "SessionStart", "source": "startup"});
+    let prompt = |session: &str, text: &str| json!({"session_id": session, "hook_event_name": "BeforeAgent", "prompt": text});
+    let steps = "We need to rotate the JWT signing key. Give me the exact steps.";
+
+    // Before memctrl is set up here, still JSON.
+    assert_eq!(
+        hook(&["context", "--format", "gemini"], start.clone()),
+        "{}\n"
+    );
+    assert_eq!(
+        hook(&["recall", "--format", "gemini"], prompt("g-1", steps)),
+        "{}\n"
+    );
+
+    success(&dir, &["init"]);
+    success(
+        &dir,
+        &["add", "When rotating the JWT signing key, send the new public key to the mobile team via #platform", "--layer", "project"],
+    );
+    let brief: Value =
+        serde_json::from_str(&hook(&["context", "--format", "gemini"], start)).unwrap();
+    assert_eq!(brief["hookSpecificOutput"]["hookEventName"], "SessionStart");
+    let recalled: Value = serde_json::from_str(&hook(
+        &["recall", "--format", "gemini"],
+        prompt("g-2", steps),
+    ))
+    .unwrap();
+    assert_eq!(
+        recalled["hookSpecificOutput"]["hookEventName"],
+        "BeforeAgent"
+    );
+    assert!(recalled["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .contains("#platform"));
+    assert_eq!(
+        hook(
+            &["recall", "--format", "gemini"],
+            prompt("g-2", "thanks, that's all for now")
+        ),
+        "{}\n"
+    );
+    let saved = hook(
+        &["recall", "--format", "gemini"],
+        prompt("g-3", "remember: staging resets every night"),
+    );
+    assert!(saved.contains("Saved a note from the user"), "{saved}");
+
+    let gemini = success(
+        &dir,
+        &["install", "--tool", "gemini", "--project", "--hook"],
+    );
+    assert!(gemini["hook"].as_str().unwrap().ends_with("settings.json"));
+    assert!(gemini["hook_note"].as_str().unwrap().contains("trusted"));
+    assert!(dir.path().join(".gemini/settings.json").exists());
+    assert!(dir.path().join(".agents/skills/memctrl/SKILL.md").exists());
+    let codex = success(&dir, &["install", "--tool", "codex", "--project", "--hook"]);
+    assert!(codex["hook_note"].as_str().unwrap().contains("/hooks"));
+    assert!(dir.path().join(".codex/hooks.json").exists());
+    let refused = failure(
+        &dir,
+        &["install", "--tool", "cursor", "--project", "--hook"],
+    );
+    assert!(
+        refused.contains("--hook works with claude, codex and gemini"),
+        "{refused}"
+    );
 }

@@ -9,8 +9,14 @@
 use crate::guard::Policy;
 
 /// Variables coding agents set for the commands their agent runs, and the source memctrl records
-/// for writes made under each.
-pub const AGENT_MARKERS: &[(&str, &str)] = &[("CLAUDECODE", "claude-code")];
+/// for writes made under each. Codex's isn't documented (it's in its source as of 0.163); Gemini
+/// CLI sets its variable for commands you type with `!` too.
+pub const AGENT_MARKERS: &[(&str, &str)] = &[
+    ("CLAUDECODE", "claude-code"),
+    ("CODEX_CI", "codex"),
+    ("GEMINI_CLI", "gemini-cli"),
+    ("CURSOR_AGENT", "cursor"),
+];
 
 /// The source of an MCP write that asked for one the guard trusts.
 pub const MCP: &str = "mcp";
@@ -58,8 +64,11 @@ mod tests {
     }
 
     #[test]
-    fn claude_code_is_recognised_by_its_variable() {
+    fn agents_are_recognised_by_their_variables() {
         assert_eq!(agent(env(&[("CLAUDECODE", "1")])), Some("claude-code"));
+        assert_eq!(agent(env(&[("CODEX_CI", "1")])), Some("codex"));
+        assert_eq!(agent(env(&[("GEMINI_CLI", "1")])), Some("gemini-cli"));
+        assert_eq!(agent(env(&[("CURSOR_AGENT", "1")])), Some("cursor"));
         assert_eq!(agent(env(&[("CLAUDECODE", "")])), None);
         assert_eq!(agent(env(&[])), None);
     }

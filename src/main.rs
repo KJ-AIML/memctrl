@@ -105,8 +105,25 @@ enum ContextFormat {
     Markdown,
     /// Machine-readable entries plus the Markdown.
     Json,
-    /// Claude Code hook output (additionalContext), reading the hook's JSON from stdin.
+    /// Claude Code and Codex hook output (additionalContext), reading the hook's JSON from stdin.
     Hook,
+    /// Gemini CLI hook output: the same, as SessionStart or BeforeAgent, and `{}` when there's
+    /// nothing to add, since Gemini reads only JSON.
+    Gemini,
+}
+impl ContextFormat {
+    /// Run as a hook: reads the hook's JSON from stdin.
+    fn hook(self) -> bool {
+        matches!(self, Self::Hook | Self::Gemini)
+    }
+    /// What a hook prints when it has nothing to add.
+    fn nothing(self) -> &'static [u8] {
+        if self == Self::Gemini {
+            b"{}\n"
+        } else {
+            b""
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum EvalRetriever {
@@ -133,7 +150,7 @@ enum Command {
         project: bool,
         #[arg(
             long,
-            help = "Claude Code only: add a SessionStart hook that injects `memctrl context`"
+            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt"
         )]
         hook: bool,
     },
@@ -791,11 +808,15 @@ fn install(
     project: &Project,
 ) -> Result<Value> {
     let tool =
-        tool.context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
-    ensure!(
-        !hook || matches!(tool, "claude" | "claude_code"),
-        "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
-    );
+        tool.context("--tool is required; choose claude, codex, gemini, cursor, kimi, axga or pi")?;
+    let host = match installer::Host::for_tool(tool) {
+        Some(host) => Some(host),
+        None if hook => bail!(
+            "--hook works with claude, codex and gemini; for {tool}, run `memctrl context --write AGENTS.md`"
+        ),
+        None => None,
+    }
+    .filter(|_| hook);
     let root = if project_scope {
         project.dir.clone()
     } else {
@@ -815,20 +836,14 @@ fn install(
         output["note"] =
             json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
     }
-    if hook {
-        let executable = std::env::current_exe()?;
-        let (settings, changed) = installer::install_hook(
-            &root,
-            installer::settings_file(project_scope),
-            &installer::hook_command(&executable),
-        )?;
-        let (_, recall_changed) = installer::install_recall_hook(
-            &root,
-            installer::settings_file(project_scope),
-            &installer::recall_hook_command(&executable),
-        )?;
+    if let Some(host) = host {
+        let (settings, changed) =
+            host.install_hooks(&root, project_scope, &std::env::current_exe()?)?;
         output["hook"] = json!(settings);
-        output["hook_changed"] = json!(changed || recall_changed);
+        output["hook_changed"] = json!(changed);
+        if let Some(note) = host.note() {
+            output["hook_note"] = json!(note);
+        }
     }
     Ok(output)
 }
@@ -1001,7 +1016,7 @@ fn recall_command(
         }
         layers.to_vec()
     };
-    let input = if format == ContextFormat::Hook {
+    let input = if format.hook() {
         hook_input(std::time::Duration::from_secs(2))
     } else {
         Value::Null
@@ -1021,7 +1036,7 @@ fn recall_command(
     // the prompt the user typed, while `recall "<text>"` by hand only looks things up.
     let mut kept = Vec::new();
     let captured = memctrl::capture::request(&text)
-        .filter(|_| format == ContextFormat::Hook && rules.remember)
+        .filter(|_| format.hook() && rules.remember)
         .map(
             |note| match memctrl::capture::save(store, &note, &rules.guard) {
                 Ok(saved) => {
@@ -1174,7 +1189,7 @@ async fn execute(
                 &|m| notes.get(&m.id).cloned(),
                 &rules.guard,
             )?;
-            if *format == ContextFormat::Hook && write.is_none() {
+            if format.hook() && write.is_none() {
                 record_brief(&brief, db);
             }
             if let Some(path) = write {
@@ -2018,6 +2033,7 @@ async fn run(cli: Cli) -> Result<()> {
                     .lock()
                     .write_all(b"{\"entries\":[],\"store\":\"missing\"}\n")?;
             }
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
     }
@@ -2035,6 +2051,7 @@ async fn run(cli: Cli) -> Result<()> {
                     .lock()
                     .write_all((empty.to_string() + "\n").as_bytes())?;
             }
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
     }
@@ -2073,12 +2090,16 @@ async fn run(cli: Cli) -> Result<()> {
             shown(&db),
             user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
         );
-        if matches!(
-            &cli.command,
-            Command::Context { write: None, .. } | Command::Recall { .. }
-        ) {
+        if let Command::Context {
+            write: None,
+            format,
+            ..
+        }
+        | Command::Recall { format, .. } = &cli.command
+        {
             // The session-start and prompt hooks stay silent rather than failing every session.
             eprintln!("{}", json!({"warning": sanitize_text(&message)}));
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
         bail!(message);
@@ -2121,24 +2142,27 @@ async fn run(cli: Cli) -> Result<()> {
         store.best_effort(|s| telemetry::record(s, operation, elapsed, json!({"interface":"cli"})));
     }
     let encoded = match (&cli.command, &result) {
-        (Command::Context { format, .. }, Value::String(markdown)) => match format {
-            ContextFormat::Hook => {
-                json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
-                    .to_string()
-                    + "\n"
-            }
-            _ => markdown.clone(),
-        },
+        (Command::Context { format, .. }, Value::String(markdown)) if format.hook() => {
+            json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
+                .to_string()
+                + "\n"
+        }
         (Command::Recall { format, .. }, Value::String(markdown)) => match format {
             // Nothing matched: the prompt goes on unchanged.
-            _ if markdown.is_empty() => String::new(),
+            _ if markdown.is_empty() => String::from_utf8_lossy(format.nothing()).into_owned(),
             ContextFormat::Hook => {
                 json!({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":markdown}})
                     .to_string()
                     + "\n"
             }
+            ContextFormat::Gemini => {
+                json!({"hookSpecificOutput":{"hookEventName":"BeforeAgent","additionalContext":markdown}})
+                    .to_string()
+                    + "\n"
+            }
             _ => markdown.clone(),
         },
+        (Command::Context { .. }, Value::String(markdown)) => markdown.clone(),
         _ => serde_json::to_string(&sanitize_value(&result))? + "\n",
     };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
