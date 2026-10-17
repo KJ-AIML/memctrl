@@ -36,8 +36,8 @@ const META_LINE: &str = "  <!-- memctrl {";
 const META_PREFIX: &str = "<!-- memctrl {";
 const META_SUFFIX: &str = "} -->";
 const GITIGNORE: &str =
-    "# memctrl: the database stays local; memory.md is meant to be committed.\n\
-*.db\n*.db-wal\n*.db-shm\n*.db-journal\n";
+    "# memctrl: the database and session records stay local; memory.md is meant to be committed.\n\
+*.db\n*.db-wal\n*.db-shm\n*.db-journal\nsessions/\n";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct CiteMeta {

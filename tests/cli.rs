@@ -247,11 +247,15 @@ impl Drop for StdioServer {
 }
 impl StdioServer {
     fn start(dir: &TempDir) -> Self {
+        Self::start_in(dir.path(), &["--db", "mcp.db", "serve"])
+    }
+    fn start_in(cwd: &std::path::Path, args: &[&str]) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_memctrl"))
-            .current_dir(dir.path())
+            .current_dir(cwd)
             .env_remove("MEMCTRL_DB_PATH")
+            .env_remove("MEMCTRL_PROJECT_ROOT")
             .env("MEMCTRL_SEMANTIC", "off")
-            .args(["--db", "mcp.db", "serve"])
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -374,6 +378,48 @@ fn sdk_stdio_initialize_tools_validation_and_rule_reload() {
         true
     );
     assert_eq!(store.list_memories(None, true).unwrap().len(), 1);
+}
+
+/// A client starts the server in a folder of its choosing; with absolute --db and --rc, citations
+/// still resolve in the project.
+#[test]
+fn mcp_citations_resolve_in_the_rc_project_whatever_the_working_folder() {
+    let project = TempDir::new().unwrap();
+    let elsewhere = TempDir::new().unwrap();
+    std::fs::create_dir_all(project.path().join(".git")).unwrap();
+    std::fs::create_dir_all(project.path().join("src")).unwrap();
+    std::fs::write(
+        project.path().join("src/pool.rs"),
+        "pub const MAX: u32 = 20;\n",
+    )
+    .unwrap();
+    assert!(invoke(&project, &["init"]).status.success());
+    let db = project.path().join(".memctrl/memories.db");
+    let rc = project.path().join(".memoryrc");
+    let mut server = StdioServer::start_in(
+        elsewhere.path(),
+        &[
+            "--db",
+            db.to_str().unwrap(),
+            "--rc",
+            rc.to_str().unwrap(),
+            "serve",
+        ],
+    );
+    server.request(1,"initialize",json!({"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"integration-test","version":"1"}}));
+    server.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
+    let added = tool_json(&server.call(
+        2,
+        "memctrl_add",
+        json!({"content":"The pool allows 20 connections","layer":"project","cite":["src/pool.rs:1"]}),
+    ));
+    assert_eq!(added["citations"], 1, "{added}");
+    let stale = tool_json(&server.call(3, "memctrl_stale", json!({})));
+    // Output redaction can shorten a long temporary path, so compare the folder name.
+    let name = project.path().file_name().unwrap().to_str().unwrap();
+    assert!(stale["root"].as_str().unwrap().ends_with(name), "{stale}");
+    assert_eq!(stale["checked"], 1, "{stale}");
+    assert!(stale["stale"].as_array().unwrap().is_empty(), "{stale}");
 }
 
 #[test]

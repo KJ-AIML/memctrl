@@ -664,8 +664,9 @@ fn run_import(
         if !accepting.is_empty() {
             ensure!(
                 at_terminal(),
-                "import --accept would accept {} entries, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review",
-                accepting.len()
+                "import --accept would accept {} {}, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review",
+                accepting.len(),
+                if accepting.len() == 1 { "entry" } else { "entries" }
             );
             ensure!(
                 review::confirm_import(
@@ -1516,8 +1517,12 @@ async fn execute(
                 let stored = semantic::stored(store)?;
                 match (&user.semantic, &rules.semantic) {
                     (None, _) => {
+                        let reason = match &user.semantic_error {
+                            Some(error) => format!("semantic search is off: {error}"),
+                            None => "no [semantic] section in your user config".into(),
+                        };
                         json!({"enabled": false, "config": config, "stored_vectors": stored,
-                               "reason": "no [semantic] section in your user config"})
+                               "reason": reason})
                     }
                     (Some(settings), None) => {
                         let reason = rules
@@ -1672,12 +1677,14 @@ async fn run(cli: Cli) -> Result<()> {
     } = &cli.command
     {
         let settings = user.semantic.as_ref().with_context(|| {
-            format!(
-                "add [semantic] with a model to {} first",
-                user.path
-                    .as_ref()
-                    .map_or("your user config".into(), |p| p.display().to_string())
-            )
+            user.semantic_error.clone().unwrap_or_else(|| {
+                format!(
+                    "add [semantic] with a model to {} first",
+                    user.path
+                        .as_ref()
+                        .map_or("your user config".into(), |p| p.display().to_string())
+                )
+            })
         })?;
         ensure!(*top_k > 0, "top-k must be at least 1");
         let text = match file {
@@ -1831,7 +1838,13 @@ async fn run(cli: Cli) -> Result<()> {
     }
     let mut store = MemoryStore::open(&db)?;
     if matches!(&cli.command, Command::Serve) {
-        return mcp::serve(store, project.rc.clone(), Some(project.dir.clone())).await;
+        // A client starts the server in a folder of its choosing, so with --rc the project is
+        // where the rules file is.
+        let dir = match &cli.rc {
+            Some(_) => project.rc.parent().map(Path::to_path_buf),
+            None => Some(project.dir.clone()),
+        };
+        return mcp::serve(store, project.rc.clone(), dir).await;
     }
     let started = Instant::now();
     // Boxed: the future of a function this large would otherwise sit on the main thread's stack.

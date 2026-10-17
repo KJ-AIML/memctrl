@@ -236,8 +236,38 @@ fn only_your_config_turns_it_on_and_an_unreachable_model_falls_back_to_lexical()
     )
     .unwrap();
     let refused = run(&project, &home, &["query", "releases"]);
-    assert!(!refused.status.success());
+    assert!(
+        refused.status.success(),
+        "search by meaning turns off; the command still runs"
+    );
     assert!(String::from_utf8_lossy(&refused.stderr).contains("allow_remote"));
+    let result: Value = serde_json::from_slice(&refused.stdout).unwrap();
+    assert!(!result["trace"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t.as_str().unwrap().starts_with("semantic")));
+    let status = ok(&project, &home, &["semantic", "status"]);
+    assert_eq!(status["enabled"], false);
+    assert!(status["reason"].as_str().unwrap().contains("allow_remote"));
+
+    // A typo turns it off with a warning too, so the hooks keep working.
+    std::fs::write(
+        home.join("memctrl/config.toml"),
+        format!("[semantic]\nmodle = \"toy\"\nbase_url = \"http://127.0.0.1:{port}/v1\"\n"),
+    )
+    .unwrap();
+    for args in [
+        &["context", "--format", "hook"][..],
+        &["recall", "releases"][..],
+    ] {
+        let out = run(&project, &home, args);
+        assert!(out.status.success(), "{args:?}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains("unknown setting semantic.modle"));
+    }
+    let tune = run(&project, &home, &["semantic", "tune"]);
+    assert!(!tune.status.success());
+    assert!(String::from_utf8_lossy(&tune.stderr).contains("unknown setting semantic.modle"));
 
     // A repository's .memoryrc can't turn it on.
     std::fs::remove_file(home.join("memctrl/config.toml")).unwrap();

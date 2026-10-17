@@ -230,8 +230,8 @@ pub fn project_root(configured: Option<&Path>) -> Result<PathBuf> {
     project_root_in(configured, None)
 }
 
-/// The project root for these rules: as `project_root`, but outside git the project folder
-/// (where `.memoryrc` was found) comes before the working directory.
+/// The project root for these rules: as `project_root`, but the search for `.git` starts at the
+/// project folder (where `.memoryrc` is), so an MCP server started elsewhere still finds it.
 pub fn root_for(rules: &crate::rules::Rules) -> Result<PathBuf> {
     project_root_in(
         rules.citations_root.as_deref(),
@@ -250,13 +250,16 @@ fn project_root_in(configured: Option<&Path>, project_dir: Option<&Path>) -> Res
             .canonicalize()
             .with_context(|| format!("citations root {} does not exist", root.display()));
     }
-    let cwd = std::env::current_dir()?;
-    for dir in cwd.ancestors() {
+    let start = match project_dir {
+        Some(dir) => dir.to_path_buf(),
+        None => std::env::current_dir()?,
+    };
+    for dir in start.ancestors() {
         if dir.join(".git").exists() {
             return Ok(dir.canonicalize()?);
         }
     }
-    Ok(project_dir.unwrap_or(&cwd).canonicalize()?)
+    Ok(start.canonicalize()?)
 }
 
 fn normalize(text: &str) -> Vec<String> {
