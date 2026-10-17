@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: "Every memctrl command and option, generated from memctrl 2.6.2."
+description: "Every memctrl command and option, generated from memctrl 2.6.3."
 sidebar:
   label: Overview
   order: 0
@@ -110,4 +110,4 @@ Every command takes these two options. Without them, memctrl walks up from the c
 | `-h, --help` | Print help | |
 | `-V, --version` | Print version | |
 
-<sub>Generated from `memctrl 2.6.2` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.6.3` by `website/scripts/gen-cli.mjs`.</sub>

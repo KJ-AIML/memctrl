@@ -198,9 +198,9 @@ Everything else in the file (layers, triggers that don't move personal notes, re
 
 ### The template's guard settings
 
-`memctrl init` writes the built-in `[guard]` values (`mode = "flag"`, `trusted_sources = ["manual", "user", "cli"]`) into every `.memoryrc`. Since 2.6.1, when your user config is stricter, for example `trusted_sources = ["user"]`, a file that holds exactly these built-in values yields to your config without a warning. A file that asks for more than the built-ins, such as `mode = "off"` or `trusted_sources` with `"mcp"`, still warns and is still ignored.
+`memctrl init` writes the built-in `[guard]` values (`mode = "flag"`, `trusted_sources = ["manual", "user", "cli"]`) into every `.memoryrc`. A file that holds exactly these values hasn't asked for anything, so where your user config sets `mode` or `trusted_sources`, yours applies, looser or stricter, without a warning. A file that asks for more than your config allows, such as `mode = "off"` or `trusted_sources` with `"mcp"`, still warns and is still ignored.
 
-The template's lines still count as the repository asking for those values. If your user config is looser than the built-ins (`mode = "off"`, or an extra trusted source), a `.memoryrc` that keeps the template lines holds that repository at the built-in values. To use your looser setting there, delete those lines from its `.memoryrc`, or trust the repository. [User config](/memctrl/reference/user-config/) has the full rules.
+Since 2.6.3 this covers a looser config too: with `mode = "off"` in your user config, a repository that keeps the template lines runs with the guard off. A repository you trust applies its file in full, template lines included. A repository can still raise the guard for everyone with `mode = "strict"`. [User config](/memctrl/reference/user-config/) has the full rules.
 
 ### Trusting a repository
 

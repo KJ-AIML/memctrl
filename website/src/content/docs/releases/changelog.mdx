@@ -5,6 +5,21 @@ description: "What changed in each release, newest first."
 
 What each memctrl 2.x release added and fixed, newest first, condensed from the release notes. Before you move between versions, read [Upgrading](/memctrl/releases/upgrading/): it lists what you need to do for each step.
 
+## 2.6.3
+
+**Fixes found while writing these docs.** Two could send data where it shouldn't go; the rest made memctrl harder to live with.
+
+- **A `compatible` server gets only the key you name.** It no longer falls back to `OPENAI_API_KEY`, which it sent to whatever `--llm-base-url` you gave.
+- **Thai national ids are redacted in every common form:** dashed, spaced as on the card, and 13 digits in a row when the check digit is right.
+- **Session records stay out of git.** `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`, which also covers projects set up by an older memctrl.
+- **Your user config applies over the init template, looser or stricter.** In a repository you haven't trusted, a `.memoryrc` with exactly the built-in guard values no longer holds a looser user config, such as `mode = "off"`, at those values.
+- **A mistake in `[semantic]` turns search by meaning off** with a warning, instead of making every command and hook fail.
+- **`install --hook` keeps flags you added**, such as `--budget 1500`.
+- **The MCP server resolves citations from `--rc`**, not from the folder the client started it in.
+- **Clearer warnings** about settings a repository can't loosen, and a `SECURITY.md` for reporting vulnerabilities.
+
+[Release on GitHub](https://github.com/KJ-AIML/memctrl/releases/tag/v2.6.3) · [Upgrade notes](/memctrl/releases/upgrading/#262--263)
+
 ## 2.6.2
 
 **Listing a large store without reading all of it.** A speed fix found by the [2.6.1 benchmark](/memctrl/benchmarks/release-2-6/#speed).

@@ -98,14 +98,14 @@ ignored [guard] mode = Off from /path/to/project/.memoryrc: a repository's .memo
 
 **Cause:** a `.memoryrc` arrives with every clone, so memctrl ignores any setting in it that loosens defenses: a lower guard mode, more trusted sources, a citation root or database path outside the repository, or a trigger that moves `user` notes into a shared layer. It prints the warning on every command and lists it in `doctor` under `config_warnings`.
 
-**Fix:** if the setting is yours, move it to your user config (`~/.config/memctrl/config.toml`, or `%APPDATA%\memctrl\config.toml` on Windows). If you trust the repository, list it there:
+**Fix:** the warning says what would allow the setting. A guard mode or trusted sources that are yours belong in your user config (`~/.config/memctrl/config.toml`, or `%APPDATA%\memctrl\config.toml` on Windows). A citation root or database path outside the repository, or such a trigger, needs the repository trusted; for the database, `--db` or `MEMCTRL_DB_PATH` can also point anywhere. To trust the repository, list it in your user config:
 
 ```toml title="~/.config/memctrl/config.toml"
 [trust]
 repos = ["~/code/our-team-repo"]
 ```
 
-A `.memoryrc` that holds only the values `memctrl init` writes doesn't warn when your user config is stricter.
+A `.memoryrc` that holds only the guard values `memctrl init` writes doesn't warn: your user config's guard settings apply over them.
 
 ### Search by meaning is off
 
@@ -116,6 +116,16 @@ semantic search is off: semantic search needs a threshold for some-other-model; 
 **Cause:** memctrl ships measured thresholds only for EmbeddingGemma and multilingual-e5-small. For another model it keeps search by meaning off until you add yours.
 
 **Fix:** run `memctrl semantic tune` and add the lines it prints to `[semantic]` in your user config. See [Set up search by meaning](/memctrl/guides/set-up-search-by-meaning/).
+
+### Invalid [semantic] in your user config
+
+```text
+semantic search is off: invalid [semantic] in /home/you/.config/memctrl/config.toml: unknown setting semantic.modle
+```
+
+**Cause:** `[semantic]` in your user config has a key memctrl doesn't know, a value of the wrong type, or a server off this machine without `allow_remote = true`. Search by meaning is optional, so memctrl turns it off and every command, hooks included, keeps working with keyword search. memctrl 2.6.2 and earlier failed every command instead.
+
+**Fix:** correct the line the warning names. `memctrl semantic status` shows the same reason under `reason`. The [user config reference](/memctrl/reference/user-config/#semantic) lists every key.
 
 ### semantic_unavailable in a search's trace
 

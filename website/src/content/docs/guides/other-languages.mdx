@@ -93,16 +93,24 @@ Check facts against the code.
 
 ## Thai personal data and word breaks
 
-memctrl redacts personal data before storing a memory. Thai national ids are redacted when written in the usual dashed form, and Thai phone numbers in `+66` form:
+memctrl redacts personal data before storing a memory, including Thai national ids and Thai phone numbers in `+66` form:
 
 ```text
-$ memctrl add "ลูกค้าทดสอบใช้เลขบัตรประชาชน 1-1037-02345-67-1 ใน staging" --layer project
+$ memctrl add "ลูกค้าทดสอบใช้เลขบัตรประชาชน 1-2345-67890-12-1 ใน staging" --layer project
 {"id":"98d02dd9-4b4f-4f85-a1ac-61152b90371a","status":"stored","redacted":["NATIONAL_ID"]}
 $ memctrl add "โทรหาทีม ops ที่ +66 81 234 5678" --layer project
 {"id":"d403eb31-d22a-4242-875d-ba4559af5684","status":"stored","redacted":["PHONE_INTL"]}
 ```
 
-The stored text reads `ลูกค้าทดสอบใช้เลขบัตรประชาชน [REDACTED_NATIONAL_ID] ใน staging`. An id written as 13 digits with no dashes is not recognized and is stored as typed, so keep ids out of memories altogether.
+The stored text reads `ลูกค้าทดสอบใช้เลขบัตรประชาชน [REDACTED_NATIONAL_ID] ใน staging`. An id is recognized in three forms:
+
+| Written as | Example | Redacted |
+| --- | --- | --- |
+| Dashes | `1-2345-67890-12-1` | Always |
+| Spaces, as on the card | `1 2345 67890 12 1` | Always |
+| 13 digits in a row | `1234567890121` | When the last digit is the id's check digit, which rules out nine in ten other 13-digit numbers |
+
+Thai text may touch the id, as in `เลขบัตร1234567890121`. Digits inside a name or path, such as `run-1234567890121` or `/builds/1234567890121/`, stay as written. A mistyped id whose check digit is wrong isn't recognized, so keep ids out of memories altogether. memctrl 2.6.2 and earlier recognized only the dashed form.
 
 Zero-width spaces, which Thai text uses to mark word breaks, don't trip the write guard in Thai text. The same character inside English text makes the memory a [candidate](/memctrl/guides/review-candidates/).
 

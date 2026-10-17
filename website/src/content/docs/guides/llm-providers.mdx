@@ -29,7 +29,7 @@ Each takes the same options: `--llm-provider`, `--llm-model`, `--llm-base-url` a
 | OpenAI (the default) | `openai` | Chat Completions, strict JSON schema | `OPENAI_API_KEY` | `gpt-4o-mini` unless you set one |
 | xAI | `xai` (or `grok`) | Responses, strict JSON schema | `XAI_API_KEY` | required |
 | Anthropic | `anthropic` (or `claude`) | Messages, JSON schema output | `ANTHROPIC_API_KEY` | required |
-| Any OpenAI-compatible server: Ollama, LM Studio, vLLM, a gateway | `compatible` (or `ollama`, `lmstudio`, `local`) | Chat Completions, JSON mode | optional on this machine | required, plus `--llm-base-url` |
+| Any OpenAI-compatible server: Ollama, LM Studio, vLLM, a gateway | `compatible` (or `ollama`, `lmstudio`, `local`) | Chat Completions, JSON mode | none: name one with `--llm-api-key-env` or `MEMCTRL_LLM_API_KEY`, optional on this machine | required, plus `--llm-base-url` |
 
 <Tabs>
 <TabItem label="OpenAI">
@@ -83,13 +83,13 @@ For each setting, the first one found wins:
 
 1. **Flags:** `--llm-provider`, `--llm-model`, `--llm-base-url`, `--llm-api-key-env`.
 2. **memctrl's variables:** `MEMCTRL_LLM_PROVIDER`, `MEMCTRL_LLM_MODEL`, `MEMCTRL_LLM_BASE_URL`, `MEMCTRL_LLM_API_KEY`.
-3. **The provider's own variables:** the key variable in the table above. For `openai` and `compatible`, `OPENAI_MODEL` and `OPENAI_BASE_URL` also apply.
+3. **The provider's own variables:** the key variable in the table above. For `openai` and `compatible`, `OPENAI_MODEL` and `OPENAI_BASE_URL` also apply. `compatible` has no key variable of its own, so it never reads `OPENAI_API_KEY`.
 4. **The provider's preset:** its base URL, and for OpenAI the default model.
 
 To use one provider everywhere, set the `MEMCTRL_LLM_*` variables in your shell profile, and `--llm` alone is enough. [Environment variables](/memctrl/reference/environment-variables/) lists them all.
 
-<Aside type="caution">
-The `compatible` provider falls back to `OPENAI_API_KEY` when no other key is set, and sends it to the server you name. If that server isn't OpenAI and you have an OpenAI key in your environment, pass `--llm-api-key-env` with another variable.
+<Aside type="note" title="A compatible server gets only the key you name">
+A key goes to a `compatible` server only when you give one, with `--llm-api-key-env NAME` or `MEMCTRL_LLM_API_KEY`, so an OpenAI key in your environment never reaches another host. memctrl 2.6.2 and earlier fell back to `OPENAI_API_KEY`.
 </Aside>
 
 When something is missing, memctrl stops before sending anything:
@@ -100,7 +100,7 @@ When something is missing, memctrl stops before sending anything:
 | `LLM API key is not configured for provider anthropic; set ANTHROPIC_API_KEY or MEMCTRL_LLM_API_KEY` | Export the key, or point `--llm-api-key-env` at it |
 | `LLM base URL is required for provider compatible; pass --llm-base-url or set MEMCTRL_LLM_BASE_URL` | Give the server's address, ending in `/v1` |
 | `LLM endpoint requires HTTPS except on loopback` | Use HTTPS for a server that isn't on this machine |
-| `LLM API key is required for non-loopback endpoints` | Requests without a key go only to `localhost` or a loopback address |
+| `LLM API key is required for non-loopback endpoints; pass --llm-api-key-env NAME or set MEMCTRL_LLM_API_KEY` | Requests without a key go only to `localhost` or a loopback address. For a remote `compatible` server, name the key's variable |
 
 ## What is sent
 
