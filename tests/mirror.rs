@@ -1,5 +1,6 @@
 //! Reviewable, safe writes: the Markdown mirror round-trips losslessly, imports never overwrite
 //! local state, and suspicious writes from any path are held for review.
+mod common;
 use memctrl::guard::Policy;
 use memctrl::mirror::ImportOptions;
 use memctrl::model::{ClaimType, LifecycleState, NewMemory, VerificationState};
@@ -13,7 +14,7 @@ use std::process::{Command, Output};
 use tempfile::TempDir;
 
 fn run(dir: &TempDir, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_memctrl"))
+    common::memctrl()
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
         .env_remove("MEMCTRL_PROJECT_ROOT")
@@ -518,7 +519,7 @@ fn repo_rules_can_only_tighten() {
 
     // Through the CLI: the warning is printed and the guard still holds the write.
     std::fs::write(&rc, "[guard]\nmode = \"off\"\n").unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_memctrl"))
+    let out = common::memctrl()
         .current_dir(dir.path().join("repo"))
         .env_remove("MEMCTRL_DB_PATH")
         .env("XDG_CONFIG_HOME", dir.path().join("no-config"))
@@ -1098,7 +1099,7 @@ fn quarantined_candidates_need_a_person_to_release() {
         ],
     );
     let id = added["id"].as_str().unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_memctrl"))
+    let out = common::memctrl()
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
         .args(["accept", id])

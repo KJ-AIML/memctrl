@@ -1,8 +1,9 @@
 //! Code-anchored memories: citations are hashed when saved, checked whenever the memory is used,
 //! and re-anchored only through an audited refresh.
+mod common;
 use memctrl::{mcp, rules::Rules, store::MemoryStore};
 use serde_json::{json, Value};
-use std::process::{Command, Output};
+use std::process::Output;
 use tempfile::TempDir;
 
 fn project() -> TempDir {
@@ -18,7 +19,7 @@ fn project() -> TempDir {
 }
 
 fn run(dir: &TempDir, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_memctrl"))
+    common::memctrl()
         .current_dir(dir.path())
         .env_remove("MEMCTRL_DB_PATH")
         .env_remove("MEMCTRL_PROJECT_ROOT")
@@ -171,7 +172,7 @@ fn cite_adds_to_existing_memories_once_and_works_from_subdirectories() {
         .to_string();
     assert_eq!(ok(&dir, &["cite", &id, "src/user.rs:3"])["added"], 1);
     assert_eq!(ok(&dir, &["cite", &id, "src/user.rs:3"])["added"], 0);
-    let sub = Command::new(env!("CARGO_BIN_EXE_memctrl"))
+    let sub = common::memctrl()
         .current_dir(dir.path().join("src"))
         .env_remove("MEMCTRL_PROJECT_ROOT")
         .args(["--db", "../.memctrl/memories.db", "cite", &id, "user.rs"])
