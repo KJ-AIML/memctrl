@@ -1,0 +1,45 @@
+---
+// The memctrl mark (redrawn from docs/memctrl_logo.png) and wordmark, in the theme's colors.
+import Mark from './Mark.astro';
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title" aria-label="memctrl docs home">
+  <Mark class="mark" />
+  <span class="word" translate="no">mem<span class="ctrl">ctrl</span></span>
+  <span class="badge">Docs</span>
+</a>
+
+<style>
+  .site-title {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .site-title :global(.mark) {
+    width: 1.7rem;
+    height: 1.7rem;
+    flex: none;
+  }
+  .word {
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    color: var(--mc-ink);
+  }
+  .ctrl {
+    color: var(--mc-peri);
+  }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 0.3rem;
+    color: var(--mc-lavender);
+    background: var(--mc-peri-soft);
+  }
+</style>

@@ -1,0 +1,155 @@
+---
+title: "Memories"
+description: "Layers, claim types, sources, lifecycle and verification: what a memory is made of, and which memories reach an agent."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A memory is one fact your agent should know, plus the metadata memctrl uses to decide how long to keep it, how much to trust it, and whether to show it at all. Understanding these fields tells you why a memory appears in the brief, under which heading, or not at all.
+
+```bash
+memctrl add "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs" \
+  --layer project --claim-type decision
+```
+
+```json
+{"id":"90e7fedb-fa96-476b-bdfd-f2a718d3d166","status":"stored"}
+```
+
+## What a memory holds
+
+| Field | What it is | Set with |
+| --- | --- | --- |
+| Content | The text: one fact, at most 64 KiB | the argument to [`add`](/memctrl/reference/cli/add/) |
+| Layer | How long it lives and who it belongs to: `project`, `user` or `session` | `--layer` (default `session`) |
+| Claim type | What kind of statement it is: `assertion`, `observation`, `decision`, `hypothesis` or `derived_lesson` | `--claim-type` (default `assertion`) |
+| Source | Where it came from, such as `manual`, `user` or `mcp` | `--source` (default `manual`) |
+| Confidence | From 0 to 1; weighs the memory in the brief and in search | `--confidence` (default `1`) |
+| Lifecycle state | `candidate`, `accepted`, `superseded`, `rejected` or `archived` | review commands; `--lifecycle-state` (default `accepted`) |
+| Verification state | `unverified`, `supported`, `disputed` or `refuted` | review commands; `--verification-state` (default `unverified`) |
+| Expiry | When it stops being retrieved | the layer's default, or `--expires-at` (RFC 3339) |
+| Tags | Labels; searched along with the content | `--tags` (repeatable) |
+| Citations | Lines of code the memory describes | `--cite path:START-END`, [`cite`](/memctrl/reference/cli/cite/) |
+| Id | A UUID; the brief shows its first 8 characters | assigned by memctrl |
+
+`memctrl show <id>` prints every field, with the memory's citations, relations and evidence.
+
+## Layers
+
+The layer decides how long a memory lives and where it goes. The default retention comes from `[forget] after_days` in `.memoryrc`.
+
+| Layer | Default expiry | Use it for | In the brief and recall by default |
+| --- | --- | --- | --- |
+| `project` | None | Architecture decisions, the tech stack, conventions, why you chose X | Yes |
+| `user` | 90 days | Your preferences, working style and personal rules | Yes |
+| `session` | 7 days | The current task and work in progress | No |
+
+`session` is the default for `memctrl add`, so pass `--layer project` for anything you want to keep. Search (`memctrl query`) looks in every layer unless you pass `--layer`. `memctrl export` writes only the project layer unless you name others, so your user layer stays on your machine.
+
+## Claim types
+
+The claim type tells the agent how much weight a memory carries. It decides the memory's section in the session brief and its label in recall.
+
+| Claim type | Use it for | Brief section | Recall label |
+| --- | --- | --- | --- |
+| `decision` | Something the team agreed: "We chose X because Y" | Decisions | `[decision]` |
+| `assertion` | A fact or convention (the default) | Facts and conventions | `[fact]` |
+| `observation` | Something seen happen, such as a measurement | Facts and conventions | `[fact]` |
+| `derived_lesson` | What a failure taught: "Dead end: …" | Lessons | `[lesson]` |
+| `hypothesis` | A guess not yet confirmed | Open hypotheses | `[unconfirmed]` |
+
+Two exceptions apply in the brief and in recall:
+
+- **From the user.** An `assertion` or `observation` in the user layer, from a source the guard trusts, goes under "From the user" and is labelled `[from the user]`. The brief asks the agent to follow these. A user-layer decision stays under Decisions.
+- **Check before trusting.** A disputed memory, one whose cited code changed, and one a person released after the guard held it go under "Check before trusting", whatever their claim type.
+
+Decisions rank highest in the brief and hypotheses lowest. See [Session brief](/memctrl/concepts/session-brief/) for the weights.
+
+## Source
+
+The source records where a memory came from. It matters in two places: in `strict` guard mode, a write from a source outside `trusted_sources` is held for review, and only user-layer memories from a trusted source count as "From the user".
+
+| Source | Comes from |
+| --- | --- |
+| `manual` | `memctrl add` without `--source`, whoever runs it |
+| `mcp` | `memctrl_add` over MCP, unless the caller names another source |
+| `import` | Plain-text entries an import brings in |
+| `user`, `cli` or your own | `--source` on `add` |
+
+The default `trusted_sources` are `manual`, `user` and `cli`. memctrl doesn't record who typed a memory, so an agent running `memctrl add` in its shell gets `manual`, as you do. See [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
+
+## Confidence
+
+Confidence runs from 0 to 1 and defaults to 1. The brief multiplies a memory's priority by it, and search multiplies its score by it. It changes only when you ask: [`memctrl decay`](/memctrl/reference/cli/decay/) lowers it over time, and [`memctrl reinforce`](/memctrl/reference/cli/reinforce/) raises it.
+
+## Lifecycle
+
+The lifecycle state says whether a memory is active knowledge.
+
+| State | How a memory gets there | Retrieved |
+| --- | --- | --- |
+| `accepted` | The default for `add`, or `memctrl accept` on a candidate | Yes |
+| `candidate` | The write guard held it, an import holds a teammate's new entry, a trigger or reflection proposed it, or you passed `--lifecycle-state candidate` | No |
+| `superseded` | `memctrl supersede <old> <new>` replaced it with a newer memory | No |
+| `rejected` | `memctrl reject`, or `memctrl refute` | No |
+| `archived` | A teammate forgot it and `memctrl sync` applied that; it can be undone | No |
+
+Candidates wait in [`memctrl candidates`](/memctrl/reference/cli/candidates/). Memories the guard or an import held carry `guard:` or `import:` tags, and only a person at a terminal can release those ([Review candidates](/memctrl/guides/review-candidates/)).
+
+## Verification
+
+The verification state says how far a memory has been confirmed.
+
+| State | Meaning | Effect |
+| --- | --- | --- |
+| `unverified` | Nobody has confirmed it (the default) | Shown normally |
+| `supported` | Confirmed, set with `--verification-state supported` | Ranks higher; the brief marks it `verified` |
+| `disputed` | Someone doubts it (`memctrl dispute`) | Shown under "Check before trusting", marked `disputed`; `memctrl accept` returns it to `unverified` |
+| `refuted` | Proven wrong (`memctrl refute --reason "…"`) | Never retrieved, and final: no command changes it back |
+
+To revise a refuted claim, add the corrected fact as a new memory. Adding text that was refuted, rejected or superseded is refused with a hint. Imports bring claims in as `unverified` unless you pass `--trust-verification`. See [Correct and retire memories](/memctrl/guides/correct-and-retire/).
+
+## Expiry and validity
+
+A memory with an expiry stops being retrieved after that time. Expiry filters a memory out; it doesn't delete it, and `memctrl list --include-history` still shows it. The store can also hold a validity window (`valid_from`, `valid_until`) that travels with exports; outside it, a memory isn't retrieved either. A timestamp memctrl can't parse counts as outside the window.
+
+## Which memories reach an agent
+
+The brief, recall and search use only **eligible** memories. A memory is eligible when all of these hold:
+
+- its lifecycle state is `accepted`;
+- its verification state is not `refuted`;
+- it hasn't expired;
+- the current time is inside its validity window, if it has one.
+
+The brief and recall then apply two more checks. They read the `project` and `user` layers by default, so session notes stay out. And they re-run the write guard on every memory: an accepted memory that the guard flags now, and that no person released, is left out until you review it ([The write guard and trust](/memctrl/concepts/guard-and-trust/)).
+
+<Aside type="note">
+Disputed memories are still eligible. They reach the agent under "Check before trusting", so the warning travels with the claim.
+</Aside>
+
+## Tags
+
+Tags are free-form labels, and search matches them as well as the content, at half the weight. Two prefixes are reserved: memctrl sets `guard:` tags when the guard holds a memory and `import:` tags when an import holds an entry, and you can't set them yourself, so nobody can mark a memory as reviewed by tagging it.
+
+## Ids
+
+Every memory has a UUID. Commands accept any unique prefix of at least 4 hex characters, such as the 8 characters the brief shows:
+
+```bash
+memctrl show 90e7fedb
+```
+
+An ambiguous prefix is refused with the ids it matches.
+
+## Size, duplicates and secrets
+
+- **64 KiB at most.** Longer text is refused with a hint to split it into several memories or save it in a file and cite that file. Memories are short facts; the code they describe belongs in a citation.
+- **No duplicates.** Adding text a layer already holds returns the existing memory with `"status":"exists"`.
+- **Secrets are redacted before storage.** Credentials and personal data in the text are replaced, keeping the key name (`DB_PASSWORD=[REDACTED_PASSWORD]`), and `add` lists what it removed under `redacted`. This covers prefixed keys such as `DB_PASSWORD=` and `JWT_SECRET=`, GitHub, GitLab, Slack, Stripe, npm, Google and AWS tokens, JWTs, private keys, `Authorization` headers, URL passwords, card numbers, phone numbers and Thai national ids.
+
+```json
+{"id":"e8884ed3-93e1-47f3-a5f9-37065a5f160d","status":"stored","redacted":["PASSWORD"]}
+```
+
+For what makes a memory worth saving, see [Write memories that help](/memctrl/guides/write-good-memories/).

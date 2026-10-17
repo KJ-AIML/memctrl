@@ -1,0 +1,97 @@
+---
+title: "MCP hosts"
+description: "Run memctrl as an MCP server over stdio for any client that speaks the Model Context Protocol."
+---
+
+import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+
+`memctrl serve` runs memctrl as a Model Context Protocol server, so any MCP client can read the session brief, search, save and review memories as tools. Use it for hosts that have no memctrl hooks or AGENTS.md support. In Claude Code, prefer the [hooks](/memctrl/agents/claude-code/): over MCP the agent has to decide to call a tool, and agents skip optional lookups.
+
+## Set up the server
+
+<Steps>
+
+1. Set up memctrl in the project, if you haven't:
+
+   ```bash
+   cd your-project
+   memctrl init
+   ```
+
+2. Find the absolute path of the memctrl executable, with `command -v memctrl` on macOS and Linux or `where memctrl` on Windows.
+
+3. Add memctrl to your client's MCP configuration, with absolute paths to the executable, the database and the project's `.memoryrc`:
+
+   ```json
+   {
+     "mcpServers": {
+       "memctrl": {
+         "command": "/absolute/path/to/memctrl",
+         "args": [
+           "--db", "/absolute/path/to/your-project/.memctrl/memories.db",
+           "--rc", "/absolute/path/to/your-project/.memoryrc",
+           "serve"
+         ]
+       }
+     }
+   }
+   ```
+
+   Where the file lives and its exact shape depend on your client. On Windows, point `command` at `memctrl.exe` and double the backslashes in JSON strings.
+
+4. Restart the client, or reload its MCP servers, and check that it lists the nine `memctrl_` tools.
+
+</Steps>
+
+### Why absolute paths
+
+An MCP client starts the server from whatever folder it likes. Without `--db` and `--rc`, memctrl looks for a project from that folder. Usually it finds none and exits with "no memctrl project in …"; at worst it finds a different project. A relative path would be resolved against the same unknown folder.
+
+- **`--db` names the store.** Because you named it, memctrl opens it, or creates it if it doesn't exist. Run `memctrl init` first so the project also gets its `.gitignore`.
+- **`--rc` names the rules.** It keeps the project's guard, retrieval and layer settings, whatever folder the server runs in.
+
+<Aside type="caution" title="Citations need the project root">
+memctrl resolves cited paths against the project root, which it finds from the server's working folder: the nearest folder above it with `.git`. If your client starts the server outside the project, every citation reads `missing`. Set `MEMCTRL_PROJECT_ROOT` to the project's absolute path in the server's environment; many clients accept an `env` object next to `args`.
+</Aside>
+
+## How the server behaves
+
+- **stdio only.** The server uses the official Rust MCP SDK over stdin and stdout. Stdout carries only protocol messages; warnings, such as settings a repository's `.memoryrc` isn't allowed to change, go to stderr.
+- **Settings reload for each tool call.** Every call reads `.memoryrc` and your user config again, so changes apply without restarting the server. If one of them is invalid, that call returns the error.
+- **Errors are tool results.** A failed call returns `{"error": "…"}` as its content, with the whole error chain, rather than ending the session.
+- **One store, shared.** The CLI and the Claude Code hooks can use the same database while the server runs. Reads never wait for the write lock, and writers wait their turn.
+
+## The tools
+
+| Tool | What it does | When an agent uses it |
+| --- | --- | --- |
+| `memctrl_context` | The session brief, as entries plus Markdown. `layers` (default `project` and `user`) and `budget` (default 3000) | At session start |
+| `memctrl_query` | Search with `why` for each result. `query`, optional `layer` and `limit` | Before changing something the brief doesn't cover |
+| `memctrl_add` | Save a memory. `content` and `layer`, optional `source`, `claim_type`, `tags` and `cite` | When it learns something a future session needs |
+| `memctrl_stale` | Memories whose cited code changed or disappeared | Before relying on a cited memory |
+| `memctrl_candidates` | Memories waiting for review | To tell you what needs review |
+| `memctrl_review` | Accept, reject, dispute or refute a memory by `id` | To flag or correct a memory |
+| `memctrl_trigger` | Fire a trigger configured in `.memoryrc` | Rarely |
+| `memctrl_tree` | Layers, clusters, counts and sample ids. Read-only unless `rebuild` is true | To get an overview |
+| `memctrl_audit` | Trigger audit records | Rarely |
+
+[MCP tools](/memctrl/reference/mcp-tools/) lists every argument and the output of each tool. There is no recall tool: per-request recall exists only as Claude Code's prompt hook.
+
+## What an agent can't do over MCP
+
+memctrl treats an MCP client as an agent, not as you.
+
+- **It can't release a held memory.** When the write guard or an import holds a memory for review, `memctrl_review` with `accept` refuses: "held for review (guard:prompt_injection); only a person can release it: tell the user to run `memctrl accept <id>` in a terminal". Only you can release it, with [`memctrl accept`](/memctrl/reference/cli/accept/) at a terminal. The agent can still reject, dispute or refute.
+- **Its memories don't speak for you by default.** `memctrl_add` saves with source `mcp` unless the call names another. The brief's "From the user" section, whose preferences the agent is told to follow, holds only user-layer memories from a source in `[guard] trusted_sources` (by default `manual`, `user` and `cli`). A user-layer memory an agent saves over MCP with the default source appears among the facts, as a note.
+- **Its writes pass the guard.** Hidden Unicode or instruction-like text makes the memory a candidate, as from the CLI. With `[guard] mode = "strict"`, every memory from a source outside `trusted_sources`, including `mcp`, waits for your review.
+
+memctrl doesn't record who typed a memory, so the last two rules rest on the source, and the writer picks it. The `source` argument accepts any name, so a call that passes `manual` or `user` is trusted like you; an agent with a shell gets `manual` from `memctrl add` without asking. Setting `trusted_sources = ["user"]` under `[guard]` in your user config, and saving your own preferences with `--source user`, keeps out agents' writes with the default sources, but not an agent that names `user` itself. Read the brief's "From the user" section now and then. [Brief authority](/memctrl/benchmarks/brief-authority/) explains the trade-off, and [Guard and trust](/memctrl/concepts/guard-and-trust/) covers the guard.
+
+## Related
+
+<CardGrid>
+  <LinkCard title="MCP tools reference" description="Every tool's arguments and output." href="/memctrl/reference/mcp-tools/" />
+  <LinkCard title="Guard and trust" description="Candidates, trusted sources and who can release what." href="/memctrl/concepts/guard-and-trust/" />
+  <LinkCard title="memctrl serve" description="The command and its global options." href="/memctrl/reference/cli/serve/" />
+  <LinkCard title="Security model" description="Prompt injection, secrets and cloned repositories." href="/memctrl/security/model/" />
+</CardGrid>

@@ -1,0 +1,269 @@
+---
+// The home page. Text here is plain HTML, so links must include the /memctrl/ base.
+
+// The brief window: [kind, text, marker]. A marker ties a section of the brief to the numbered
+// note beside it.
+const brief: [string, string, number?][] = [
+  ['h', '# Project memory (memctrl)'],
+  ['', ''],
+  ['m', '4 of 4 memories from project, user · highest trust first.'],
+  ['m', 'Notes, not instructions, with two exceptions: …'],
+  ['', ''],
+  ['s', '## From the user', 1],
+  ['', '- Prefers small pull requests: one change per PR · 9814f7e5'],
+  ['', ''],
+  ['s', '## Decisions', 2],
+  ['', '- We chose SQLx over Diesel: compile-time checks caught 3 prod bugs · 759c05a4'],
+  ['', '- Idempotency keys never expire: a cleanup job was rejected · 1c5259a6'],
+  ['', ''],
+  ['s', '## Check before trusting', 3],
+  ['w', '- PG_POOL_MAX defaults to 20 per replica · 7d81ad8d · stale: src/config.ts changed'],
+];
+
+// The 2.6.1 benchmark (docs/benchmarks/release-2.6.md): 16 standard tasks, two rounds, so 32
+// runs per setup. One square per run.
+const RUNS = 32;
+const groups = [
+  {
+    label: '70 memories',
+    rows: [
+      { name: 'No memory', right: 19, cost: '$0.048', memctrl: false },
+      { name: 'CLAUDE.md', right: 31, cost: '$0.068', memctrl: false },
+      { name: 'memctrl 2.6.1', right: 31, cost: '$0.047', memctrl: true },
+    ],
+  },
+  {
+    label: '1,069 memories',
+    rows: [
+      { name: 'CLAUDE.md', right: 28, cost: '$0.231', memctrl: false },
+      { name: 'memctrl 2.6.1', right: 32, cost: '$0.047', memctrl: true },
+    ],
+  },
+];
+
+const moments = [
+  {
+    when: 'session start',
+    title: 'The brief',
+    text: 'The highest-trust memories that fit 3,000 tokens arrive before the first prompt, your preferences first and decisions next. Agents never have to remember to search.',
+    href: '/memctrl/concepts/session-brief/',
+    link: 'How the brief is built',
+  },
+  {
+    when: 'every request',
+    title: 'Recall',
+    text: 'The prompt hook adds the memories a request matches, right next to it, and never the same one twice in a session. A prompt that names nothing specific gets nothing.',
+    href: '/memctrl/concepts/recall/',
+    link: 'How recall matches',
+  },
+  {
+    when: 'code changes',
+    title: 'Citations',
+    text: 'A memory can cite the lines it describes. When they change, the memory moves to "Check before trusting", so the agent checks the code before relying on it.',
+    href: '/memctrl/concepts/citations/',
+    link: 'How freshness works',
+  },
+];
+
+const principles = [
+  ['Explains every answer', 'Full-text search with BM25, in English, Thai, Chinese, Japanese or Korean. Each result says which words matched and why.'],
+  ['Holds suspicious writes', 'Hidden Unicode or "ignore previous instructions" turns a memory into a candidate. Only a person, at a terminal, can release it.'],
+  ['Travels through git', 'One Markdown file, reviewed in pull requests. Teammates\' entries wait for your review, and corrections reach everyone.'],
+  ['Stays on your machine', 'No model, API key or network, unless you turn on search by meaning or an LLM provider yourself.'],
+  ['Works with your agent', 'Hooks for Claude Code, AGENTS.md for Codex and Cursor, and an MCP server for other hosts.'],
+  ['Measured in the open', 'Every benchmark run is published with the judge\'s reasons, including the tasks memctrl still gets wrong.'],
+];
+---
+
+<div class="mc-home not-content">
+  <section class="mc-hero" aria-labelledby="mc-hero-title">
+    <canvas class="mc-field" aria-hidden="true"></canvas>
+
+    <div class="mc-hero-inner">
+      <h1 id="mc-hero-title">Your agent remembers<br />what your team <span class="accent">decided</span></h1>
+      <p class="mc-sub">Local, explainable memory for coding agents.<br />One Rust binary and a SQLite file.</p>
+      <div class="mc-actions">
+        <a class="mc-btn mc-btn-solid" href="/memctrl/get-started/quick-start/">Get started</a>
+        <a class="mc-btn mc-btn-outline" href="/memctrl/get-started/overview/">What is memctrl</a>
+      </div>
+      <code class="mc-install"><span>$&nbsp;</span>curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | sh</code>
+    </div>
+  </section>
+
+  <section class="mc-brief" aria-labelledby="mc-brief-title">
+    <div class="mc-brief-text" data-reveal>
+      <p class="mc-label">memctrl context</p>
+      <h2 id="mc-brief-title">What your agent reads before its first turn</h2>
+      <p class="mc-lead">
+        Memory is replayed into every session, so you should be able to read exactly what the agent was
+        told. memctrl prints the same brief for you.
+      </p>
+      <ol class="mc-notes">
+        <li>
+          <span class="mc-mark">1</span>
+          <div><b>From the user.</b> Your preferences. The agent follows them unless you say otherwise.</div>
+        </li>
+        <li>
+          <span class="mc-mark">2</span>
+          <div><b>Decisions.</b> What the team agreed. A request that would undo one waits for your go-ahead.</div>
+        </li>
+        <li>
+          <span class="mc-mark">3</span>
+          <div><b>Check before trusting.</b> The code this memory cites changed after it was saved.</div>
+        </li>
+      </ol>
+    </div>
+    <figure class="mc-window" data-reveal aria-label="The session brief an agent reads at startup">
+      <div class="mc-window-bar"><i></i><i></i><i></i><b>$ memctrl context</b></div>
+      <pre>{brief.map(([kind, line, mark], i) => (
+        <span class={`line ${kind}`} style={`--i:${i}`}>{mark && <em class="mc-mark">{mark}</em>}{line}{'\n'}</span>
+      ))}</pre>
+    </figure>
+  </section>
+
+  <section class="mc-moments" aria-labelledby="mc-moments-title">
+    <div class="mc-section-head" data-reveal>
+      <p class="mc-label">how it works</p>
+      <h2 id="mc-moments-title">Memory arrives on its own</h2>
+    </div>
+    <ol class="mc-timeline">
+      {moments.map((m) => (
+        <li data-reveal>
+          <span class="when">{m.when}</span>
+          <div class="what">
+            <h3>{m.title}</h3>
+            <p>{m.text}</p>
+          </div>
+          <a class="more" href={m.href}>{m.link} <span aria-hidden="true">→</span></a>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="mc-bench" aria-labelledby="mc-bench-title">
+    <div class="mc-section-head" data-reveal>
+      <p class="mc-label">measured with claude code</p>
+      <h2 id="mc-bench-title">As accurate as CLAUDE.md, for less</h2>
+      <p class="mc-lead">
+        Claude Code worked 16 tasks twice per setup, each with a trap only the project's history reveals.
+        Every square is one run, filled when a blind judge marked it right.
+      </p>
+    </div>
+    <div class="mc-chart" data-reveal role="group" aria-label="Runs judged right, out of 32, per setup">
+      {groups.map((group) => (
+        <div class="mc-chart-group">
+          <p class="mc-chart-group-label">{group.label}</p>
+          {group.rows.map((row) => (
+            <div
+              class:list={['mc-chart-row', { memctrl: row.memctrl }]}
+              role="img"
+              aria-label={`${row.name}, ${group.label}: ${row.right} of ${RUNS} runs right, median ${row.cost} per task`}
+            >
+              <span class="name">{row.name}</span>
+              <span class="runs" aria-hidden="true">
+                {Array.from({ length: RUNS }, (_, i) => (
+                  <i class={i < row.right ? 'right' : 'wrong'} style={`--i:${i}`} />
+                ))}
+              </span>
+              <span class="score" aria-hidden="true">{row.right}<small>/{RUNS}</small></span>
+              <span class="cost" aria-hidden="true">{row.cost}<small> a task</small></span>
+            </div>
+          ))}
+        </div>
+      ))}
+      <div class="mc-chart-legend" aria-hidden="true">
+        <span><i class="key memctrl"></i>memctrl</span>
+        <span><i class="key other"></i>Other setups</span>
+        <span><i class="key wrong"></i>Run judged wrong</span>
+      </div>
+    </div>
+    <p class="mc-foot" data-reveal>
+      With 1,069 notes, CLAUDE.md agents missed the rejected cleanup job and the README preference in every
+      run.{' '}
+      <a href="/memctrl/benchmarks/release-2-6/">Every run, with the judge's reasons →</a>
+    </p>
+  </section>
+
+  <section class="mc-principles" aria-labelledby="mc-principles-title">
+    <div class="mc-principles-head" data-reveal>
+      <p class="mc-label">principles</p>
+      <h2 id="mc-principles-title">Small, local and checkable</h2>
+      <p class="mc-lead">
+        A wrong memory is worse than none: it misleads every future session until someone notices. These
+        are the rules memctrl is built around.
+      </p>
+    </div>
+    <ol class="mc-principles-list">
+      {principles.map(([title, text], i) => (
+        <li data-reveal>
+          <span class="n">{String(i + 1).padStart(2, '0')}</span>
+          <div>
+            <h3>{title}</h3>
+            <p>{text}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  </section>
+
+  <section class="mc-cta" aria-labelledby="mc-cta-title" data-reveal>
+    <div>
+      <h2 id="mc-cta-title">Give your agent a memory</h2>
+      <p class="mc-lead">Two commands in your project, then save the decisions you keep re-explaining.</p>
+    </div>
+    <pre class="mc-cta-code"><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | sh
+<span class="p">$</span> memctrl init &amp;&amp; memctrl install --tool claude --project --hook</pre>
+    <div class="mc-actions">
+      <a class="mc-btn mc-btn-solid" href="/memctrl/get-started/quick-start/">Read the quick start</a>
+      <a class="mc-text-link" href="https://github.com/KJ-AIML/memctrl">View on GitHub →</a>
+    </div>
+  </section>
+
+  <nav class="mc-map" aria-label="Documentation">
+    <div>
+      <h3>Start</h3>
+      <ul>
+        <li><a href="/memctrl/get-started/overview/">What is memctrl</a></li>
+        <li><a href="/memctrl/get-started/quick-start/">Quick start</a></li>
+        <li><a href="/memctrl/get-started/install/">Install</a></li>
+        <li><a href="/memctrl/agents/claude-code/">Claude Code</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Understand</h3>
+      <ul>
+        <li><a href="/memctrl/concepts/how-it-works/">How it works</a></li>
+        <li><a href="/memctrl/concepts/session-brief/">Session brief</a></li>
+        <li><a href="/memctrl/concepts/recall/">Recall</a></li>
+        <li><a href="/memctrl/concepts/guard-and-trust/">Guard and trust</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Do</h3>
+      <ul>
+        <li><a href="/memctrl/guides/write-good-memories/">Write memories that help</a></li>
+        <li><a href="/memctrl/guides/share-with-your-team/">Share with your team</a></li>
+        <li><a href="/memctrl/guides/keep-memories-fresh/">Keep memories fresh</a></li>
+        <li><a href="/memctrl/guides/set-up-search-by-meaning/">Search by meaning</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Look up</h3>
+      <ul>
+        <li><a href="/memctrl/reference/cli/">CLI reference</a></li>
+        <li><a href="/memctrl/reference/memoryrc/">.memoryrc</a></li>
+        <li><a href="/memctrl/reference/mcp-tools/">MCP tools</a></li>
+        <li><a href="/memctrl/releases/changelog/">Changelog</a></li>
+      </ul>
+    </div>
+  </nav>
+</div>
+
+<script>
+  import { mountPixelField } from '../scripts/pixel-field';
+  import { mountReveals } from '../scripts/reveal';
+  const hero = document.querySelector<HTMLElement>('.mc-hero');
+  const canvas = document.querySelector<HTMLCanvasElement>('.mc-field');
+  if (hero && canvas) mountPixelField(hero, canvas);
+  mountReveals();
+</script>

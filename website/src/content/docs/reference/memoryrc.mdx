@@ -1,0 +1,212 @@
+---
+title: ".memoryrc"
+description: "The project rules file: layers, retention, triggers, retrieval, guard and citations, and what a repository's copy can't loosen."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`.memoryrc` is the TOML file that marks a folder as a memctrl project and sets its rules: how long each layer keeps memories, which triggers exist, how search treats synonyms and vague words, how the write guard behaves and where citations are resolved. It's meant to be committed, so it arrives with every clone. That's why a repository's copy can only make memctrl stricter than your own settings; see [Settings a repository can only tighten](#settings-a-repository-can-only-tighten).
+
+## How memctrl finds it
+
+Every command looks for the rules file before it does anything else:
+
+- **It walks up from the working directory** to the nearest folder that contains a `.memoryrc`. That folder is the project folder: the default store (`.memctrl/memories.db`), the default export (`.memctrl/memory.md`) and `install --project` all use it, so commands work from any subfolder.
+- **The walk stops at the repository root**, the first folder that contains `.git`, and it never climbs into your home folder from below. A stray `.memoryrc` in a parent folder can't capture every project.
+- **A nested `.memoryrc`** (one package of a monorepo, say) makes that folder its own project.
+- **Without a `.memoryrc`**, a store at `.memctrl/memories.db` in the repository root or the working directory is used with the default rules. Projects set up by memctrl 2.1.0 keep working this way.
+- **`--rc <file>`** names the rules file instead. The working directory is then the project folder, and a file that doesn't exist means the default rules.
+
+memctrl reads the file on every command, and the MCP server reads it again for every tool call, so edits apply right away. Invalid TOML or an invalid value makes the command fail with the reason on stderr, such as `{"error":"invalid .memoryrc TOML: TOML parse error at line 1, …"}` or `{"error":"retention days must be between 0 and 365000"}`. `memctrl init --force` replaces a broken file with the default. Sections and keys memctrl doesn't know are ignored.
+
+## The default file
+
+[`memctrl init`](/memctrl/reference/cli/init/) writes this file. It keeps an existing `.memoryrc`, for example one a teammate committed, unless you pass `--force`.
+
+```toml title=".memoryrc"
+[layers]
+project = "architecture decisions, tech stack, ADRs, why we chose X"
+session = "current task, WIP, what was done this session"
+user = "preferences, working style, patterns, personal rules"
+[triggers]
+# consolidate moves memories (taking the target layer's retention); summarize proposes them as
+# candidates for review and leaves the originals where they are.
+on_commit = "consolidate session -> project"
+on_session_end = "summarize session -> user"
+'on_file "docs/ADR-*.md"' = "extract -> project"
+'on_file "*.md"' = "extract -> project if contains decision"
+[forget]
+never = ["passwords", "keys", "PII", "secrets", "api_key", "token", "secret", "password"]
+after_days = { session = 7, user = 90 }
+[extract]
+confidence = { explicit = 1.0, inferred = 0.7, mentioned = 0.5 }
+[retrieval]
+# Words that should find each other. Built-ins cover db/database, prod/production, k8s/kubernetes...
+builtin_aliases = true
+aliases = []   # e.g. [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
+[guard]
+# Hidden characters or instruction-like text make a new memory a candidate for review.
+# "strict" also holds everything from sources not listed below; "off" disables the guard.
+mode = "flag"
+trusted_sources = ["manual", "user", "cli"]
+```
+
+Four settings aren't in the template and take their defaults until you add them: `generic_words` and `builtin_generic` under `[retrieval]`, `[citations] root` and `[memctrl] db_path`.
+
+memctrl starts from the built-in values shown here and applies the file on top, so leaving a key out keeps its default:
+
+| Setting | How the file's value combines with the default |
+| --- | --- |
+| `[layers]`, `[triggers]`, `[extract] confidence` | Entry by entry. A key you set replaces the default with that name; defaults you don't mention stay. Deleting `on_commit` from the file doesn't remove the default `on_commit` trigger. |
+| `[forget] never`, `[forget] after_days` | The whole value is replaced. |
+| `[retrieval]` and `[guard]` keys | Key by key. |
+
+## [layers]
+
+Each key is a layer name and its value describes what the layer is for.
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `project` | string | `"architecture decisions, tech stack, ADRs, why we chose X"` | Describes the `project` layer. |
+| `session` | string | `"current task, WIP, what was done this session"` | Describes the `session` layer. |
+| `user` | string | `"preferences, working style, patterns, personal rules"` | Describes the `user` layer. |
+| any other name | string | none | Adds a description for another layer. |
+
+Layer names must be non-empty and contain no control characters or credentials. memctrl doesn't use this table to accept or refuse a layer: `memctrl add --layer` takes any valid name. How long a layer keeps memories is set by [`[forget] after_days`](#forget). The brief and recall read `project` and `user` by default, and `export` writes `project`; see [Memories](/memctrl/concepts/memories/) for what each layer is for.
+
+## [triggers]
+
+A trigger maps an event to an action. Triggers run only when something fires them: [`memctrl trigger <event> --context '<json>'`](/memctrl/reference/cli/trigger/), the MCP tool [`memctrl_trigger`](/memctrl/reference/mcp-tools/), or `memctrl agent node` with `memory_consolidate` set. memctrl doesn't watch git or your files.
+
+| Key form | Example | Fires when |
+| --- | --- | --- |
+| Event name | `on_commit = "consolidate session -> project"` | The fired event has this name (case doesn't matter). |
+| Event and glob, quoted key | `'on_file "docs/ADR-*.md"' = "extract -> project"` | The event matches and the context's `path` (or `file`) matches the glob. |
+| Flat `on_file` | `on_file = "notes/*.txt -> extract -> project"` | The same, written as `glob -> action`. |
+| Table | `[triggers.on_save]` then `"src/*.rs" = "extract -> session"` | The same, one key per glob. |
+
+In a glob, `*` matches any characters, including `/`, and `?` matches one character.
+
+| Action | What it does |
+| --- | --- |
+| `consolidate <from> -> <to>` | Moves every active memory in `<from>` to `<to>` and gives it `<to>`'s retention. The move is written to the trigger audit log. |
+| `summarize <from> -> <to>` | Proposes each active `<from>` memory as a candidate in `<to>` (source `trigger`, tag `proposed:<event>`, checked by the guard, with `<to>`'s retention) and leaves the originals where they are. Text `<to>` already holds is skipped. |
+| `extract -> <layer>` | Saves lines from the context's `text` (or `content`) that match built-in patterns for decisions, ADRs, migrations, dependencies, preferences and ideas under consideration, with source `heuristic_extract` and the confidence from [`[extract]`](#extract). Lines that contain a credential or a [`[forget] never`](#forget) word are skipped. |
+
+Add ` if contains <word>` to an action to run it only when the context's `text` (or `content`) contains that word, ignoring case. Every memory a trigger creates passes the write guard, and all actions of one firing apply together or not at all.
+
+```bash
+memctrl trigger on_file --context '{"path":"docs/ADR-007.md","text":"We decided to use Postgres for the ledger"}'
+```
+
+```json
+{"status":"fired","event":"on_file","affected":1,"memory_ids":["0fadc218-1aff-461f-9bb6-45beae9c605e"]}
+```
+
+The defaults are the four triggers in the template above; they stay defined even when the file leaves them out. A repository's file can't add a trigger that moves `user`-layer notes into another layer; see [below](#settings-a-repository-can-only-tighten).
+
+## [forget]
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `never` | array of strings | `["passwords", "keys", "PII", "secrets", "api_key", "token", "secret", "password"]` | Lines that contain any of these words, ignoring case, are skipped by the `extract` trigger action. A repository's file can only add words. |
+| `after_days` | table of layer = days | `{ session = 7, user = 90 }` | How long new memories in each layer stay eligible. A memory saved in a listed layer gets an expiry that many days ahead; a layer that isn't listed never expires. Days are integers from 0 to 365000. |
+
+<Aside type="caution" title="after_days replaces the whole table">
+Setting `after_days` replaces the default table rather than adding to it. `after_days = { session = 3 }` keeps session notes for three days and leaves `user` memories without an expiry. List every layer you want to expire.
+</Aside>
+
+The expiry is set when a memory is written: changing `after_days` doesn't touch memories you already have, and an explicit `memctrl add --expires-at` wins. An expired memory stays in the store but drops out of the brief, recall and search.
+
+## [extract]
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `confidence` | table of level = number from 0 to 1 | `{ explicit = 1.0, inferred = 0.7, mentioned = 0.5 }` | The confidence the `extract` trigger action gives a memory, by how directly the text states it. `explicit` covers decisions, ADRs, migrations and preferences; `inferred` covers import lines and "built with" phrases; `mentioned` covers ideas under consideration. A level the table doesn't list gets 0.5. |
+
+## [retrieval]
+
+These settings shape [search](/memctrl/concepts/search/) and [recall](/memctrl/concepts/recall/).
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `builtin_aliases` | boolean | `true` | Turns the built-in synonym groups on or off. |
+| `aliases` | array of arrays of strings | `[]` | Your own synonym groups. A query word in a group also matches the group's other words. At most 500 groups; each needs at least two distinct words of 1 to 64 characters, without credentials. Words are lowercased. |
+| `generic_words` | array of strings | `[]` | More words that help ranking but can't make a memory match on their own, like the built-in *project*, *information* and *summary*. At most 500 words of 1 to 64 characters, without credentials. |
+| `builtin_generic` | boolean | `true` | Turns the built-in generic words (English, Thai, Chinese, Japanese and Korean) on or off. |
+
+The built-in synonym groups are `db`/`database`, `auth`/`authentication`, `prod`/`production`, `k8s`/`kubernetes`, `repo`/`repository`, `config`/`configuration`, `env`/`environment`, `deps`/`dependencies`, `js`/`javascript`, `ts`/`typescript` and `pg`/`postgres`/`postgresql`.
+
+```toml title=".memoryrc"
+[retrieval]
+aliases = [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
+generic_words = ["codebase", "stuff"]
+```
+
+## [guard]
+
+The [write guard](/memctrl/concepts/guard-and-trust/) decides which new memories wait for a person's review.
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `mode` | `"off"`, `"flag"` or `"strict"` | `"flag"` | `flag` holds memories with hidden Unicode or instruction-like text as candidates. `strict` also holds every write from a source not in `trusted_sources`. `off` inspects nothing. |
+| `trusted_sources` | array of strings | `["manual", "user", "cli"]` | Sources that `strict` mode doesn't hold, and whose `user`-layer facts and observations the brief shows under "From the user". |
+
+These are the same keys as `[guard]` in your [user config](/memctrl/reference/user-config/). From a repository's `.memoryrc` they can only make the guard stricter.
+
+## [citations]
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `root` | string (path) | none | The folder [citation](/memctrl/concepts/citations/) paths are relative to, resolved against the folder that holds `.memoryrc`. It must exist. |
+
+memctrl resolves the project root in this order: the `MEMCTRL_PROJECT_ROOT` environment variable, then `[citations] root`, then the nearest folder above the working directory that contains `.git`, then the project folder. The same root confines relative output paths, such as `export --out` and `context --write`, so a committed symlink can't redirect a write. A repository's file can't point it outside the repository.
+
+## [memctrl]
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `db_path` | string (path) | none | The store to use: an absolute path, or one relative to the folder that holds `.memoryrc`. |
+
+The store comes from `--db`, then the `MEMCTRL_DB_PATH` environment variable, then `db_path`, then `.memctrl/memories.db` in the project folder. Only `memctrl init`, or a path you name with `db_path`, `--db` or `MEMCTRL_DB_PATH`, creates a store; `context` and `recall` never do. A repository's `db_path` must be a relative path that stays inside the repository. See [Storage](/memctrl/reference/storage/) for what the store holds.
+
+## [semantic] doesn't belong here
+
+[Search by meaning](/memctrl/concepts/search-by-meaning/) sends memory text and every prompt to an embedding server, so only you can turn it on, in your [user config](/memctrl/reference/user-config/). A `[semantic]` section in `.memoryrc` is ignored with a warning, even in a repository you trust.
+
+## Settings a repository can only tighten
+
+A `.memoryrc` arrives with every clone, so anyone who can push to a repository can edit it. Unless you list the repository under [`[trust] repos`](/memctrl/reference/user-config/) in your user config, memctrl starts from your settings and ignores anything in the file that would loosen them:
+
+| Setting | What a repository's file may do |
+| --- | --- |
+| `[guard] mode` | Only raise it, in the order `off`, `flag`, `strict`. A lower mode is replaced by yours (default `flag`). |
+| `[guard] trusted_sources` | Only narrow it. Sources your settings don't trust are dropped from the list. |
+| `[forget] never` | Only add words. Built-in words it leaves out are added back. |
+| `[citations] root` | Point only inside the repository. |
+| `[memctrl] db_path` | Use only a relative path without `..`. |
+| `[triggers]` | Not move personal notes: a `consolidate` or `summarize` from `user` to another layer is dropped. |
+| `[semantic]` | Nothing; it's always ignored. |
+
+The repository is the nearest folder at or above the `.memoryrc` that contains `.git`. Every ignored setting prints a warning on stderr on every command, and [`memctrl doctor`](/memctrl/reference/cli/doctor/) lists them under `config_warnings`:
+
+```json
+{"warning":"ignored [guard] mode = Off from /home/you/repo/.memoryrc: a repository's .memoryrc can only tighten memctrl's defenses. To allow it, set it in /home/you/.config/memctrl/config.toml, or list this repository under [trust] repos there"}
+```
+
+Everything else in the file (layers, triggers that don't move personal notes, retention, retrieval settings) applies as written.
+
+### The template's guard settings
+
+`memctrl init` writes the built-in `[guard]` values (`mode = "flag"`, `trusted_sources = ["manual", "user", "cli"]`) into every `.memoryrc`. Since 2.6.1, when your user config is stricter, for example `trusted_sources = ["user"]`, a file that holds exactly these built-in values yields to your config without a warning. A file that asks for more than the built-ins, such as `mode = "off"` or `trusted_sources` with `"mcp"`, still warns and is still ignored.
+
+The template's lines still count as the repository asking for those values. If your user config is looser than the built-ins (`mode = "off"`, or an extra trusted source), a `.memoryrc` that keeps the template lines holds that repository at the built-in values. To use your looser setting there, delete those lines from its `.memoryrc`, or trust the repository. [User config](/memctrl/reference/user-config/) has the full rules.
+
+### Trusting a repository
+
+List a repository under `[trust] repos` in your user config to apply its `.memoryrc` in full and to load a store committed to it. `[semantic]` stays ignored either way.
+
+```toml title="~/.config/memctrl/config.toml"
+[trust]
+repos = ["~/code/our-team-repo"]
+```

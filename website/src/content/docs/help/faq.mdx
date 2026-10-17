@@ -1,0 +1,90 @@
+---
+title: "FAQ"
+description: "Short answers to common questions about memctrl: privacy, API keys, CLAUDE.md, scale, languages, agents, deleting data, Windows and the license."
+---
+
+import { LinkCard } from '@astrojs/starlight/components';
+
+Short answers, with a link to the page that covers each topic in full.
+
+## Privacy and requirements
+
+### Does any of my data leave my machine?
+
+Not through memctrl, unless you turn on one of two optional features:
+
+- **Search by meaning** sends memory text to the embedding server you configure when it indexes them, and each search and prompt-hook request when it runs. The default server is Ollama on `localhost`. A server on another machine needs `allow_remote = true` and HTTPS, and only your user config can turn the feature on, never a repository's `.memoryrc`. See [Set up search by meaning](/memctrl/guides/set-up-search-by-meaning/).
+- **`--llm`** sends the text a command works on to the LLM provider you choose, only for the command you pass it to. See [LLM providers](/memctrl/guides/llm-providers/).
+
+Two things leave by other routes. Your agent sends its context, including the brief and recalled memories, to its model provider, as it does with everything else it reads. And `.memctrl/memory.md`, if you export and commit it, goes wherever you push. memctrl redacts known secret patterns, such as API keys, tokens and passwords, before storing a memory.
+
+### Do I need an API key or a model?
+
+No. memctrl stores memories in SQLite and searches them with SQLite's full-text search, with no model, embeddings or API key. Both optional features above use a model you run or a provider you choose.
+
+### Does it work offline?
+
+Yes. Everything works without a network. If search by meaning is on and its server can't be reached, searches fall back to word matches and say so in their `trace`.
+
+### Does memctrl make sessions more expensive?
+
+Not in the benchmark. The brief adds up to about 3,000 tokens at session start, and median input per task rose from 49.6k tokens with no memory to 54.4k with memctrl, but the median cost per task was $0.047 with memctrl and $0.048 with no memory at all. A CLAUDE.md with the same 70 notes cost $0.068 ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+
+## Using memctrl
+
+### Should I use CLAUDE.md or memctrl?
+
+Both. Put the few rules the agent must follow in every session in CLAUDE.md. Put the growing body of decisions, facts and lessons in memctrl, which keeps the brief the same size as memory grows, flags memories whose code changed and holds suspicious writes for your review. [What is memctrl](/memctrl/get-started/overview/#memctrl-or-claudemd) compares them on the same tasks.
+
+### How many memories can it hold?
+
+There is no fixed limit. The brief holds what fits its budget, about 70 one-line memories at the default 3,000 tokens, and recall adds what each request needs. In the agent benchmark, a store grown to 1,069 memories got 32 of 32 tasks right at the same median cost per task as one with 70. On a store of 100,070 memories the brief took about 650 ms. Each memory can be up to 64 KiB. See [Limits](/memctrl/help/limits/#large-stores-slow-the-brief).
+
+### Which languages does it support?
+
+Any language. Search uses SQLite's full-text index with English stemming, and searches Thai, Chinese, Japanese and Korean, which are written without spaces, with trigrams. Vague questions such as "summarize the project" return nothing in those languages too. See [Other languages](/memctrl/guides/other-languages/).
+
+### Can agents write memories?
+
+Yes. The skill asks agents to save what a future session needs, with `memctrl add` in a shell or `memctrl_add` over MCP. Every write passes the write guard: hidden Unicode or instruction-like text makes the memory a candidate that only you can release, at a terminal. An agent can't accept a held memory, over MCP or in its shell. See [Guard and trust](/memctrl/concepts/guard-and-trust/).
+
+Agents rarely search memory on their own, though: in 112 benchmark sessions, Claude Code never ran `memctrl query`. That's why the brief and recall arrive through hooks.
+
+### Do my personal preferences get shared with the team?
+
+Not by default. Preferences belong in the `user` layer, and `memctrl export` and `memctrl sync` cover only the `project` layer unless you pass `--layer`. The brief does include the `user` layer, so if you write it into a committed AGENTS.md, use `memctrl context --write AGENTS.md --layer project`.
+
+### Where is my data stored?
+
+In the project: `.memctrl/memories.db` holds the memories, and `.memoryrc` the project's rules. Your own settings live in `~/.config/memctrl/config.toml` (`%APPDATA%\memctrl\config.toml` on Windows). See [Storage](/memctrl/reference/storage/).
+
+## Removing data
+
+### How do I delete a memory?
+
+```bash
+memctrl forget <id>
+```
+
+`forget` removes the memory and records that it was forgotten, so importing an older export can't bring it back. After you run `memctrl export`, teammates' stores forget it too when they sync, and the shared file keeps no text of it. To mark a memory wrong instead, with the reason kept, use `memctrl refute`. See [Correct and retire](/memctrl/guides/correct-and-retire/).
+
+### How do I delete everything?
+
+```bash
+memctrl clear --yes                  # every memory in this project's store
+memctrl clear --layer session --yes  # one layer
+```
+
+`clear` asks no questions, so it requires `--yes`. Clearing every layer also empties the store's history: forget records, provenance and telemetry. It doesn't touch `.memctrl/memory.md`, and a later `memctrl sync` would import that file's entries again as candidates. To remove memctrl from a project entirely, delete `.memctrl/` and `.memoryrc`, and see [Uninstall](/memctrl/get-started/install/#uninstall) for the agent files.
+
+## Platforms and license
+
+### Does it run on Windows?
+
+Yes, on x86_64. Download `memctrl-x86_64-pc-windows-msvc.zip` from the releases and put `memctrl.exe` on your `PATH`; the install script is for macOS and Linux only. The commands are the same as elsewhere, and your user config lives in `%APPDATA%\memctrl\config.toml`. See [Install](/memctrl/get-started/install/).
+
+### What's the license?
+
+MIT. The source is at [github.com/KJ-AIML/memctrl](https://github.com/KJ-AIML/memctrl).
+
+<LinkCard title="Troubleshooting" description="Common problems and how to fix them." href="/memctrl/help/troubleshooting/" />

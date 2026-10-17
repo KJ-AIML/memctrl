@@ -1,0 +1,164 @@
+---
+title: "Search"
+description: "Full-text search that explains every result, in any language, with no model or network."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`memctrl query` finds memories by the words they contain: names, paths, commands and error text. Every result says which words matched and why it ranked where it did, so you can tell a real match from a lucky one. Search runs on SQLite's full-text engine, with no model, network or embeddings.
+
+## An example
+
+```bash
+memctrl query "kube deploys"
+```
+
+```json
+{"facts":["Deploys go through Kubernetes with Argo CD; never kubectl apply by hand"],
+ "sources":["manual"],
+ "memory_ids":["741f57ff-aa76-4843-839d-05ced57fde9b"],
+ "trace":["lexical_bm25","terms:2","runs:0","candidates:1"],
+ "confidence":1.0,
+ "why":[{"memory_id":"741f57ff-aa76-4843-839d-05ced57fde9b","score":2.863,"coverage":1.0,
+         "matched":["kube (substring)","deploys"]}]}
+```
+
+`kube` matched part of "Kubernetes", and `deploys` matched a whole word. Together they cover every term in the query, so `coverage` is 1.0.
+
+## How results are ranked
+
+- **Rare words outweigh common ones.** Each word is scored with BM25 over an FTS5 index of the memory text and its tags (tags count half).
+- **Word forms match.** Porter stemming matches `testing` to `tests` and `deploying` to `deploys`. Common English words such as *the*, *how* or *what* are dropped.
+- **Coverage counts.** A memory that matches more of the query's terms scores higher.
+- **Trust counts.** The score is multiplied by the memory's confidence and by its layer: `project` ×1.5, `user` ×1.2, other layers ×1.0.
+- **Weak matches are dropped.** A result must score at least 35% of the best result. With three or more terms in the query, a memory must also match at least 30% of them.
+
+Only [eligible memories](/memctrl/concepts/memories/#which-memories-reach-an-agent) are searched: candidates, refuted, superseded and expired memories never come back. Two memories with the same text come back once.
+
+## Matching beyond exact words
+
+| What matches | Example | Label in `matched` |
+| --- | --- | --- |
+| A stem | `testing` finds "Integration tests need Docker running" | `testing` |
+| An alias | `prod db` finds "The production database runs Postgres 16" | `prod → production (alias)` |
+| Part of a word | `kube` finds "Kubernetes" | `kube (substring)` |
+| A word written against Thai or Chinese | `postgresql` finds "订单服务使用PostgreSQL存储订单" | `postgresql (glued)` |
+| Thai, Chinese, Japanese or Korean text | matched by character trigrams | `<text> (k/n)` |
+
+A word with no whole-word or alias match retries as a substring (three characters or more), at a lower weight. A word written straight against Thai or Chinese text is found (`Redis` in `ใช้Redisเป็นคิว`), but not inside another word: `Redis` doesn't find `Redisson`. How Thai and CJK text is searched is covered in [Other languages](/memctrl/guides/other-languages/).
+
+### Aliases
+
+Synonym groups let a word find the others in its group. These ship built in:
+
+`db`/`database` · `auth`/`authentication` · `prod`/`production` · `k8s`/`kubernetes` · `repo`/`repository` · `config`/`configuration` · `env`/`environment` · `deps`/`dependencies` · `js`/`javascript` · `ts`/`typescript` · `pg`/`postgres`/`postgresql`
+
+Add the names your team uses interchangeably in `.memoryrc`:
+
+```toml title=".memoryrc"
+[retrieval]
+aliases = [["orm", "sqlx", "diesel"], ["ci", "github actions"]]
+builtin_aliases = true   # false switches off the built-in groups
+```
+
+## Vague questions return nothing
+
+"Summarize the project" would match every memory that mentions a project. Instead, memctrl returns nothing:
+
+```bash
+memctrl query "summarize the project"
+```
+
+```json
+{"facts":[],"sources":[],"memory_ids":[],"trace":["lexical_bm25","generic_only"],"confidence":0.0}
+```
+
+Generic words such as *project*, *information*, *overview*, *summary*, *system*, *details* and *use*, and their Thai, Chinese, Japanese and Korean counterparts (ข้อมูล, โปรเจกต์, 项目, プロジェクト), still help ranking, but they can't make a memory match on their own. `why` labels them `(generic)`. A word that is part of an identifier, such as `GOOGLE_CLOUD_PROJECT` or `project.info`, is never generic.
+
+```toml title=".memoryrc"
+[retrieval]
+generic_words = ["service", "codebase"]   # added to the built-in list
+builtin_generic = true                # false switches off the built-in list
+```
+
+<Aside type="tip">
+"What should I know about this project" is the session brief's job. Run `memctrl context`, and ask `query` with the names, paths and error text a memory would contain.
+</Aside>
+
+## The why object
+
+`why` holds one entry per result, in the same order as `facts`.
+
+| Field | Meaning |
+| --- | --- |
+| `memory_id` | The memory |
+| `score` | Its final score. For a match by meaning alone, the similarity. |
+| `coverage` | The share of the query's terms it matched, from 0 to 1 |
+| `matched` | Which terms matched, and how (labels below) |
+| `freshness` | Only for memories that cite code: `fresh` when every citation checks out, `stale` when cited code changed or disappeared, `unknown` otherwise ([Citations](/memctrl/concepts/citations/)) |
+
+| Label | Meaning |
+| --- | --- |
+| `word` | A whole word, after stemming |
+| `a → b (alias)` | The query word `a` matched through its alias `b` |
+| `word (substring)` | Part of a longer word |
+| `word (glued)` | A whole word written against Thai or CJK text |
+| `ณ (standalone)` | A lone Thai-script letter standing apart, not inside a word |
+| `word (generic)` | A topic-free word: it ranks, but can't qualify a memory alone |
+| `text (k/n)` | k of the n trigrams of a Thai or CJK run matched |
+| `similar meaning (0.62)` | Matched by meaning ([Search by meaning](/memctrl/concepts/search-by-meaning/)) |
+
+`confidence` at the top level is the average, over the results, of each memory's confidence times its coverage.
+
+## The trace
+
+`trace` says how the search ran.
+
+| Entry | Meaning |
+| --- | --- |
+| `lexical_bm25` | Word search ran |
+| `terms:N`, `runs:N` | Words, and Thai or CJK runs, taken from the query |
+| `candidates:N` | Memories that matched anything before ranking |
+| `no_match` | Nothing passed the gates |
+| `generic_only` | The query had only generic words |
+| `no_keywords` | The query had only common words such as *what is it* |
+| `no_eligible_memories` | There was nothing to search |
+
+With search by meaning on, `semantic`, `vector_hits:N`, `semantic_unavailable: <reason>` and `semantic_unindexed:N` can appear too.
+
+## Layers and limit
+
+`query` searches every layer, including `session`, unless you pass `--layer`. It returns at most 10 results unless you pass `--limit`. The MCP tool `memctrl_query` runs the same search.
+
+## What a search records
+
+A search reads from a snapshot and never takes the write lock, so it answers while another process is writing. Afterwards, as best-effort bookkeeping that is skipped rather than waited for when the store is busy, it:
+
+- counts an access for each memory it returned, which nudges that memory up in the brief;
+- records provenance (method `lexical_bm25`) with memory ids and `why`, not memory text;
+- caches the result ids for five minutes, bound to the store's revision, the query, layer, limit and retrieval settings.
+
+Citation freshness is checked after the cache, so it always reflects your files as they are now. The provenance log keeps the newest 10,000 records and nothing older than 30 days.
+
+## How well it works
+
+On the built-in suite (34 memories, 56 queries, top 5), measured with `memctrl eval`:
+
+| | Words (2.2) | Keyword scorer (2.0) |
+| --- | ---: | ---: |
+| Answer in the top 5 | **0.93** | 0.77 |
+| MRR | **0.93** | 0.74 |
+| Vague and off-topic queries answered with nothing | **0.92** | 0.31 |
+| Thai, Chinese, Japanese, Korean | **10 / 10** | 1 / 10 |
+| Median latency | **0.07 ms** | 1.4 ms |
+
+The same author wrote that suite and the retriever, so treat these as regression floors. Suites written by an independent reviewer ship in the repository's `tests/fixtures/eval/`, with floors in CI:
+
+| Reviewer's suite | Result |
+| --- | ---: |
+| Thai team (56 memories, 104 queries): vague questions answered with nothing | 1.0 |
+| Thai team: right answer first, on answerable queries | 0.93 |
+| Held-out vague questions, never used for tuning | 0.92 |
+| English mirror: vague and off-topic questions answered with nothing | 0.92 |
+
+Paraphrases that share no words with the memory, such as "which ORM did we pick", are the known limit of word search: 3 of 6 are found. Aliases close the gaps that matter to your team, and [search by meaning](/memctrl/concepts/search-by-meaning/) closes more. To measure search on your own memories, see [Measure retrieval](/memctrl/guides/measure-retrieval/).

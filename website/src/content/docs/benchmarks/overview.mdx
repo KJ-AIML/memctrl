@@ -1,0 +1,157 @@
+---
+title: "Benchmarks"
+description: "What we measured, how, and the headline numbers."
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+memctrl is measured on whether an agent with memory does real tasks right more often, not only on whether search finds the right note. This page sums up what each benchmark measures, the latest numbers, how agent results changed across releases, and how to run the benchmarks yourself. The write-ups linked at the end have every table, caveat and raw data file.
+
+## What we measure
+
+| Benchmark | Question it answers | How it works | Write-ups |
+| --- | --- | --- | --- |
+| Agent benchmark | Does Claude Code do real tasks right more often with memory? | Claude Code works 16 tasks on a real TypeScript project (ledger-api, 70 memories its tester saved), each with a trap only the project's history reveals, in fresh isolated sessions. A blind Sonnet judge grades every run, and rule checks run alongside. A second set of 8 tasks words each request unlike the memory it needs, 4 of them in Thai. A scale setup adds 1,000 unrelated memories. | [Agent benchmark](/memctrl/benchmarks/agent-benchmark/), [Reworded requests](/memctrl/benchmarks/reworded-tasks/), [Preferences and decisions](/memctrl/benchmarks/brief-authority/) |
+| Retrieval suites | Does memctrl find the right memory, and say nothing when it should? | Five suites in `memctrl eval` format: real-dev (77 memories, 60 questions), Thai team (56 memories, 104 questions, plus 25 held-out questions), an English mirror of vague and off-topic questions, and the built-in `dev-memory-v2`. Scored by hit@5 and by the share of vague questions answered with nothing. | [Retrieval comparison](/memctrl/benchmarks/retrieval-comparison/), [Search by meaning](/memctrl/benchmarks/search-by-meaning/) |
+| Stability and speed | Does it stay correct and fast under load? | MCP server checks, 60 seconds of concurrent writers, `serve` killed mid-write, two versions on one store, Linux smoke tests, and command timings at 70 and 100,070 memories. | [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) |
+
+## Latest agent results (2.6.1)
+
+Measured for the 2.6.1 release binaries, against 2.5.0, on 2026-10-17. Each setup ran the 16 standard tasks twice.
+
+| Setup | Tasks right | Memory-only tasks | Median cost per task | Median input tokens |
+| --- | ---: | ---: | ---: | ---: |
+| none | 19/32 (59%) | 0/6 | $0.048 | 49.6k |
+| CLAUDE.md, 70 notes | **31/32 (97%)** | 5/6 | $0.068 | 61.5k |
+| memctrl 2.5.0 | 28/32 (88%) | 2/6 | $0.050 | 55.2k |
+| memctrl 2.6.1 | **31/32 (97%)** | 5/6 | **$0.047** | 54.4k |
+| CLAUDE.md, 1,069 notes | 28/32 (88%) | 2/6 | $0.231 | 255.9k |
+| memctrl 2.6.1, 1,069 memories | **32/32 (100%)** | 6/6 | **$0.047** | 54.4k |
+
+- **Same accuracy as CLAUDE.md, for less.** memctrl 2.6.1 got 31 of 32 right, the same as all 70 notes pasted into CLAUDE.md, at a median $0.047 per task against $0.068.
+- **At 1,069 memories, memctrl is ahead.** memctrl 2.6.1 got 32 of 32 at $0.047 a task. CLAUDE.md got 28 of 32 at $0.231, because every session reads all 1,069 notes.
+- **Reworded requests:** 2.6.1 got 13 of 16, 2.5.0 11, CLAUDE.md 15, no memory 7.
+
+<Aside type="caution">
+Each setup had 16 or 32 runs, with one judge. A difference of one or two tasks can be chance. 2.5.0 scored 10, 11 and 12 of 16 on the reworded tasks across three days.
+</Aside>
+
+## Retrieval results
+
+With the 2.6.1 release binary on the five suites. "Words" is memctrl's default word search, "Prompt hook" is what [recall](/memctrl/concepts/recall/) adds to a request, and "By meaning" adds EmbeddingGemma on a local server ([search by meaning](/memctrl/concepts/search-by-meaning/)). Every number is the same for 2.5.0.
+
+| Suite | Words, top 5 | Prompt hook | By meaning | Hook with meaning | Vague questions left unanswered, words / meaning |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| realdev | 91.7% | 81.7% | 95.0% | 85.0% | – |
+| builtin | 93.0% | 72.1% | 95.3% | 74.4% | 92.3% / 84.6% |
+| thai | 95.1% | 73.2% | 96.3% | 73.2% | 100% / 100% |
+| thai-heldout | 91.7% | 66.7% | 100% | 66.7% | 92.3% / 84.6% |
+| en-mirror (vague questions only) | – | – | – | – | 91.7% / 91.7% |
+
+Against other memory tools, on the same memories and questions with memctrl 2.2.0 ([full comparison](/memctrl/benchmarks/retrieval-comparison/)):
+
+- **memctrl both finds and declines.** It put the memory in the top 5 for 92% of real-dev, 95% of Thai and 92% of Thai held-out questions, and answered 100% of vague Thai questions and 92% of vague English questions with nothing. It is the only system in the comparison that also answers vague questions with nothing, in Thai and English.
+- **Vector search finds paraphrases but never declines.** With EmbeddingGemma, its top 5 held the memory for 98%, 98% and 100% of those questions, answered no vague question with nothing, and returned about twice the text (654 characters per real-dev question against memctrl's 299).
+- **basic-memory's default is weak in Thai:** 95% on real-dev, but 63% and 58% on the Thai suites, because its embedding model is English.
+- **Loading everything** finds every memory but answers no vague question with nothing, and returns 9,267 characters per real-dev question.
+
+## Agent results across releases
+
+Each row is one study: setups run side by side with the same harness and judge, two rounds per task. Compare numbers within a row. A dash means the setup wasn't part of that study.
+
+### Standard tasks (16 tasks, 32 runs per setup)
+
+| Study | No memory | CLAUDE.md, 70 notes | Earlier memctrl | New memctrl |
+| --- | ---: | ---: | ---: | ---: |
+| [Agent benchmark](/memctrl/benchmarks/agent-benchmark/) (2.3) | 18/32 (56%) | 31/32 (97%) | 2.2.0: 26/32 (81%) | 2.3: 29/32 (91%) |
+| [Reworded requests](/memctrl/benchmarks/reworded-tasks/) (2.5) | – | – | 2.4.0: 28/32 | 2.5: 28/32 |
+| [Preferences and decisions](/memctrl/benchmarks/brief-authority/) (2.6) | – | – | 2.5.0: 28/32 | 2.6, first wording: 29/32 |
+| [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 19/32 (59%) | 31/32 (97%) | 2.5.0: 28/32 (88%) | 2.6.1: 31/32 (97%) |
+
+2.4 was measured in one round with search by meaning on: 14 of 16 at both 70 and 1,069 memories, as the 2.3.0 release got in an earlier round (14/16 and 14/16). The prompt hook added the same memories with and without meaning ([search by meaning](/memctrl/benchmarks/search-by-meaning/#agent-benchmark)).
+
+### Reworded tasks (8 tasks, 16 runs per setup)
+
+| Study | No memory | CLAUDE.md, 70 notes | Earlier memctrl | New memctrl |
+| --- | ---: | ---: | ---: | ---: |
+| [Reworded requests](/memctrl/benchmarks/reworded-tasks/) (2.5) | – | – | 2.4.0: 8/16 | 2.5: 12/16 |
+| [Preferences and decisions](/memctrl/benchmarks/brief-authority/) (2.6) | – | – | 2.5.0: 10/16 | 2.6, first wording: 13/16 |
+| [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 7/16 | 15/16 | 2.5.0: 11/16 | 2.6.1: 13/16 |
+
+The 2.6 study ran a first wording of the new brief header. The shipped wording was checked on the four tasks its stop rule touches, not in a full round ([details](/memctrl/benchmarks/brief-authority/#the-first-wording-stopped-a-fix)).
+
+### At 1,069 memories
+
+The same 70 memories plus 1,000 generated, unrelated ones. CLAUDE.md gets one section per component.
+
+| Study | CLAUDE.md, 1,069 notes | memctrl, 1,069 memories |
+| --- | ---: | ---: |
+| [Agent benchmark](/memctrl/benchmarks/agent-benchmark/#results-1069-memories) (2.3) | 30/32 (94%), $0.229 a task | 2.3: 29/32 (91%), $0.054 a task |
+| [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 28/32 (88%), $0.231 a task | 2.6.1: 32/32 (100%), $0.047 a task |
+
+Costs are median cost per task, from Claude Code's list-price estimates. CLAUDE.md's cost grows with the store because every session reads all of it. memctrl's [session brief](/memctrl/concepts/session-brief/) has a fixed token budget, and recall adds only the memories a request matches.
+
+## Reproduce the benchmarks
+
+The harness is a Cargo example, `agent_bench`. The fixtures, tasks and retrieval suites are in [`bench/`](https://github.com/KJ-AIML/memctrl/tree/main/bench), and [`bench/README.md`](https://github.com/KJ-AIML/memctrl/blob/main/bench/README.md) has the full instructions.
+
+| Folder | Question | Cost |
+| --- | --- | --- |
+| `agent/` | Does Claude Code do real tasks right more often with memory? | Claude Code usage: about $0.06 a run, and $0.23 a run for the CLAUDE.md setup at scale |
+| `retrieval/` | Does memctrl find the right memory, and say nothing when it should? | Local only |
+
+### Agent benchmark
+
+You need Claude Code (`claude`) logged in, git, and Node 23.6 or later, which the grader uses to run TypeScript directly.
+
+<Aside type="caution" title="Runs use your Claude Code account">
+Each run is billed as Claude Code usage. The 2.6.1 release round, with both task sets, two rounds and the scale setups, used about $23 of usage, judge included.
+</Aside>
+
+```bash
+cargo build --release --example agent_bench
+B=target/release/examples/agent_bench
+W=$(mktemp -d)                                    # anywhere outside the repository
+$B setup $W --memctrl target/release/memctrl \
+  --baseline /path/to/previous/memctrl --scale \
+  --semantic semantic.toml                        # all three flags optional
+$B run $W 1 --jobs 4                              # one round: every task in every setup
+$B run $W 2 --jobs 4                              # a second round
+$B grade $W                                       # rule checks plus a blind Sonnet judge
+$B summary $W
+```
+
+- **`setup`** builds one template per setup from `bench/agent/fixture/`: the ledger-api project as a git bundle, the store its tester saved (`memories.sqlite3`) and its `.memoryrc`.
+  - **memctrl** is set up by the build under test, and **baseline** by the release you name, each with its own `install --hook`.
+  - **`--scale`** adds the 1,000 unrelated memories in `fixture/distractors.jsonl` to a CLAUDE.md setup and a memctrl setup.
+  - **`--semantic FILE`** adds `memctrl-semantic` (and `memctrl-semantic-scale` with `--scale`): copies of the memctrl setups whose user config is FILE, a `[semantic]` section pointing at an embedding server that must be running for setup and runs. Setup embeds every memory first, the way `memctrl semantic index` would.
+- **`run`** copies a template for each task and starts `claude -p` with only that template's settings: no user settings, plugins, MCP servers or auto memory. `--only setup/task` reruns single cells. A run interrupted halfway is set aside, not deleted.
+- **`probe BIN`** shows what the prompt hook adds for each task and for 15 unrelated everyday prompts; matches by meaning are marked `≈` with their similarity. Run it inside a copy of a memctrl template, because queries in the template itself change what later runs see. Pass `--config-home WORK/xdg-memctrl-semantic` to probe a semantic setup.
+- **`--tasks FILE`** on `setup` runs another task set; setup copies it to `WORK/tasks.json`, which `run`, `grade` and `summary` read. `bench/agent/tasks-paraphrase.json` holds the 8 reworded tasks. Each names the memory it needs (`needs`), and `probe --tasks FILE` says whether the agent gets it.
+
+To add a task, add an entry to `bench/agent/tasks.json` with a prompt and a rubric the judge can apply from the final message and the diff. Then add its rule check to `rules` in `examples/agent_bench.rs`.
+
+### Retrieval suites
+
+The five suites in `bench/retrieval/suites/` are in `memctrl eval` format, so memctrl's side of the comparison is one command per suite. They run locally, with no cost.
+
+```bash
+memctrl eval --file bench/retrieval/suites/thai.json
+memctrl eval --file bench/retrieval/suites/thai.json --retriever semantic   # needs [semantic]
+memctrl eval --file bench/retrieval/suites/thai.json --retriever recall     # what the prompt hook adds
+```
+
+The other tools in the comparison need Python, so that side ran outside this repository: basic-memory 0.23.2, and vector search with multilingual-e5-small and EmbeddingGemma 300M (ONNX). To check retrieval on your own memories, see [Measure retrieval](/memctrl/guides/measure-retrieval/) and [`memctrl eval`](/memctrl/reference/cli/eval/).
+
+## Write-ups
+
+Raw numbers for every write-up, including each run with the judge's reason, are in [`docs/benchmarks/`](https://github.com/KJ-AIML/memctrl/tree/main/docs/benchmarks).
+
+<CardGrid>
+  <LinkCard title="2.6.1 full benchmark" description="Agents, retrieval suites, stability and speed for the 2.6.1 release, against 2.5.0." href="/memctrl/benchmarks/release-2-6/" />
+  <LinkCard title="Agent benchmark" description="The method, and the 2.2 and 2.3 rounds at 70 and 1,069 memories." href="/memctrl/benchmarks/agent-benchmark/" />
+  <LinkCard title="Preferences and decisions (2.6)" description="How the 2.6 brief header changed what agents do with preferences and recorded decisions." href="/memctrl/benchmarks/brief-authority/" />
+  <LinkCard title="Reworded requests (2.5)" description="Requests worded unlike the memory they need, in English and Thai." href="/memctrl/benchmarks/reworded-tasks/" />
+  <LinkCard title="Search by meaning (2.4)" description="What an embedding model adds on the retrieval suites and for agents." href="/memctrl/benchmarks/search-by-meaning/" />
+  <LinkCard title="Retrieval comparison (2.2)" description="memctrl against basic-memory, vector search, grep and loading everything." href="/memctrl/benchmarks/retrieval-comparison/" />
+</CardGrid>

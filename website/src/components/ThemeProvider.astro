@@ -1,0 +1,9 @@
+---
+// The docs have one look, charcoal with a periwinkle accent: always the dark theme, whatever
+// the system or an earlier visit chose. (Starlight's theme picker is removed in ThemeSelect.astro.)
+---
+
+<script is:inline>
+  document.documentElement.dataset.theme = 'dark';
+  window.StarlightThemeProvider = { updatePickers() {} };
+</script>

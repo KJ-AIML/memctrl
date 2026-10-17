@@ -1,0 +1,127 @@
+---
+title: "Optional LLM providers"
+description: "Let a model extract memories, pick memory-tree nodes or write tree summaries, with OpenAI, xAI, Anthropic or a local server."
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+memctrl never calls a language model unless you add `--llm` to a command. Search, the session brief, recall, the write guard, citations, sync and eval all run locally without one. With `--llm`, a model you choose can extract memories from a block of text, pick the memories relevant to a query, or summarize the memory tree. This page covers which commands take it, how to configure a provider and keep keys out of sight, and how requests behave.
+
+<Aside type="note">
+This is separate from [search by meaning](/memctrl/guides/set-up-search-by-meaning/), which uses an embedding model configured in your user config, not `--llm`.
+</Aside>
+
+## Commands that take `--llm`
+
+| Command | What the model does |
+| --- | --- |
+| [`add`](/memctrl/reference/cli/add/) | Extracts durable facts, decisions and preferences from the text you pass, and stores each as its own memory. Every extracted memory passes the write guard, and they are stored together or not at all. `--cite` can't be combined with `--llm`. |
+| [`query`](/memctrl/reference/cli/query/) | Picks the relevant nodes of the memory tree, instead of word search. Provenance records the method `llm_selection`. |
+| [`tree`](/memctrl/reference/cli/tree/) | Rebuilds the memory tree and has the model write its node summaries. Which memories belong to which node stays deterministic; only the summary text comes from the model. |
+| [`reflect`](/memctrl/reference/cli/reflect/), [`done`](/memctrl/reference/cli/done/) | Accept the flag but refuse it: reflection is local and keeps its source facts, so it never calls a model. |
+
+Each takes the same options: `--llm-provider`, `--llm-model`, `--llm-base-url` and `--llm-api-key-env`.
+
+## Providers
+
+| Provider | `--llm-provider` | API | Key variable | Model |
+| --- | --- | --- | --- | --- |
+| OpenAI (the default) | `openai` | Chat Completions, strict JSON schema | `OPENAI_API_KEY` | `gpt-4o-mini` unless you set one |
+| xAI | `xai` (or `grok`) | Responses, strict JSON schema | `XAI_API_KEY` | required |
+| Anthropic | `anthropic` (or `claude`) | Messages, JSON schema output | `ANTHROPIC_API_KEY` | required |
+| Any OpenAI-compatible server: Ollama, LM Studio, vLLM, a gateway | `compatible` (or `ollama`, `lmstudio`, `local`) | Chat Completions, JSON mode | optional on this machine | required, plus `--llm-base-url` |
+
+<Tabs>
+<TabItem label="OpenAI">
+
+```bash
+export OPENAI_API_KEY=...
+memctrl add "$(cat docs/notes.md)" --layer project --llm
+```
+
+</TabItem>
+<TabItem label="xAI">
+
+```bash
+export XAI_API_KEY=...
+memctrl query "database" --llm --llm-provider xai --llm-model <model>
+```
+
+</TabItem>
+<TabItem label="Anthropic">
+
+```bash
+export ANTHROPIC_API_KEY=...
+memctrl tree --llm --llm-provider anthropic --llm-model <model>
+```
+
+</TabItem>
+<TabItem label="Ollama">
+
+```bash
+memctrl add "$(cat notes.md)" --llm --llm-provider ollama --llm-model llama3 \
+  --llm-base-url http://localhost:11434/v1
+```
+
+</TabItem>
+</Tabs>
+
+## Keep keys out of the command line
+
+Keys come only from environment variables. Arguments are visible to other processes on the machine, so memctrl takes the variable's name, not the key:
+
+```bash
+export TEAM_OPENAI_KEY=...
+memctrl add "$(cat notes.md)" --llm --llm-api-key-env TEAM_OPENAI_KEY
+```
+
+A hidden `--llm-api-key` option still exists for old scripts; it prints a warning that the key is exposed. Keys never go in `.memoryrc` or your user config, and memctrl never prints them.
+
+## How settings resolve
+
+For each setting, the first one found wins:
+
+1. **Flags:** `--llm-provider`, `--llm-model`, `--llm-base-url`, `--llm-api-key-env`.
+2. **memctrl's variables:** `MEMCTRL_LLM_PROVIDER`, `MEMCTRL_LLM_MODEL`, `MEMCTRL_LLM_BASE_URL`, `MEMCTRL_LLM_API_KEY`.
+3. **The provider's own variables:** the key variable in the table above. For `openai` and `compatible`, `OPENAI_MODEL` and `OPENAI_BASE_URL` also apply.
+4. **The provider's preset:** its base URL, and for OpenAI the default model.
+
+To use one provider everywhere, set the `MEMCTRL_LLM_*` variables in your shell profile, and `--llm` alone is enough. [Environment variables](/memctrl/reference/environment-variables/) lists them all.
+
+<Aside type="caution">
+The `compatible` provider falls back to `OPENAI_API_KEY` when no other key is set, and sends it to the server you name. If that server isn't OpenAI and you have an OpenAI key in your environment, pass `--llm-api-key-env` with another variable.
+</Aside>
+
+When something is missing, memctrl stops before sending anything:
+
+| Message | Fix |
+| --- | --- |
+| `LLM model is not configured for provider xai; pass --llm-model or set MEMCTRL_LLM_MODEL` | Name a model |
+| `LLM API key is not configured for provider anthropic; set ANTHROPIC_API_KEY or MEMCTRL_LLM_API_KEY` | Export the key, or point `--llm-api-key-env` at it |
+| `LLM base URL is required for provider compatible; pass --llm-base-url or set MEMCTRL_LLM_BASE_URL` | Give the server's address, ending in `/v1` |
+| `LLM endpoint requires HTTPS except on loopback` | Use HTTPS for a server that isn't on this machine |
+| `LLM API key is required for non-loopback endpoints` | Requests without a key go only to `localhost` or a loopback address |
+
+## What is sent
+
+- **`add --llm`** sends the text you pass, after memctrl's redaction of credentials and personal data.
+- **`query --llm` and `tree --llm`** send the memory tree, which includes the text of the memories in it (also redacted). `query --llm` uses the layer you name with `--layer`, or every layer.
+
+The model's answer is validated before anything is stored: the JSON must have the expected shape, confidences must be between 0 and 1, and a node id the tree doesn't have is rejected. memctrl doesn't follow redirects.
+
+## Requests, retries and errors
+
+- **Timeouts:** 10 seconds to connect, 120 seconds per request.
+- **Retries:** transport errors and HTTP 500, 502, 503, 504 and 529 are retried with exponential backoff, up to `MEMCTRL_LLM_MAX_RETRIES` times (default 2, at most 5). A 429 is retried once, and only when the server's `Retry-After` is 30 seconds or less. Any other 4xx fails at once.
+- **Structured output:** memctrl asks each provider for JSON in its own way (a strict JSON schema for OpenAI and xAI, JSON schema output for Anthropic, JSON mode for compatible servers). If a server rejects that field with a 400, the request is repeated once without it, and the answer is still validated locally.
+- **Errors** name the HTTP status, the provider's error type and its request id, never the provider's message, which can echo parts of a key: `LLM request returned HTTP <status> (<error type>), request id <id>`.
+
+## Review what a model wrote
+
+Memories from `add --llm` are stored as accepted, like any other `add`, unless the guard holds one. The output has this shape, with held memories counted under `quarantined`:
+
+```json
+{"memory_ids":["…","…"],"status":"stored","quarantined":0}
+```
+
+They take the `--layer`, `--source` and layer expiry you'd get without `--llm`, and they are stored as plain facts. Read them with `memctrl list` or `memctrl show <id>`, set claim types by adding decisions yourself, and [correct](/memctrl/guides/correct-and-retire/) anything the model got wrong. Extracted memories use `manual` as their source unless you pass `--source`; pass a distinct one, such as `--source llm`, to tell them apart later. A `user`-layer memory from a trusted source appears under "From the user" in the brief, so be careful extracting into that layer.

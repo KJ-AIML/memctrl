@@ -1,0 +1,155 @@
+---
+title: "Install"
+description: "Every way to install memctrl on macOS, Linux and Windows, how to verify it, upgrade it and remove it."
+---
+
+import { Aside, LinkCard, TabItem, Tabs } from '@astrojs/starlight/components';
+
+memctrl is a single executable with SQLite built in. Nothing else needs to be installed: no runtime, database server or model. This page covers the prebuilt binaries, building with Cargo, upgrading and uninstalling.
+
+## Prebuilt binaries
+
+Each [GitHub release](https://github.com/KJ-AIML/memctrl/releases) has an archive per platform and a `SHA256SUMS` file listing their checksums.
+
+| Platform | Archive | Install with |
+| --- | --- | --- |
+| macOS, Apple silicon | `memctrl-aarch64-apple-darwin.tar.gz` | `install.sh` |
+| macOS, Intel | `memctrl-x86_64-apple-darwin.tar.gz` | `install.sh` |
+| Linux, x86_64 | `memctrl-x86_64-unknown-linux-musl.tar.gz` | `install.sh` |
+| Linux, arm64 | `memctrl-aarch64-unknown-linux-musl.tar.gz` | `install.sh` |
+| Windows, x86_64 | `memctrl-x86_64-pc-windows-msvc.zip` | By hand |
+
+Each archive holds a folder named after the archive with the `memctrl` executable (`memctrl.exe` on Windows), `README.md`, `LICENSE` and `MIGRATION.md`.
+
+## Install
+
+<Tabs>
+<TabItem label="macOS and Linux">
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | sh
+```
+
+The script:
+
+1. Picks the archive for your system from `uname`: the Apple silicon or Intel build on macOS, the x86_64 or arm64 musl build on Linux. On any other system it stops and suggests building from source.
+2. Downloads that archive and `SHA256SUMS` from the latest GitHub release with `curl`, which it requires.
+3. Checks the archive's SHA-256 against `SHA256SUMS`, with `sha256sum` or `shasum -a 256`. It refuses to install when the archive isn't listed or the checksum doesn't match.
+4. Extracts the archive into a temporary folder, which it removes when it exits, and installs `memctrl` with mode `0755` into `~/.local/bin`, creating the folder if needed.
+5. Prints the installed version, and tells you to add the folder to your `PATH` if it isn't there. It doesn't edit your shell profile or use `sudo`.
+
+Three environment variables change what it does:
+
+| Variable | Default | Use it to |
+| --- | --- | --- |
+| `MEMCTRL_VERSION` | `latest` | Install a specific release tag, such as `v2.6.2` |
+| `MEMCTRL_INSTALL_DIR` | `$HOME/.local/bin` | Install somewhere else |
+| `MEMCTRL_BASE_URL` | The GitHub release URL | Download from a mirror |
+
+Set them for the `sh` that runs the script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh \
+  | MEMCTRL_VERSION=v2.6.2 MEMCTRL_INSTALL_DIR="$HOME/bin" sh
+```
+
+To read the script before you run it, download it first:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh
+less install.sh
+sh install.sh
+```
+
+</TabItem>
+<TabItem label="Windows">
+
+1. Download `memctrl-x86_64-pc-windows-msvc.zip` and `SHA256SUMS` from the [latest release](https://github.com/KJ-AIML/memctrl/releases/latest).
+2. Check the zip against the line for it in `SHA256SUMS`:
+
+   ```powershell
+   Get-FileHash memctrl-x86_64-pc-windows-msvc.zip -Algorithm SHA256
+   ```
+
+3. Extract the zip and move `memctrl.exe` to a folder on your `PATH`.
+
+Your user settings live in `%APPDATA%\memctrl\config.toml` on Windows, instead of `~/.config/memctrl/config.toml`.
+
+</TabItem>
+<TabItem label="Cargo">
+
+With a Rust toolchain on any platform, build a tagged release from GitHub:
+
+```bash
+cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.6.2 --locked
+```
+
+Cargo puts the binary in its own bin folder, usually `~/.cargo/bin`. `--locked` builds with the exact dependency versions the release was tested with. The build compiles the bundled SQLite, so you need a C compiler as well as Rust.
+
+</TabItem>
+<TabItem label="From source">
+
+```bash
+git clone https://github.com/KJ-AIML/memctrl.git
+cd memctrl
+cargo install --path . --locked
+```
+
+To build without installing, run `cargo build --release --locked`; the binary is `target/release/memctrl` (`memctrl.exe` on Windows). The repository's `rust-toolchain.toml` selects the stable Rust toolchain.
+
+</TabItem>
+</Tabs>
+
+## Verify the install
+
+```bash
+memctrl --version
+```
+
+```text
+memctrl 2.6.2
+```
+
+If your shell can't find `memctrl`, the folder it was installed to isn't on your `PATH`. Once it runs, `memctrl --help` lists every command; continue with the [quick start](/memctrl/get-started/quick-start/).
+
+## Upgrade
+
+Install the new version the same way you installed the old one. The install script replaces the binary in place; with Cargo, run `cargo install` again with the new tag.
+
+- **Read the upgrade notes first.** [Upgrading](/memctrl/releases/upgrading/) lists what changes between versions, including when to run `memctrl install` again for a new hook.
+- **Hooks keep working** when the new binary lands where the old one was. If you install it somewhere else, run `memctrl install --tool claude --project --hook` again so the hook commands point at it.
+- **2.x versions open each other's databases.** Since 2.0, upgrades have only added to the database schema. Coming from 1.x, read [Upgrading](/memctrl/releases/upgrading/) and back up the database before the first run.
+- **Upgrade a team together.** memctrl 2.1 can't read the shared memory file that 2.2 and later write.
+
+## Uninstall
+
+Remove the hooks before the binary, or Claude Code will try to run a missing command at every session start and prompt. See [Remove the hooks](/memctrl/agents/claude-code/#remove-the-hooks).
+
+Then delete the executable:
+
+| Installed with | Remove |
+| --- | --- |
+| `install.sh` | `~/.local/bin/memctrl`, or the file in `MEMCTRL_INSTALL_DIR` |
+| Windows zip | `memctrl.exe` wherever you put it |
+| Cargo | `cargo uninstall memctrl` |
+
+Removing the binary leaves your data in place. Each project you set up keeps these files until you delete them:
+
+| Path | What it is |
+| --- | --- |
+| `.memoryrc` | The project's rules |
+| `.memctrl/memories.db` (plus `-wal` and `-shm` files) | The memories |
+| `.memctrl/.gitignore` | Keeps the database out of git |
+| `.memctrl/sessions/` | What each Claude Code session was shown |
+| `.memctrl/memory.md` | The shared export, if you ran `memctrl export` |
+| `.claude/skills/memctrl/` and the hooks in `.claude/settings.local.json` | The Claude Code skill and hooks |
+| `.agents/`, `.cursor/`, `.axga/`, `.pi/` or `.kimi/` skill folders | Skills for other agents |
+| The block between `<!-- memctrl:context:begin -->` and `<!-- memctrl:context:end -->` in AGENTS.md | The brief, if you used `context --write` |
+
+Installs without `--project` put the skill and hooks under your home folder instead, such as `~/.claude/skills/memctrl/` and `~/.claude/settings.json`. Your own settings, if you created them, are in `~/.config/memctrl/config.toml`.
+
+<Aside type="caution">
+Deleting `.memctrl/` deletes the memories. If you want to keep them, export them first with `memctrl export --layer project --layer user --out memories.md`.
+</Aside>
+
+<LinkCard title="Quick start" description="Set up a project and save your first memories." href="/memctrl/get-started/quick-start/" />

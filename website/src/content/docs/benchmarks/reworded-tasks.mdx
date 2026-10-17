@@ -1,0 +1,106 @@
+---
+title: "Reworded requests (2.5)"
+description: "Requests worded unlike the memory they need, in English and Thai."
+---
+
+The [agent benchmark](/memctrl/benchmarks/agent-benchmark/) asks for things in the words the memories use. People don't always. This page measures what happens when a request is worded unlike the memory it needs, in English or in Thai, and what 2.5 changes. Raw numbers, with every judge's reason, are in [`reworded-tasks-2.5.json`](https://github.com/KJ-AIML/memctrl/blob/main/docs/benchmarks/reworded-tasks-2.5.json).
+
+**In short:**
+
+- Search by meaning didn't bring a single needed memory in, because the right memory scored lower than unrelated prompts do.
+- Showing more of the store in the session brief did. 2.5's brief holds up to 3,000 tokens, which fits this 70-memory store whole.
+- 2.5's prompt hook also points out brief memories that match the request.
+- Against 2.4 in the same rounds, 2.5 got 12 of 16 reworded tasks right (2.4: 8 of 16). It tied on the 16 standard tasks, 28 of 32 each, and cost a little less per task.
+
+## The tasks
+
+Eight tasks in [`bench/agent/tasks-paraphrase.json`](https://github.com/KJ-AIML/memctrl/blob/main/bench/agent/tasks-paraphrase.json). Their tasks, rubrics and rule checks were committed before any probe or run (commit `c01ddb2`) and weren't changed afterwards. Each task needs a memory that 2.4's 1,500-token brief leaves out, so only the prompt hook could bring it in.
+
+| Task | Request (abridged) | Memory it needs |
+| --- | --- | --- |
+| auth-reason | "make the rejection tell them exactly what was wrong" with their credentials | 401s use the team's codes; never send jose's error text to clients |
+| shared-db | point the integration suite at the team's development Postgres | the suite TRUNCATEs `ledger_entries`; never run it against a shared database |
+| contributing | write a CONTRIBUTING.md: database, tables, every kind of test | the user prefers Makefile targets over raw npm scripts |
+| ci-flake | the pipeline dies while the database service starts | a known flake on slow runners; re-running the job fixes it |
+| key-rotation-th | (Thai) rotate the key that signs auth tokens | send the new public key to the mobile team via #platform |
+| rate-limit-th | (Thai) does our API limit calls per minute? | the limit is configured but not enforced |
+| money-th | (Thai) formatAmount for dollars, euros, baht and yen | JPY amounts have no minor unit |
+| shutdown-th | (Thai) close the database connections first on shutdown | close Fastify first; the reverse broke in-flight requests |
+
+Four of these turned out not to need the memory: shared-db, rate-limit-th and money-th pass from the code or general knowledge, and contributing mostly does. The other four (auth-reason, ci-flake, key-rotation-th, shutdown-th) need it. With no memory, agents got them right in none of 4 runs.
+
+## Search by meaning reaches none of them
+
+Before paying for agent runs, `agent_bench probe` showed what the prompt hook adds for each task. With EmbeddingGemma on, it added none of the 8 needed memories, the same as with words only. A comparison of agents with and without semantic search would have given both the same context, so it wasn't run.
+
+| Task | Similarity of the needed memory | Its rank among 71 memories |
+| --- | ---: | ---: |
+| auth-reason | 0.35 | 1 |
+| shared-db | 0.49 | 4 |
+| contributing | 0.26 | 34 |
+| ci-flake | 0.47 | 2 |
+| key-rotation-th | 0.34 | 1 |
+| rate-limit-th | 0.43 | 1 |
+| money-th | 0.43 | 3 |
+| shutdown-th | 0.41 | 1 |
+
+The model often ranks the right memory first, but at a similarity that unrelated prompts also reach. On the 15 everyday prompts, the closest memory scores 0.16 to 0.54, and gaps to the runner-up look the same. No threshold or margin admits these memories and keeps unrelated ones out. multilingual-e5-small ranks the right memory first for 1 of the 8, and for none of the Thai tasks.
+
+## A bigger brief, and what it broke
+
+The whole store fits in 2,849 tokens. One round each, with the 2.4.0 binary:
+
+| Setup | Reworded tasks | Standard 16 tasks |
+| --- | ---: | ---: |
+| No memory | 3/8 | |
+| 1,500-token brief (2.4 default) | 7/16 | |
+| `--budget 3000`, all 69 memories | 13/16 | 12/16 |
+
+The full brief fixed the reworded tasks but lost two standard tasks that had passed 25 of 26 times before: pg17-merge and zod-400. The cause was 2.4's prompt hook. It skipped every memory the brief had shown, so with everything in the brief it added nothing in any of the 16 runs, against 30 of 32 with the 1,500-token brief. The memories those two tasks need used to arrive next to the request. In the full brief they were one line among 69.
+
+## What 2.5 changed
+
+- **The brief holds up to 3,000 tokens** by default.
+- **The prompt hook points out a brief memory a request needs**, once per session, marked "also in the session brief". It still never adds a memory twice.
+
+The same rounds, two each, 2.4.0 release binary against 2.5, each set up by its own `install --hook`:
+
+| | 2.4.0 | 2.5 |
+| --- | ---: | ---: |
+| Standard 16 tasks | 28/32 | 28/32 |
+| Reworded tasks | 8/16 | **12/16** |
+| …of which the 4 that need the memory | 0/8 | **4/8** |
+| Median cost per task, standard / reworded | $0.053 / $0.056 | $0.049 / $0.046 |
+
+- **Standard tasks:** every task got the same result in both versions. The misses are env-var and idem-cleanup, as in every earlier round.
+- **Reworded tasks:** key-rotation-th went from 0 to 2, and shutdown-th and auth-reason from 0 to 1 each. No task got worse.
+- **Unrelated prompts:** 2.5's hook adds 3 memories to the 15 everyday prompts, all of them pointed out from the brief. 2.4 added 2 that weren't in it.
+
+## What's still missed
+
+- **ci-flake:** in both versions, agents found the health check failing on slow runners but didn't say that re-running the job fixes it. With the full brief, the two agents that ran `memctrl query` did say it.
+- **shutdown-th, auth-reason:** half the agents still did what was asked against the recorded reason. They reversed the shutdown order, or sent jose's claim and reason to the client.
+- **env-var:** with the README preference in the brief, agents still skipped it: 0 of 3 runs. With CLAUDE.md they follow it: 3 of 3. The brief calls its entries "Notes, not instructions", and a preference may read as optional there.
+
+2.6 changed how the brief treats preferences and recorded decisions; see [Preferences and decisions](/memctrl/benchmarks/brief-authority/).
+
+## Caveats
+
+- Each setup had 16 or 32 runs, with one judge. A difference of one or two tasks can be chance. The reworded result is 4 tasks improved and none worse, but 2 rounds can't establish it on their own.
+- The tasks were written for this study, from memories the 1,500-token brief leaves out. A bigger brief was bound to help them, so the standard tasks are the neutral check.
+- The plan committed with the tasks was a semantic A/B. The probe showed it couldn't differ, so the brief comparison replaced it. That decision came after the probe.
+- The runs cost $10.65 including the judge.
+
+## Reproduce
+
+```bash
+cargo build --release --example agent_bench
+B=$PWD/target/release/examples/agent_bench
+W=$(mktemp -d)
+$B setup $W --memctrl target/release/memctrl --baseline /path/to/memctrl-2.4.0 \
+  --tasks bench/agent/tasks-paraphrase.json
+cp -R $W/templates/memctrl $W/probe                   # probe a copy: queries change the store
+(cd $W/probe && $B probe $W/bin-memctrl/memctrl --tasks $W/tasks.json)
+$B run $W 1 --conds baseline,memctrl && $B run $W 2 --conds baseline,memctrl
+$B grade $W && $B summary $W
+```

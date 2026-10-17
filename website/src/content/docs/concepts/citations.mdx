@@ -1,0 +1,158 @@
+---
+title: "Citations and freshness"
+description: "Memories that cite code, how memctrl checks the cited lines, and how it flags a memory when the code changes."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A memory can cite the code it describes. memctrl hashes the cited lines and checks them whenever the memory is used, so a memory whose code changed reaches the agent as something to check, not as settled fact. The check needs no git, network or model.
+
+## Cite code
+
+Cite when you save the memory, or add a citation to an existing one:
+
+```bash
+memctrl add "get_by_id hides soft-deleted users" --layer project --cite src/user.rs:3-5
+memctrl cite f2e46742 docs/adr/007-sqlx.md
+```
+
+| Form | Cites | Checked by |
+| --- | --- | --- |
+| `path` | The whole file | A hash of the file |
+| `path:LINE` | One line | A hash of that line |
+| `path:START-END` | A range of up to 2,000 lines | A hash of the range |
+
+- **Paths are relative to the project root.** `--cite` also resolves a path from the folder you run it in, so it works from subfolders. Absolute paths and `..` are refused, and so is a path that resolves outside the root through a symlink.
+- **The file must exist** and the range must fit inside it.
+- **Cite as often as you need.** `--cite` and `memctrl cite` take several citations, and a memory can cite several files.
+
+Over MCP, `memctrl_add` takes the same citations in its `cite` argument.
+
+## What memctrl records
+
+For each citation, memctrl stores the path, the line range, and hashes (SHA-256, first 128 bits) of:
+
+- the cited lines, to tell whether they changed;
+- their first non-blank line, to find the block again after it moves;
+- the whole file.
+
+Trailing whitespace and Windows line endings are ignored, so an editor that trims lines doesn't make a citation stale. When git is available, the commit checked out at the time is recorded too, for context only.
+
+## Statuses
+
+| Status | Meaning | Makes the memory stale |
+| --- | --- | :-: |
+| `fresh` | The cited lines are unchanged | No |
+| `moved` | The same lines now start somewhere else in the file | No |
+| `changed` | The cited lines are different | Yes |
+| `missing` | The file is gone | Yes |
+| `unresolved` | The path resolves outside the project root | No |
+| `unchecked` | Not a regular file, over 8 MB, or a secrets file | No |
+
+A memory's overall freshness is `stale` when any citation changed or went missing, `fresh` when every citation is fresh or moved, and `unknown` otherwise. A memory without citations has no freshness at all.
+
+## When checks happen
+
+Checks run whenever a cited memory is used, and they only read:
+
+| Where | What you see |
+| --- | --- |
+| Session brief | A stale memory moves to "Check before trusting", marked `stale: src/db.rs changed`, with `(+N more)` when several citations changed |
+| Recall | The same `stale:` note on the entry |
+| `memctrl query`, `memctrl_query` | `why.freshness` on each cited result |
+| `memctrl show`, `memctrl history` | Each citation with its live status, and `now_at` for one that moved |
+| `memctrl stale`, `memctrl_stale` | Every memory whose cited code changed or disappeared |
+
+Checks compare the cited lines with your working tree as it is now, not with a commit. Switch branches and a memory about code that exists only on the other branch reads `missing` until you switch back.
+
+### In the brief
+
+A stale memory leaves its usual section, so a stale decision is never presented as settled. Its priority is halved, but it keeps reserved room: up to 5 memories to check before trusting are placed before any other section fills the budget ([Session brief](/memctrl/concepts/session-brief/)).
+
+```text
+## Check before trusting
+
+- The Postgres pool allows 16 connections; raising it starved the read replica · `c7fd2c2a` · stale: src/db.rs changed
+```
+
+### `memctrl stale`
+
+```bash
+memctrl stale            # memories whose cited code changed or disappeared
+memctrl stale --all      # every cited memory, fresh ones included
+```
+
+```json
+{"stale":[{"memory":{"id":"c7fd2c2a-b61a-4efd-b992-ee653049d34d",
+  "content":"The Postgres pool allows 16 connections; raising it starved the read replica",
+  "layer":"project","claim_type":"assertion","verification_state":"unverified"},
+  "freshness":"stale",
+  "citations":[{"id":"d2a78a60-0d12-47f6-9733-54cb1e26eae6","path":"src/db.rs","lines":"4-8",
+    "status":"changed","commit_sha":null,"created_at":"2026-10-17T09:28:42.635116Z","refreshed_at":null}]}],
+ "checked":2,"root":"/path/to/your-project"}
+```
+
+## Refresh after re-checking
+
+A stale citation means the code changed, not that the memory is wrong. Read the code, then either correct the memory or tell memctrl it still holds.
+
+<Steps>
+
+1. Run `memctrl stale` to see what changed.
+
+2. Read the cited code and decide whether the memory is still true.
+
+3. If it's wrong, correct it: refute it, or add the right fact and supersede the old one ([Correct and retire memories](/memctrl/guides/correct-and-retire/)). If the file is gone for good, supersede or forget the memory.
+
+4. If it's still true, run `memctrl refresh <id>` to anchor the citation to the code as it is now.
+
+</Steps>
+
+`refresh` follows code that moved: exactly, when the same lines now start elsewhere, or by the block's first line, when that line now appears exactly once in the file.
+
+```json
+{"id":"f2e46742-a38d-4048-9322-5c7678394714","refreshed":[{"path":"src/user.rs","was":"moved","lines":"5-7","from":"3-5","followed":true}]}
+```
+
+When it can't tell where the block went, it changes nothing and asks for the range, so a citation never reads `fresh` on unrelated lines:
+
+```json
+{"error":"src/retry.rs:1-4 changed and the cited block can't be found unambiguously, so refreshing could anchor this memory to unrelated code. Check the code, then run `memctrl refresh 9c451c04 --cite src/retry.rs:<start>-<end>`"}
+```
+
+```bash
+memctrl refresh 9c451c04 --cite src/retry.rs:2-5
+```
+
+`--cite` on `refresh` sets the range only for a path the memory already cites; to cite a new file, use `memctrl cite`. Every refresh is written to the audit log (`memctrl audit`) as `citation_refresh`, with any move it followed, such as `src/user.rs 3-5 → 5-7`.
+
+## The project root
+
+Citation paths are relative to the project root, found in this order:
+
+1. The `MEMCTRL_PROJECT_ROOT` environment variable.
+2. `[citations] root` in `.memoryrc`. From a repository you haven't trusted, a root outside the repository is ignored with a warning.
+3. The nearest folder at or above the current one that contains `.git`.
+4. The project folder, where `.memoryrc` is.
+
+`memctrl stale` reports the root it used.
+
+## Secrets files can't be cited
+
+Citation hashes travel in `memctrl export`, and a short secret can be guessed back from its hash. So memctrl refuses to cite a file that looks like it holds credentials:
+
+- `.env`, `.env.*` and files ending in `.env` (but not `.example`, `.sample`, `.template` or `.dist` copies);
+- keys and certificates: `.pem`, `.key`, `.p12`, `.pfx`, `.keystore`, `.jks`, and `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` (but not `.pub` files);
+- Terraform state and variables: `.tfstate`, `.tfvars`;
+- `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `.htpasswd`, `credentials`, `credentials.json`, `secrets.json`, `secrets.yaml`, `secrets.yml`, `service-account.json`;
+- anything under `.ssh`, `.aws`, `.gnupg`, `.docker` or `.kube`.
+
+```json
+{"error":"refusing to cite .npmrc: it looks like a secrets file, and citation hashes are shared through exports"}
+```
+
+The check also applies to where a path leads, so a symlink to a secrets file is refused too. A secrets file is never hashed, even for a citation stored before this check existed (it reads `unchecked`), and citations of such files are left out of exports.
+
+<Aside type="note" title="Limits">
+Freshness covers only memories that cite code, and it compares against your working tree, not a specific commit. A memory without citations can go out of date silently: cite the code a fact depends on. See [Keep memories fresh](/memctrl/guides/keep-memories-fresh/).
+</Aside>

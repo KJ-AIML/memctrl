@@ -1,0 +1,78 @@
+---
+title: "Limits"
+description: "What memctrl doesn't do, where it falls short in measurements, and what to do instead."
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+memctrl is deliberately small: a local store, word search that explains itself, and checks you can see. That leaves gaps. This page lists the ones that matter in practice, with the workaround for each.
+
+## Search matches words, not meaning
+
+Without a model, `memctrl query` and the prompt hook find memories by the words they share with the question. A paraphrase that shares no words with the memory won't find it: of 6 such paraphrases measured ("which ORM did we pick"), 3 are found.
+
+**Instead:** ask with the names, paths, commands and error text the memory uses; add your team's synonyms as aliases under `[retrieval]` in `.memoryrc`; or turn on [search by meaning](/memctrl/concepts/search-by-meaning/) with an embedding model you run. Even with a model, requests worded unlike their memory are hard for the prompt hook: on 8 such tasks it added none of the needed memories, with or without meaning ([reworded tasks](/memctrl/benchmarks/reworded-tasks/)).
+
+## Some connections are inference
+
+A memory can be relevant to a request without sharing its words or its meaning. "Add a BODY_LIMIT_BYTES env var" and the preference "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold. EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold.
+
+Having the preference in the brief helps only partly. In the 2.6.1 round, agents with memctrl raised the convention in all four runs but, like every other setup, didn't create the README it asks for; in earlier rounds, agents followed it from CLAUDE.md in 3 of 3 runs ([brief authority](/memctrl/benchmarks/brief-authority/), [2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+
+**Instead:** put rules you want followed in every session in CLAUDE.md or AGENTS.md. Keep memctrl for the decisions, facts and lessons that are too many to read every time.
+
+## The prompt hook is Claude Code's
+
+Per-request recall runs as a Claude Code `UserPromptSubmit` hook. Codex, Cursor and other hosts get the brief through AGENTS.md, and MCP clients have no recall tool, so nothing adds the memories each request needs.
+
+**Instead:** run `memctrl recall "<request>"` yourself before a task, or call it from your host's own prompt hook if it has one. See [Codex and Cursor](/memctrl/agents/codex-and-cursor/#recall-for-each-request).
+
+## Freshness covers cited memories only
+
+memctrl knows a memory went stale only when it cites code, and it compares the cited lines with your working tree, not with a commit. A memory without a citation is never flagged, however much the code around it changed. Uncommitted edits count as changes, and checking out a branch where the cited lines differ flags the memory.
+
+**Instead:** cite the code a fact depends on with `--cite`, and check flagged memories with `memctrl stale`. See [Keep memories fresh](/memctrl/guides/keep-memories-fresh/).
+
+## memctrl doesn't record who typed a memory
+
+Every memory has a source, and the brief's "From the user" section, whose preferences the agent is told to follow, trusts the sources `manual`, `user` and `cli` by default. An agent's writes over MCP get the source `mcp` by default and stay notes. But an agent that runs `memctrl add --layer user` in its shell gets `manual`, exactly like you.
+
+The source is whatever the writer passes: `--source` on the CLI and `source` over MCP accept any name, including `user`.
+
+**Instead:** set `trusted_sources = ["user"]` under `[guard]` in your user config and save your own preferences with `--source user`. That keeps out agents' writes with the default sources, though not an agent that passes `user` itself, so read the brief's "From the user" section now and then. A repository's `.memoryrc` can only narrow this list.
+
+## The guard is a tripwire
+
+The write guard holds memories with hidden Unicode or instruction-like text for review. On a red-team corpus it catches 26 of 73 injection attempts and holds 4 of 50 ordinary notes; paraphrases, other languages and encodings still get past it. It never blocks, and what protects you is that only a person releases what it holds.
+
+**Instead:** read what agents and teammates add. Review candidates yourself before accepting them, and read `.memctrl/memory.md` diffs in pull requests as you would code. See [Review candidates](/memctrl/guides/review-candidates/) and the [security model](/memctrl/security/model/).
+
+## Team sharing is the least battle-tested part
+
+The benchmarks measure one person's store and one agent. None of them covers a team exporting, syncing and reviewing `.memctrl/memory.md` over weeks. The sharing format was last reworked in 2.2, and the 2.6.1 release checked that 2.5.0 accepts a 2.6.1 export, but sharing has seen less real-world use than the rest of memctrl.
+
+Versions matter here: memctrl 2.1 can't read the file format 2.2 and later write, and an export from 2.1 drops the file's Retracted section, which is how corrections reach teammates.
+
+**Instead:** upgrade the team together, review memory.md changes in pull requests, and run `memctrl check --base origin/main` in CI to catch dropped retractions. See [Share with your team](/memctrl/guides/share-with-your-team/).
+
+## Other programs that write need FTS5
+
+memctrl keeps its search indexes current with SQLite triggers, so a program that writes to a memctrl database directly needs SQLite with full-text search (FTS5). memctrl itself bundles it. Tools without it, such as macOS's `/usr/bin/sqlite3`, can read the database but their writes fail. See [Troubleshooting](/memctrl/help/troubleshooting/#another-program-cant-write-to-the-database).
+
+## Large stores slow the brief
+
+The brief and searches take milliseconds on a store of a few dozen memories, and grow with the store. Medians on an Apple silicon Mac for 2.6.1:
+
+| Command | 70 memories | 100,070 memories |
+| --- | ---: | ---: |
+| `context` (session brief) | 22 ms | 654 ms |
+| `recall` (prompt hook) | 12 ms | 72 ms |
+| `query` | 12 ms | 60 ms |
+
+The brief also holds only what fits its budget, about 70 one-line memories by default; the header names what was left out. Retire memories that no longer hold rather than letting the store grow without limit. See [Correct and retire](/memctrl/guides/correct-and-retire/).
+
+<Aside type="note">
+Benchmark rounds had 16 or 32 runs each with one judge, so a difference of one or two tasks can be chance. The [benchmark pages](/memctrl/benchmarks/overview/) list every caveat.
+</Aside>
+
+<LinkCard title="FAQ" description="Short answers to common questions." href="/memctrl/help/faq/" />

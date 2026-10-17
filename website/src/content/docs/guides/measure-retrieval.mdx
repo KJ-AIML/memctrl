@@ -1,0 +1,177 @@
+---
+title: "Measure retrieval"
+description: "Check that memctrl finds the right memory for your team's questions with eval suites, and keep it that way in CI."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A memory only helps if it comes back when someone needs it. [`memctrl eval`](/memctrl/reference/cli/eval/) measures that: it loads a suite of memories and questions into a throwaway in-memory store, runs every question, and reports how often the right memory came back and how often vague questions correctly got nothing. It never opens or creates your database, so it runs anywhere, including CI.
+
+## Run the built-in suite
+
+```bash
+memctrl eval
+```
+
+The built-in suite, `dev-memory-v2`, has 34 developer memories and 56 questions. By default eval runs two retrievers: `lexical`, the search `memctrl query` uses, and `legacy`, the keyword scorer of memctrl 1.x, for comparison. Condensed:
+
+```json
+{"suite":"dev-memory-v2","top_k":5,"memories":34,"cases":56,
+ "results":{
+  "lexical":{"positive_cases":43,"negative_cases":13,"hit_at_1":0.93,"hit_at_k":0.93,"mrr":0.93,"negative_accuracy":0.923,"p50_ms":0.059,…},
+  "legacy":{"hit_at_1":0.721,"hit_at_k":0.767,"mrr":0.74,"negative_accuracy":0.308,"p50_ms":1.443,…}},
+ "brief":{"budget":3000,"shown":34,"approx_tokens":1101}}
+```
+
+Run inside a project, eval uses that project's `.memoryrc` retrieval settings (aliases and generic words), so you measure the search your agents actually get.
+
+## Read the report
+
+Each retriever's results hold:
+
+| Field | What it measures |
+| --- | --- |
+| `hit_at_1`, `hit_at_k` | Share of answerable questions whose expected memory came back first, or in the top k (`--top-k`, default 5) |
+| `mrr` | Mean reciprocal rank: 1 when the answer is always first, 0.5 when it's always second |
+| `recall_at_k` | Share of each question's expected memories found in the top k, averaged |
+| `precision_at_k` | Share of returned memories that were expected, averaged over answerable questions |
+| `negative_accuracy` | Share of questions with no answer (vague or off-topic) that correctly returned nothing |
+| `avg_facts`, `avg_tokens` | How many memories, and roughly how many tokens, a question adds to the agent's context |
+| `p50_ms`, `p95_ms` | Search latency per question |
+| `by_kind` | `hit_at_k`, `mrr` and `negative_accuracy` for each kind of question in the suite |
+| `failures` | Every question that missed: what was expected and what came back |
+
+`brief` says how many of the suite's memories the session brief would show at the default budget. `failures` is the part to read first:
+
+```json
+[{"query":"which ORM did we pick","kind":"paraphrase","expected":["sqlx"],"got":["overview-doc"]},
+ {"query":"how long do login sessions last","kind":"paraphrase","expected":["redis-ttl"],"got":[]},
+ {"query":"Terraform state locking","kind":"negative","expected":[],"got":["ci-cache"]}]
+```
+
+The built-in suite was written by the author of the retriever, so treat its numbers as a regression floor, not a claim about your questions. Write your own.
+
+## Write your own suite
+
+A suite is a JSON file with your memories and the questions your team asks:
+
+```json title="tests/memory-suite.json"
+{
+  "name": "ledger-team",
+  "description": "Questions our team asks, with the memory that answers each",
+  "memories": [
+    {"key": "sqlx", "content": "We chose SQLx over Diesel: compile-time query checks caught 3 prod bugs", "claim_type": "decision"},
+    {"key": "pool", "content": "Postgres pool max_connections is 20: pgbouncer allows 25 per app"},
+    {"key": "truncate", "content": "Integration tests TRUNCATE ledger_entries; never point them at a shared database"},
+    {"key": "jwks", "content": "Rotating the JWT key: publish the new public key at /.well-known/jwks.json"},
+    {"key": "pnpm", "content": "Use pnpm, not npm: the lockfile is pnpm-lock.yaml"}
+  ],
+  "cases": [
+    {"query": "sqlx or diesel", "expect": ["sqlx"], "kind": "keyword"},
+    {"query": "max_connections pgbouncer", "expect": ["pool"], "kind": "identifier"},
+    {"query": "can I run the integration tests against staging db", "expect": ["truncate"], "kind": "question"},
+    {"query": "rotate JWT signing key", "expect": ["jwks"], "kind": "keyword"},
+    {"query": "which ORM did we pick", "expect": ["sqlx"], "kind": "paraphrase"},
+    {"query": "npm install fails", "expect": ["pnpm"], "kind": "error"},
+    {"query": "summarize the project", "expect": [], "kind": "vague"},
+    {"query": "Kafka consumer lag", "expect": [], "kind": "off-topic"}
+  ]
+}
+```
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | The suite's name, echoed in the report |
+| `description` | no | Free text |
+| `memories[].key` | yes | A name for the memory that cases refer to |
+| `memories[].content` | yes | The memory text |
+| `memories[].layer` | no | Default `project` |
+| `memories[].claim_type`, `memories[].verification_state` | no | As in `memctrl add`; defaults `assertion` and `unverified` |
+| `cases[].query` | yes | A question or request, as someone would type it |
+| `cases[].expect` | yes | Keys of the memories that answer it; `[]` means nothing should come back |
+| `cases[].kind` | no | Any label, used to group results in `by_kind`; default `general` |
+
+Every key in `expect` must name a memory in the suite, or eval refuses the file. Include vague and off-topic questions with `"expect": []`: they catch noise, which matters as much as misses.
+
+<Steps>
+
+1. Run it:
+
+   ```bash
+   memctrl eval --file tests/memory-suite.json --retriever lexical
+   ```
+
+   ```json
+   {"suite":"ledger-team","top_k":5,"memories":5,"cases":8,"results":{"lexical":{"hit_at_1":0.833,"hit_at_k":0.833,"mrr":0.833,"negative_accuracy":1.0,…,
+     "failures":[{"query":"which ORM did we pick","kind":"paraphrase","expected":["sqlx"],"got":[]}]}},…}
+   ```
+
+2. Fix what failed. "ORM" appears in no memory, so word search can't connect it. Add an alias group to `.memoryrc`:
+
+   ```toml title=".memoryrc"
+   [retrieval]
+   aliases = [["orm", "sqlx", "diesel"]]
+   ```
+
+3. Run it again. `hit_at_k` is now 1.0 and `failures` is empty. Keep the alias, and keep the case in the suite so a later change can't lose it.
+
+</Steps>
+
+Base the suite on real memories and real questions: what people asked the agent last month, and what the memory that should have answered says. Commit the suite to the repository, so the whole team and CI run the same questions.
+
+## Choose a retriever
+
+| `--retriever` | Measures | Use it to |
+| --- | --- | --- |
+| `lexical` | Word search, as `memctrl query` runs it | Check your memories and aliases |
+| `legacy` | The memctrl 1.x keyword scorer | Compare with the old scorer |
+| `both` (default) | `lexical` and `legacy` | See both side by side |
+| `semantic` | Word search fused with matches by meaning; needs `[semantic]` in your user config | Measure [search by meaning](/memctrl/guides/set-up-search-by-meaning/) with your model |
+| `recall` | What the prompt hook would add to each question as a request (with meaning too, when `[semantic]` is on) | Check what reaches the agent without being asked |
+
+`recall` has a higher bar than `lexical`, because nobody asked: on the same suite it found the answer for 4 of 6 questions where `lexical` found 6 of 6 after the alias. A memory that `query` finds but recall doesn't usually shares only one topic with the request. To see what the model adds, compare a run with `MEMCTRL_SEMANTIC=off` against one without.
+
+## Gate CI on it
+
+`--min-hit-rate` makes eval exit with an error when `hit_at_k` on answerable questions falls below a rate from 0 to 1. It checks the `semantic` or `recall` results when you choose that retriever, and `lexical` otherwise:
+
+```text
+$ memctrl eval --file tests/memory-suite.json --min-hit-rate 0.9
+{"error":"lexical hit@5 is 0.833, below --min-hit-rate 0.9"}
+```
+
+A GitHub Actions job that installs memctrl and runs the suite on every pull request. No store is needed:
+
+```yaml title=".github/workflows/memory-eval.yml"
+name: memory-eval
+on: pull_request
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install memctrl
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.6.2 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Measure retrieval
+        run: |
+          memctrl eval --file tests/memory-suite.json --retriever lexical --min-hit-rate 0.9
+          memctrl eval --file tests/memory-suite.json --retriever recall --min-hit-rate 0.6
+```
+
+The job fails when a change to `.memoryrc` (an alias removed, a generic word added) or an upgrade of memctrl makes your questions stop finding their answers. Set each floor a little below what the suite scores today.
+
+<Aside type="note">
+Retrieval scores say whether the right memory comes back, not whether the agent then does the work right. The [agent benchmark](/memctrl/benchmarks/agent-benchmark/) measures that.
+</Aside>
+
+## Suites to learn from
+
+The memctrl repository ships the suites behind its published numbers:
+
+- [`tests/fixtures/eval/`](https://github.com/KJ-AIML/memctrl/tree/main/tests/fixtures/eval): suites written by an independent reviewer, a Thai team (56 memories, 104 questions in 12 kinds), a held-out set of questions never used for tuning, and an English mirror of the vague questions. CI keeps floors on them.
+- [`bench/retrieval/suites/`](https://github.com/KJ-AIML/memctrl/tree/main/bench/retrieval/suites): those suites plus `builtin.json` and `realdev.json`, 77 memories and 60 questions from a real project.
+
+Download one and run it with `--file` to see how a suite with many kinds of questions is put together. [Benchmarks](/memctrl/benchmarks/overview/) has the results for each.

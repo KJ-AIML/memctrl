@@ -1,0 +1,60 @@
+---
+title: "Environment variables"
+description: "Every environment variable memctrl reads, what it changes and its default."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page lists every environment variable memctrl reads. Most settings live in [`.memoryrc`](/memctrl/reference/memoryrc/) and your [user config](/memctrl/reference/user-config/); environment variables cover the store and project root for one shell or host, switching search by meaning off, and the keys and endpoints of optional model providers, which never go in a file or on the command line.
+
+## Store and project
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| `MEMCTRL_DB_PATH` | The SQLite store to use, the same as the global `--db` option. `--db` on the command line wins. A path named here is created on first use, except by `context` and `recall`. | Unset: `db_path` in `.memoryrc`, else `.memctrl/memories.db` in the project folder |
+| `MEMCTRL_PROJECT_ROOT` | The project root that [citation](/memctrl/concepts/citations/) paths are relative to and that confines relative output paths (`export --out`, `context --write`). Overrides `[citations] root`. It must exist. It doesn't change which `.memoryrc` or store is used. | Unset: `[citations] root`, else the nearest folder above the working directory that contains `.git`, else the project folder |
+| `MEMCTRL_SEMANTIC` | `off` (any case) turns [search by meaning](/memctrl/concepts/search-by-meaning/) off for that command, or for the whole MCP server process. Other values change nothing. | Unset: on when your user config has `[semantic]` |
+
+## Optional LLM providers
+
+These apply only to commands you run with `--llm`. A flag wins over its variable, the `MEMCTRL_LLM_*` variable wins over the provider's own variable, and the provider's preset comes last. Empty values count as unset. See [LLM providers](/memctrl/guides/llm-providers/) for setup.
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| `MEMCTRL_LLM_PROVIDER` | The provider: `openai`, `xai` (or `grok`), `anthropic` (or `claude`), or `compatible` (or `local`, `ollama`, `lmstudio`) for any OpenAI-compatible server. `--llm-provider` wins. | `openai` |
+| `MEMCTRL_LLM_MODEL` | The model name. `--llm-model` wins. Required for every provider but `openai`. | `gpt-4o-mini` for `openai` |
+| `MEMCTRL_LLM_BASE_URL` | The API base URL. `--llm-base-url` wins. Required for `compatible`. Must use `https`, except on `localhost` or a loopback address. | `https://api.openai.com/v1`, `https://api.x.ai/v1` or `https://api.anthropic.com/v1` |
+| `MEMCTRL_LLM_API_KEY` | The API key, read when `--llm-api-key-env` isn't given, before the provider's own variable. | Unset |
+| `MEMCTRL_LLM_MAX_RETRIES` | How many times a transport error or 5xx response is retried, with exponential backoff. A nonnegative integer, capped at 5; anything else is an error. | `2` |
+| `OPENAI_API_KEY` | The key for `openai` and `compatible`. | Unset |
+| `XAI_API_KEY` | The key for `xai`. | Unset |
+| `ANTHROPIC_API_KEY` | The key for `anthropic`. | Unset |
+| `OPENAI_MODEL` | The model for `openai` and `compatible`, after `MEMCTRL_LLM_MODEL`. | Unset |
+| `OPENAI_BASE_URL` | The base URL for `openai` and `compatible`, after `MEMCTRL_LLM_BASE_URL`. | Unset |
+| The name you pass to `--llm-api-key-env` | The key, instead of `MEMCTRL_LLM_API_KEY` and the provider's variable. The command fails if it isn't set. | None |
+
+`xai`, `anthropic` and `openai` need a key. `compatible` works without one, but only on `localhost` or a loopback address.
+
+<Aside type="tip" title="Keep keys out of argv">
+Pass `--llm-api-key-env NAME` rather than a key: a key on the command line is visible to other processes. The hidden `--llm-api-key` option still works but prints a warning.
+</Aside>
+
+## Search by meaning
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| The name in `[semantic] api_key_env` | The key sent to your embedding server as a bearer token. If it isn't set, search by meaning is off with a warning. | None: no key is sent |
+
+## Config location and home folder
+
+| Variable | What it does | Default |
+| --- | --- | --- |
+| `XDG_CONFIG_HOME` | On macOS and Linux, your user config is `$XDG_CONFIG_HOME/memctrl/config.toml`. Ignored when empty. | Unset: `$HOME/.config` |
+| `HOME` | Where your user config lives when `XDG_CONFIG_HOME` isn't set (`~/.config/memctrl/config.toml`). It's also the folder the project search never climbs into from below, what `~/` means in `[trust] repos`, and where `install` without `--project` writes the skill and hooks. | Set by your system |
+| `USERPROFILE` | Used instead of `HOME` when `HOME` isn't set: for the project search, `~/` in `[trust] repos` and `install` without `--project`. | Set by Windows |
+| `APPDATA` | On Windows, your user config is `%APPDATA%\memctrl\config.toml`. | Set by Windows |
+| `PATH` | `install --hook` writes plain `memctrl` into the hook commands when the first `memctrl` on `PATH` is the executable you ran, and its quoted absolute path otherwise. | Set by your system |
+
+## What no variable can do
+
+No environment variable skips the review of held memories. `memctrl accept` and `import --accept` ask a person at a terminal whatever the environment says; see [Security model](/memctrl/security/model/).

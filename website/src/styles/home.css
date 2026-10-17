@@ -1,0 +1,671 @@
+/*
+ * The home page (components/Home.astro). A centered hero on the dot grid, framed by the pixel
+ * avalanche (scripts/pixel-field.ts); below it, sections that each take their own shape: the
+ * brief beside its notes, a timeline, a one-square-per-run chart, an indexed list and a closing
+ * call to action. Reveals are staggered by scripts/reveal.ts.
+ */
+
+.mc-home {
+  --mc-gap: clamp(6rem, 11vw, 9rem);
+  --mc-chart-memctrl: #8088f7; /* validated against the charcoal surface with the dataviz checker */
+  --mc-chart-other: #646472;
+}
+.mc-home a {
+  text-decoration: none;
+}
+.mc-home code {
+  font-family: var(--__sl-font-mono);
+}
+.mc-home .accent {
+  color: var(--mc-peri);
+}
+
+/* A label is a pixel and a lowercase mono word, the way the CLI talks. */
+.mc-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8rem;
+  color: var(--mc-muted);
+}
+.mc-label::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--mc-peri);
+}
+.mc-home h2 {
+  margin: 0.85rem 0 0;
+  max-width: 34rem;
+  text-wrap: balance;
+  font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+  font-weight: 740;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+  color: var(--mc-ink);
+}
+.mc-lead {
+  margin: 1rem 0 0;
+  max-width: 36rem;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--mc-muted);
+  text-wrap: pretty;
+}
+
+/* Buttons and links: they move a little when you press them. */
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.62rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, translate 0.12s ease;
+}
+.mc-btn:active {
+  translate: 0 1px;
+}
+.mc-btn-solid {
+  border-radius: 0.3rem;
+  background: var(--mc-peri);
+  color: var(--mc-on-peri);
+}
+.mc-btn-solid:hover {
+  background: var(--mc-lavender);
+}
+.mc-btn-outline {
+  border: 1.5px solid var(--mc-lavender);
+  border-radius: 999px;
+  color: var(--mc-ink);
+}
+.mc-btn-outline:hover {
+  border-color: var(--mc-peri);
+  color: var(--mc-lavender);
+}
+.mc-home :is(a, button):focus-visible {
+  outline: 2px solid var(--mc-peri);
+  outline-offset: 3px;
+}
+.mc-text-link {
+  font-weight: 700;
+  color: var(--mc-peri-text);
+  transition: color 0.2s ease;
+}
+.mc-text-link:hover {
+  color: var(--mc-lavender);
+}
+
+/* Reveals: hidden only once the script runs, so nothing is lost without it. */
+.mc-js [data-reveal] {
+  opacity: 0;
+  translate: 0 14px;
+  transition: opacity 0.6s ease, translate 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.mc-js [data-reveal].is-in {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* ---------- Hero ---------- */
+
+.mc-hero {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: max(38rem, calc(100svh - var(--sl-nav-height)));
+  /* Full width: the avalanche reaches the window edges. */
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  margin-top: calc(-1 * var(--sl-content-pad-y, 2rem));
+  overflow: hidden;
+}
+.mc-field {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+}
+.mc-hero-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-sizing: border-box;
+  width: min(100%, 64rem);
+  min-width: 0;
+  padding: 2rem 1.25rem 12rem;
+  text-align: center;
+}
+.mc-hero h1 {
+  margin: 0;
+  font-size: clamp(2.1rem, 4.8vw, 4rem);
+  text-wrap: balance;
+  font-weight: 760;
+  letter-spacing: -0.04em;
+  line-height: 1.04;
+  color: var(--mc-ink);
+}
+.mc-sub {
+  margin: 1.25rem 0 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--mc-muted);
+}
+.mc-hero .mc-actions {
+  justify-content: center;
+}
+.mc-install {
+  display: block;
+  max-width: 100%;
+  margin-top: 1.75rem;
+  padding: 0.5rem 0.85rem;
+  overflow-x: auto;
+  border: 1px solid var(--mc-border);
+  border-radius: 0.4rem;
+  background: rgb(20 20 22 / 85%);
+  font-size: 0.78rem;
+  color: var(--mc-text);
+  white-space: nowrap;
+}
+.mc-install span {
+  color: var(--mc-faint);
+  user-select: none;
+}
+.mc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1.9rem;
+}
+
+/* ---------- The brief and its notes ---------- */
+
+.mc-brief {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: center;
+  margin-top: clamp(4rem, 8vw, 6.5rem);
+}
+.mc-notes {
+  margin: 2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mc-notes li {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--mc-border);
+  line-height: 1.55;
+  color: var(--mc-text);
+}
+.mc-notes b {
+  color: var(--mc-ink);
+}
+.mc-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 0.2rem;
+  background: var(--mc-peri);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--mc-on-peri);
+}
+
+.mc-window {
+  margin: 0;
+  border: 1px solid var(--mc-border-strong);
+  border-radius: 0.75rem;
+  background: rgb(20 20 22 / 94%);
+  box-shadow: 0 40px 80px -48px rgb(139 147 255 / 55%);
+  overflow: hidden;
+}
+.mc-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--mc-border);
+  background: var(--mc-code-bar);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+.mc-window-bar i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 2px;
+  background: var(--mc-border-strong);
+}
+.mc-window-bar b {
+  margin-inline-start: 0.5rem;
+  font-weight: 500;
+}
+.mc-window pre {
+  margin: 0;
+  padding: 1.1rem 1.25rem 1.3rem;
+  border: 0;
+  background: none;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.78rem;
+  line-height: 1.8;
+  color: var(--mc-text);
+  white-space: pre-wrap;
+}
+.mc-window .line .mc-mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-inline-end: 0.55rem;
+  font-size: 0.66rem;
+  vertical-align: 0.05em;
+}
+.mc-window .h {
+  color: var(--mc-ink);
+  font-weight: 650;
+}
+.mc-window .s {
+  color: var(--mc-peri-text);
+  font-weight: 600;
+}
+.mc-window .m {
+  color: var(--mc-muted);
+}
+.mc-window .w {
+  color: #f0b45c;
+}
+/* The brief assembles line by line, the way memctrl prints it. */
+.mc-js .mc-window .line {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  transition-delay: calc(var(--i) * 70ms + 250ms);
+}
+.mc-js .mc-window.is-in .line {
+  opacity: 1;
+}
+
+/* ---------- Timeline ---------- */
+
+.mc-moments {
+  margin-top: var(--mc-gap);
+}
+.mc-timeline {
+  position: relative;
+  margin: 2.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mc-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) auto;
+  gap: 1.5rem 2.5rem;
+  align-items: baseline;
+  padding: 1.75rem 0 1.75rem 1.75rem;
+  border-top: 1px solid var(--mc-border);
+}
+.mc-timeline li:last-child {
+  border-bottom: 1px solid var(--mc-border);
+}
+.mc-timeline li::before {
+  /* A pixel on the rail for each moment. */
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2.15rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--mc-peri);
+}
+.mc-timeline::before {
+  content: '';
+  position: absolute;
+  left: 0.24rem;
+  top: 2.4rem;
+  bottom: 2.4rem;
+  border-left: 1px dashed var(--mc-border-strong);
+}
+.mc-timeline .when {
+  font-family: var(--__sl-font-mono);
+  font-size: 0.85rem;
+  color: var(--mc-peri-text);
+}
+.mc-timeline h3 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--mc-ink);
+}
+.mc-timeline p {
+  margin: 0.45rem 0 0;
+  max-width: 40rem;
+  line-height: 1.6;
+  color: var(--mc-text);
+}
+.mc-timeline .more {
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--mc-muted);
+  transition: color 0.2s ease;
+}
+.mc-timeline .more span {
+  display: inline-block;
+  transition: translate 0.2s ease;
+}
+.mc-timeline .more:hover {
+  color: var(--mc-lavender);
+}
+.mc-timeline .more:hover span {
+  translate: 3px 0;
+}
+
+/* ---------- Benchmark chart: one square per run ---------- */
+
+.mc-bench {
+  margin-top: var(--mc-gap);
+}
+.mc-chart {
+  margin-top: 2.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid var(--mc-border);
+  border-radius: 0.75rem;
+  background: rgb(20 20 22 / 70%);
+}
+.mc-chart-group + .mc-chart-group {
+  margin-top: 1.75rem;
+}
+.mc-chart-group-label {
+  margin: 0 0 0.6rem;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.76rem;
+  color: var(--mc-faint);
+}
+.mc-chart-row {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr) 4rem 7rem;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.45rem 0.5rem;
+  margin-inline: -0.5rem;
+  border-radius: 0.35rem;
+  transition: background 0.2s ease;
+}
+.mc-chart-row:hover {
+  background: rgb(255 255 255 / 3%);
+}
+.mc-chart-row .name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--mc-text);
+}
+.mc-chart-row.memctrl .name {
+  color: var(--mc-ink);
+}
+.mc-chart-row .runs {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(0, 1fr));
+  gap: 2px;
+}
+.mc-chart-row .runs i {
+  aspect-ratio: 1;
+  border-radius: 1px;
+}
+.mc-chart-row .runs i.right {
+  background: var(--mc-chart-other);
+}
+.mc-chart-row.memctrl .runs i.right {
+  background: var(--mc-chart-memctrl);
+}
+.mc-chart-row .runs i.wrong {
+  box-shadow: inset 0 0 0 1px var(--mc-border-strong);
+}
+/* Squares fill in one run at a time. */
+.mc-js .mc-chart .runs i.right {
+  transition: background-color 0.25s ease;
+  transition-delay: calc(var(--i) * 22ms + 200ms);
+}
+.mc-js .mc-chart:not(.is-in) .runs i.right {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mc-border-strong);
+}
+.mc-chart-row .score {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 720;
+  text-align: right;
+  color: var(--mc-ink);
+}
+.mc-chart-row .score small,
+.mc-chart-row .cost small {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--mc-faint);
+}
+.mc-chart-row .cost {
+  font-family: var(--__sl-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86rem;
+  text-align: right;
+  color: var(--mc-text);
+}
+.mc-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--mc-border);
+  font-size: 0.82rem;
+  color: var(--mc-muted);
+}
+.mc-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.mc-chart-legend .key {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 1px;
+}
+.key.memctrl {
+  background: var(--mc-chart-memctrl);
+}
+.key.other {
+  background: var(--mc-chart-other);
+}
+.key.wrong {
+  box-shadow: inset 0 0 0 1px var(--mc-border-strong);
+}
+.mc-foot {
+  margin: 1.25rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--mc-muted);
+}
+.mc-foot a {
+  font-weight: 650;
+  color: var(--mc-peri-text);
+}
+.mc-foot a:hover {
+  color: var(--mc-lavender);
+}
+
+/* ---------- Principles: a heading that stays while the list scrolls ---------- */
+
+.mc-principles {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+  align-items: start;
+  margin-top: var(--mc-gap);
+}
+.mc-principles-head {
+  position: sticky;
+  top: calc(var(--sl-nav-height) + 2rem);
+}
+.mc-principles-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mc-principles-list li {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1.35rem 0;
+  border-top: 1px solid var(--mc-border);
+}
+.mc-principles-list li:last-child {
+  border-bottom: 1px solid var(--mc-border);
+}
+.mc-principles-list .n {
+  padding-top: 0.15rem;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8rem;
+  color: var(--mc-peri-text);
+}
+.mc-principles-list h3 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--mc-ink);
+}
+.mc-principles-list p {
+  margin: 0.35rem 0 0;
+  line-height: 1.6;
+  color: var(--mc-text);
+}
+
+/* ---------- Closing call to action ---------- */
+
+.mc-cta {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.6fr);
+  gap: 1.5rem 3rem;
+  align-items: center;
+  margin-top: var(--mc-gap);
+  padding: clamp(1.75rem, 4vw, 3rem);
+  border-radius: 0.9rem;
+  background:
+    radial-gradient(60% 120% at 100% 100%, rgb(139 147 255 / 16%), transparent 60%),
+    var(--mc-raised);
+  border: 1px solid var(--mc-border);
+}
+.mc-cta h2 {
+  margin-top: 0;
+}
+.mc-cta .mc-lead {
+  margin-top: 0.75rem;
+}
+.mc-cta-code {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  overflow-x: auto;
+  border: 1px solid var(--mc-border);
+  border-radius: 0.5rem;
+  background: var(--mc-code-bg);
+  font-family: var(--__sl-font-mono);
+  font-size: 0.78rem;
+  line-height: 1.9;
+  color: var(--mc-text);
+}
+.mc-cta-code .p {
+  color: var(--mc-faint);
+  user-select: none;
+}
+.mc-cta .mc-actions {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+}
+
+/* ---------- The docs map ---------- */
+
+.mc-map {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2rem;
+  margin-top: clamp(3.5rem, 7vw, 5rem);
+  padding-top: 2rem;
+  border-top: 1px solid var(--mc-border);
+}
+.mc-map h3 {
+  margin: 0 0 0.75rem;
+  font-family: var(--__sl-font-mono);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--mc-faint);
+}
+.mc-map ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mc-map li + li {
+  margin-top: 0.5rem;
+}
+.mc-map a {
+  font-weight: 560;
+  color: var(--mc-text);
+  transition: color 0.2s ease;
+}
+.mc-map a:hover {
+  color: var(--mc-peri-text);
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 62rem) {
+  .mc-brief,
+  .mc-principles,
+  .mc-cta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mc-principles-head {
+    position: static;
+  }
+  .mc-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mc-timeline li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+}
+@media (max-width: 44rem) {
+  .mc-hero-inner {
+    padding-bottom: 9rem;
+  }
+  .mc-chart-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.4rem 0.75rem;
+  }
+  .mc-chart-row .runs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .mc-chart-row .cost {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    text-align: left;
+    font-size: 0.78rem;
+    color: var(--mc-muted);
+  }
+}
+
+/* Center the home page's container at every width, so the full-width hero lines up. */
+.content-panel:has(.mc-home) .sl-container {
+  max-width: 72rem;
+  margin-inline: auto;
+}
