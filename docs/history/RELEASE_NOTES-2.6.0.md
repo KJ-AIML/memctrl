@@ -15,7 +15,7 @@ Up to 2.5, the session brief called every entry "Notes, not instructions". Agent
 ## What it doesn't change
 
 - **Everything else is still notes.** Facts, lessons and hypotheses are things to check against the code. So is anything an agent saves over MCP or that arrives in a plain-text import.
-- **memctrl doesn't know who typed a memory.** An agent running `memctrl add --layer user` in its shell is counted as you. To count only your own, set `trusted_sources = ["user"]` under `[guard]` in your user config and add preferences with `--source user`. The guard still re-checks every entry as the brief is built.
+- **memctrl doesn't know who typed a memory.** An agent running `memctrl add --layer user` in its shell is counted as you. To keep an agent's ordinary writes out, set `trusted_sources = ["user"]` under `[guard]` in your user config and add preferences with `--source user`. That isn't proof of who wrote a memory: an agent can pass `--source user` too. The guard still re-checks every entry as the brief is built.
 - **A preference isn't always followed.** Agents now mention the README preference in the benchmark, where 2.5.0 ignored it, but they still didn't create the README it asks for. Put rules that must hold in CLAUDE.md.
 
 ## Upgrade notes

@@ -1,0 +1,137 @@
+---
+title: "Search by meaning"
+description: "Optional semantic search with an embedding model you run: how it combines with word search, its thresholds, what it stores, and what it can't reach."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Word search misses a question worded unlike the memory: "which JWT library" never finds "we verify tokens with jose". Search by meaning closes some of that gap. Point memctrl at an embedding model you run, and `query`, the MCP server and the prompt hook also match memories by meaning. It is off until you turn it on, and word search keeps working the same either way.
+
+<Aside type="tip">
+This page explains how it works. To turn it on, follow [Set up search by meaning](/memctrl/guides/set-up-search-by-meaning/).
+</Aside>
+
+## What it changes
+
+| Where | With search by meaning |
+| --- | --- |
+| `memctrl query`, MCP `memctrl_query` | Word matches are fused with the memories closest in meaning |
+| `memctrl recall`, the prompt hook | A memory close enough in meaning to a piece of the request is added even when they share no topic word |
+| `memctrl context`, the session brief | Nothing; the brief ranks by trust, not by a query |
+
+## Added to word matches, not replacing them
+
+`query` takes the word ranking and the memories closest in meaning, up to 10, and merges them with reciprocal rank fusion: each list adds 1/(60 + rank) to a memory, and ties go to the word match, whose evidence is the more precise.
+
+A memory found by meaning alone must clear the model's **similarity threshold**, so a vague question can still get nothing. In the result:
+
+- `why.matched` gains a label such as `similar meaning (0.62)`;
+- a memory found by meaning alone has `coverage` 0 and its similarity as `score`;
+- `trace` adds `semantic` and `vector_hits:N`;
+- provenance records the method `lexical_bm25+semantic`.
+
+Results that used the model aren't cached, since the model call is most of their cost.
+
+## Two thresholds
+
+| Setting | Used by | What it decides |
+| --- | --- | --- |
+| `threshold` | `query`, `memctrl_query` | The similarity a memory needs to be returned on meaning alone |
+| `recall_threshold` | `recall`, the prompt hook | The same for additions nobody asked for. Never lower than `threshold`. |
+
+The prompt hook is stricter because nobody asked: an unrelated note added to every request is worse than nothing. On 15 everyday prompts unrelated to the benchmark store, none reached EmbeddingGemma's recall threshold; the closest came to 0.54, under 0.56.
+
+### Measured presets
+
+memctrl ships thresholds measured on its built-in suite for two models, chosen by the model name in your config:
+
+| Model | `threshold` | `recall_threshold` |
+| --- | ---: | ---: |
+| EmbeddingGemma (`embeddinggemma`, `embedding-gemma`) | 0.455 | 0.56 |
+| multilingual-e5-small | 0.849 | 0.85 |
+
+`threshold` balances finding answers against declining unanswerable questions; `recall_threshold` sits just above the closest any unanswerable question came to a memory. For any other model, search by meaning stays off, with a warning, until you add a threshold: without one, every question would return something. `memctrl semantic tune` measures both values on the built-in suite (or your own with `--file`) and prints the lines to add.
+
+### Prefixes
+
+Many embedding models expect text wrapped in a prefix, different for questions and for documents. memctrl picks them from the model name; `query_prefix` and `document_prefix` override them.
+
+| Model name contains | Query prefix | Document prefix |
+| --- | --- | --- |
+| `embeddinggemma`, `embedding-gemma` | `task: search result \| query: ` | `title: none \| text: ` |
+| `e5-` | `query: ` | `passage: ` |
+| `nomic-embed-text` | `search_query: ` | `search_document: ` |
+| `mxbai-embed` | `Represent this sentence for searching relevant passages: ` | none |
+| `qwen3-embedding` | `Instruct: Given a web search query, retrieve relevant passages that answer the query`, a line break, then `Query:` | none |
+
+Vectors from different models, document prefixes or `dimensions` never mix: each combination is its own vector space.
+
+## Only you can turn it on
+
+Search by meaning sends memory text, and every request the prompt hook sees, to a model server. So only your user config can turn it on:
+
+```toml title="~/.config/memctrl/config.toml"
+[semantic]
+model = "embeddinggemma"                  # required: the name your server knows the model by
+base_url = "http://localhost:11434/v1"    # the default (Ollama); LM Studio is http://localhost:1234/v1
+```
+
+- **A repository can't enable it.** A `[semantic]` section in `.memoryrc` is ignored with a warning, even in a repository you trust.
+- **A server off this machine needs consent and HTTPS.** Without `allow_remote = true`, a non-local `base_url` is an error; with it, the URL must use `https`. A key comes from the environment variable that `api_key_env` names and is sent as a bearer token. The URL may not contain credentials, a query or a fragment, and redirects aren't followed.
+- **Typos fail loudly.** An unknown key or an invalid value in `[semantic]` is an error, so a misspelled setting can't quietly leave it off.
+
+```json
+{"error":"invalid [semantic] in …/memctrl/config.toml: semantic.base_url http://example.com/v1 is not on this machine. Memories and every prompt would be sent there; set allow_remote = true in [semantic] if that's what you want"}
+```
+
+Every setting is listed in [User config](/memctrl/reference/user-config/).
+
+## What it stores
+
+- **Memory vectors only.** A query's or a prompt's vector is used once and dropped.
+- **In the store,** in a `semantic_vectors` table created the first time a vector is saved. Each vector is unit length, stored as little-endian 32-bit floats.
+- **Kept in step with the text.** Triggers drop a memory's vectors when the memory is deleted or its text changes, whichever memctrl version makes the change.
+- **Built as needed.** A search embeds up to 16 memories that have no vector yet; `memctrl semantic index` embeds the rest.
+- **About 3 KB per memory** at 768 dimensions. For models trained to be truncated, such as EmbeddingGemma, `dimensions = 256` keeps the first 256 and a third of the space.
+
+`memctrl semantic clear` deletes every vector, the table and its triggers.
+
+## When the model is down
+
+A search that can't reach the model falls back to word search and says so in `trace`:
+
+```json
+"trace":["lexical_bm25","terms:2","runs:0","candidates:1","semantic_unavailable: can't reach the embedding server"]
+```
+
+- A search waits 3 seconds for the model by default (`timeout_ms`), longer when it also embeds memories that lack vectors; `memctrl semantic index` waits up to 120 seconds.
+- `MEMCTRL_SEMANTIC=off` turns search by meaning off for one command.
+- `memctrl semantic status` shows the settings in effect, whether the model answers, and how many memories have vectors. When memories still lack one, `trace` adds `semantic_unindexed:N`.
+
+With a local model, a search takes about 10 ms longer.
+
+## What it measured
+
+On the comparison suites, with EmbeddingGemma 300M running locally:
+
+| | Words only | + meaning |
+| --- | ---: | ---: |
+| `query`, real-dev: answer in the top 5 | 92% | **95%** |
+| `query`, Thai held-out: answer in the top 5 | 92% | **100%** |
+| `query`, built-in: answer in the top 5 | 93% | **95%** |
+| `query`, vague questions answered with nothing (built-in, Thai held-out, English) | 92%, 92%, 92% | 85%, 85%, 92% |
+| Prompt hook, real-dev questions: answer added | 82% | **85%** |
+| Prompt hook, vague questions: nothing added (built-in, Thai, English) | 100%, 100%, 92% | 100%, 100%, 92% |
+
+Each drop in "answered with nothing" is one question. Reproduce with `memctrl eval --retriever semantic` and `--retriever recall`; the full study is in [Search by meaning benchmark](/memctrl/benchmarks/search-by-meaning/).
+
+## What it can't reach
+
+<Aside type="caution" title="No threshold separates these">
+On 8 agent tasks worded unlike the memory they need, 4 of them in Thai, the prompt hook added none of the needed memories, with meaning or without. EmbeddingGemma ranked the right memory first for 4 of the 8, but at similarities of 0.34 to 0.49, while unrelated everyday prompts reach 0.54. No threshold admits those memories and keeps unrelated ones out.
+</Aside>
+
+- **Inference isn't similarity.** "Add a BODY_LIMIT_BYTES env var" and the preference "document every new env var in the README" sit at 0.29, far below any useful threshold. Adding an env var means documenting it only if you know the rule.
+- **Requests that share words gain nothing.** In the agent benchmark, the prompt hook added the same memories to all 16 tasks with meaning on or off, because those requests already share words with their memories.
+
+What brought the reworded tasks' memories to the agent was a larger session brief, not meaning ([Reworded requests](/memctrl/benchmarks/reworded-tasks/)). For rules an agent must apply without being reminded, use CLAUDE.md.

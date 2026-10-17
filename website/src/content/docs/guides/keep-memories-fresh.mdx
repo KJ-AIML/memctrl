@@ -1,0 +1,165 @@
+---
+title: "Keep memories in step with code"
+description: "Cite the code a memory describes, find the memories a change made stale, and re-anchor or correct them."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+A memory about code goes out of date the moment someone changes that code. When a memory cites the lines it describes, memctrl notices the change and tells the agent to check before trusting it. This page walks through the whole cycle: cite, change the code, find what went stale, then re-anchor or correct the memory.
+
+How memctrl hashes and compares cited lines is explained in [Citations](/memctrl/concepts/citations/). The short version: `memctrl stale` reports a memory when a cited range changed (`changed`) or its file is gone (`missing`). A block that only moved within its file (`moved`) still counts as fresh.
+
+## Cite the code
+
+Here is the file the memory describes:
+
+```rust title="src/db.rs"
+use sqlx::postgres::PgPoolOptions;
+
+pub async fn connect(url: &str) -> sqlx::Result<sqlx::PgPool> {
+    PgPoolOptions::new()
+        .max_connections(20)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .connect(url)
+        .await
+}
+```
+
+Save the memory with `--cite` and the smallest range that holds the fact:
+
+```bash
+memctrl add "Postgres pool max_connections is 20: pgbouncer allows 25 per app and migrations need the rest" \
+  --layer project --claim-type decision --cite src/db.rs:4-6
+```
+
+```json
+{"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","status":"stored","citations":1}
+```
+
+A memory you saved without one can cite code later: `memctrl cite 07917cc1 docs/adr/004-pool.md`. A path without lines cites the whole file. Paths are relative to the project root, which is the nearest folder containing `.git` unless `MEMCTRL_PROJECT_ROOT` or `[citations] root` in `.memoryrc` says otherwise. Secrets files such as `.env` can't be cited.
+
+## When the code moves
+
+Someone adds a doc comment above `connect`, pushing the cited lines down by two. `memctrl stale` reports nothing, because the cited lines are unchanged. `memctrl stale --all` lists every cited memory, and shows where the block is now (trimmed):
+
+```json
+{"stale":[{"memory":{"id":"07917cc1-…","content":"Postgres pool max_connections is 20: …"},"freshness":"fresh",
+  "citations":[{"path":"src/db.rs","lines":"4-6","status":"moved","now_at":6,…}]}],"checked":1,"root":"…"}
+```
+
+Nothing needs doing, but `memctrl refresh` moves the citation to where the code is now, so later checks start from the right lines:
+
+```bash
+memctrl refresh 07917cc1
+```
+
+```json
+{"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","refreshed":[{"path":"src/db.rs","was":"moved","lines":"6-8","from":"4-6","followed":true}]}
+```
+
+## When the code changes
+
+Now someone raises the pool size: `.max_connections(20)` becomes `.max_connections(30)`. The memory is wrong, and memctrl can tell.
+
+<Steps>
+
+1. Find what went stale:
+
+   ```bash
+   memctrl stale
+   ```
+
+   ```json
+   {"stale":[{"memory":{"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","content":"Postgres pool max_connections is 20: pgbouncer allows 25 per app and migrations need the rest","layer":"project","claim_type":"decision","verification_state":"unverified"},"freshness":"stale","citations":[{"id":"dc6246f4-5153-4c68-8b2b-84f4ee85e94f","path":"src/db.rs","lines":"6-8","status":"changed","commit_sha":"4ed03b542f4ce9b146e6f5ddaed1e9c11d632eb7","created_at":"2026-10-17T09:29:15.997296Z","refreshed_at":"2026-10-17T09:29:35.918082Z"}]}],"checked":1,"root":"…"}
+   ```
+
+   `--layer` limits the check to one layer. `memctrl doctor` also counts stale memories under `stale_memories`.
+
+2. See what the agent sees. The brief moves the memory out of Decisions and into "Check before trusting":
+
+   ```text
+   ## Check before trusting
+
+   - Postgres pool max_connections is 20: pgbouncer allows 25 per app and migrations need the rest · `07917cc1` · stale: src/db.rs changed
+   ```
+
+   Recall gives the same label when a request matches it (`[decision] … · stale: src/db.rs changed`), and `memctrl query` sets `"freshness":"stale"` in the result's `why`. The agent is told to check the code before relying on it, but the memory still costs a line of every brief until you deal with it.
+
+3. Read the code and decide whether the memory still holds, then go to the matching section below.
+
+</Steps>
+
+<Aside type="note">
+Freshness compares the cited lines with your working tree, not with a commit, and covers only memories that cite code. Uncommitted edits count, and a memory without a citation is never flagged.
+</Aside>
+
+## If the memory is wrong: correct it
+
+Save what's true now, with a citation, and supersede the old memory:
+
+```bash
+memctrl add "Postgres pool max_connections is 30 since pgbouncer moved to 40 per app; migrations need the rest" \
+  --layer project --claim-type decision --cite src/db.rs:6-8
+memctrl supersede 07917cc1 4e982fd0
+```
+
+```json
+{"id":"4e982fd0-0d28-43b2-a92f-ee0a87ffdcfa","status":"stored","citations":1}
+{"old_id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","new_id":"4e982fd0-0d28-43b2-a92f-ee0a87ffdcfa","status":"superseded"}
+```
+
+`memctrl stale` is empty again, and the brief shows the new decision. Teammates get the correction through `memory.md`; [Correct and retire memories](/memctrl/guides/correct-and-retire/) covers refute, forget and the rest.
+
+## If the memory still holds: refresh it
+
+Suppose the change was to `acquire_timeout` instead, inside the cited range but not what the memory is about. After re-checking, run `refresh`. It follows the block by its first line when that line now appears exactly once in the file:
+
+```bash
+memctrl refresh 07917cc1
+```
+
+```json
+{"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","refreshed":[{"path":"src/db.rs","was":"changed","lines":"6-8"}]}
+```
+
+`refresh` re-hashes the cited lines as they are now, so only run it after you've read them: it records that a person checked the memory against this code.
+
+### When memctrl can't tell where the code went
+
+If the block's first line changed too, or now appears more than once, `refresh` changes nothing rather than anchor the memory to unrelated code:
+
+```json
+{"error":"src/db.rs:6-8 changed and the cited block can't be found unambiguously, so refreshing could anchor this memory to unrelated code. Check the code, then run `memctrl refresh 07917cc1 --cite src/db.rs:<start>-<end>`"}
+```
+
+Find the lines yourself and pass them:
+
+```bash
+memctrl refresh 07917cc1 --cite src/db.rs:6-9
+```
+
+```json
+{"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","refreshed":[{"path":"src/db.rs","was":"changed","lines":"6-9","from":"6-8","followed":false}]}
+```
+
+`--cite` applies to a path the memory already cites; repeat it for each path. Every refresh goes to the audit log, with the move:
+
+```json
+{"event":"citation_refresh","action":"re-anchored 1 citation(s) after review: src/db.rs 6-8 → 6-9","memories_affected":["07917cc1-a2e2-4a1a-b614-7d0185a9ce10"],…}
+```
+
+## When the file is gone
+
+A deleted or renamed file makes the citation `missing`, and the brief says `stale: src/db.rs missing`. `refresh` won't re-anchor it:
+
+```json
+{"error":"src/db.rs no longer exists; supersede or forget this memory instead of refreshing it"}
+```
+
+If the fact still holds in the new file, save it again citing the new path, and supersede the old memory. Adding the exact same text returns the existing memory instead of a new one, so reword it slightly, for example with the new file name.
+
+## Make it a habit
+
+- Cite when you save a fact about specific code. Without a citation, nothing tells you the fact went stale.
+- Run `memctrl stale` after a refactor, before you export memory for a pull request.
+- When the agent reports that a memory under "Check before trusting" is wrong, correct it the same day: until you do, every session starts with a warning.

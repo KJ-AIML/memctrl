@@ -1,0 +1,106 @@
+---
+title: "How memctrl works"
+description: "The parts of memctrl and how a memory travels from a note to an agent's context, and back through review, citations and git."
+---
+
+import { Aside, FileTree, Steps } from '@astrojs/starlight/components';
+
+memctrl is one binary and a SQLite file in your project. This page follows a memory from the moment someone saves it to the moment an agent reads it, then back through review, code citations and git. Each part has its own page; this one shows how they fit together.
+
+## The path of a memory
+
+```text
+ you, an agent, or a teammate's memory.md
+   │  memctrl add · memctrl_add (MCP) · memctrl sync
+   ▼
+ ┌───────────────┐  suspicious or unreviewed   ┌────────────────────┐
+ │  write guard  │ ──────────────────────────▶ │ candidate          │
+ └───────┬───────┘                             │ memctrl candidates │
+         │ clean                               └─────────┬──────────┘
+         ▼                                               │ a person runs
+ ┌───────────────────────┐ ◀─────────────────────────────┘ memctrl accept
+ │ store                 │
+ │ .memctrl/memories.db  │ ── memctrl export ──▶ .memctrl/memory.md
+ └───┬────────┬──────┬───┘                       (committed, reviewed in PRs)
+     │        │      │
+     ▼        ▼      ▼
+  context   recall  query         cited lines changed?
+  session   each    when          → "Check before trusting"
+  start     request asked
+     │        │      │
+     └────────┴──────┴───▶ the agent's context
+```
+
+<Steps>
+
+1. **Save.** You or an agent save a memory: `memctrl add` in a shell, `memctrl_add` over MCP, or a teammate's entry arriving through `memctrl sync`. A memory is one fact with a layer, a claim type and a source ([Memories](/memctrl/concepts/memories/)). Credentials and personal data are redacted before anything is stored.
+
+2. **Guard.** Every write passes the write guard. Text with hidden Unicode or instruction-like phrasing becomes a candidate instead of active knowledge, and so do teammates' new entries from `memory.md`. Only a person at a terminal can release them ([The write guard and trust](/memctrl/concepts/guard-and-trust/)).
+
+3. **Store.** Accepted memories go into `.memctrl/memories.db`, a SQLite file with full-text indexes. A memory can cite the code it describes, and memctrl hashes the cited lines ([Citations and freshness](/memctrl/concepts/citations/)).
+
+4. **Session start.** Claude Code's session-start hook runs `memctrl context`, which prints a brief of the highest-trust memories that fit 3,000 tokens: the user's preferences, decisions, facts, lessons, open hypotheses, and what to check before trusting ([Session brief](/memctrl/concepts/session-brief/)).
+
+5. **Each request.** The prompt hook runs `memctrl recall` on the request and adds the memories it matches, or nothing at all ([Recall for each request](/memctrl/concepts/recall/)).
+
+6. **When asked.** `memctrl query`, or `memctrl_query` over MCP, searches by the words a memory contains and explains every result ([Search](/memctrl/concepts/search/)). Matching by meaning is optional ([Search by meaning](/memctrl/concepts/search-by-meaning/)).
+
+7. **Check.** Whenever a cited memory is used, memctrl compares the cited lines with your working tree. A memory whose code changed moves to "Check before trusting" until you correct it or run `memctrl refresh`.
+
+8. **Correct and share.** You review candidates, refute or supersede what turned out wrong, and export the project layer to `.memctrl/memory.md`, which you commit. After pulling, `memctrl sync` brings teammates' entries in as candidates and applies their corrections.
+
+</Steps>
+
+## The parts
+
+| Part | What it does | Commands | Read more |
+| --- | --- | --- | --- |
+| Store | Holds memories, citations, history and full-text indexes in one SQLite file. Only `memctrl init`, or a database path you name, creates one. | [`init`](/memctrl/reference/cli/init/), [`doctor`](/memctrl/reference/cli/doctor/) | [Storage](/memctrl/reference/storage/) |
+| Write guard | Holds suspicious writes as candidates for a person to review. | [`add`](/memctrl/reference/cli/add/), [`candidates`](/memctrl/reference/cli/candidates/), [`accept`](/memctrl/reference/cli/accept/), [`reject`](/memctrl/reference/cli/reject/) | [The write guard and trust](/memctrl/concepts/guard-and-trust/) |
+| Session brief | Delivers the highest-trust memories before the agent's first turn. | [`context`](/memctrl/reference/cli/context/) | [Session brief](/memctrl/concepts/session-brief/) |
+| Recall | Adds the memories a request matches, once per session. | [`recall`](/memctrl/reference/cli/recall/) | [Recall for each request](/memctrl/concepts/recall/) |
+| Search | Finds memories by their words, with a `why` for every result. | [`query`](/memctrl/reference/cli/query/) | [Search](/memctrl/concepts/search/) |
+| Search by meaning | Optional: fuses matches from an embedding model you run with word matches. | [`semantic`](/memctrl/reference/cli/semantic/) | [Search by meaning](/memctrl/concepts/search-by-meaning/) |
+| Citations | Ties a memory to lines of code and flags it when they change. | [`cite`](/memctrl/reference/cli/cite/), [`stale`](/memctrl/reference/cli/stale/), [`refresh`](/memctrl/reference/cli/refresh/) | [Citations and freshness](/memctrl/concepts/citations/) |
+| Corrections | Disputes, refutes, supersedes or forgets a memory, so it stops reaching agents. | [`dispute`](/memctrl/reference/cli/dispute/), [`refute`](/memctrl/reference/cli/refute/), [`supersede`](/memctrl/reference/cli/supersede/), [`forget`](/memctrl/reference/cli/forget/) | [Correct and retire memories](/memctrl/guides/correct-and-retire/) |
+| Team sharing | Writes the project layer to a Markdown file for pull requests, and reads teammates' changes back. | [`export`](/memctrl/reference/cli/export/), [`sync`](/memctrl/reference/cli/sync/), [`import`](/memctrl/reference/cli/import/), [`check`](/memctrl/reference/cli/check/) | [Share with your team](/memctrl/guides/share-with-your-team/) |
+| MCP server | Exposes the brief, search, adding and review as tools for any MCP host. | [`serve`](/memctrl/reference/cli/serve/) | [MCP tools](/memctrl/reference/mcp-tools/) |
+| Hooks | Run the brief at session start and recall on every prompt in Claude Code. | [`install`](/memctrl/reference/cli/install/) | [Hooks](/memctrl/reference/hooks/) |
+
+## What lives where
+
+`memctrl init` sets up a project; every other command finds it by walking up from the current folder to the repository root, so memctrl works from any subfolder.
+
+<FileTree>
+- your-project/
+  - .memoryrc project rules: layers, retention, aliases, guard (committed)
+  - .memctrl/
+    - memories.db the store (kept out of git)
+    - .gitignore written by memctrl init; keeps the database out of git
+    - memory.md the export you commit and review
+    - sessions/ which memories each Claude Code session has seen
+</FileTree>
+
+Your own settings live outside any repository, in `~/.config/memctrl/config.toml` (`$XDG_CONFIG_HOME/memctrl/config.toml` when that is set, `%APPDATA%\memctrl\config.toml` on Windows). That file decides the guard mode, which sources count as you, which repositories you trust, and whether search by meaning is on. A repository's `.memoryrc` can only make those settings stricter ([User config](/memctrl/reference/user-config/)).
+
+## Where each agent gets memory
+
+| Host | Session start | Each request |
+| --- | --- | --- |
+| Claude Code | A `SessionStart` hook runs `memctrl context --format hook`, also after `/clear`, resume and compaction | A `UserPromptSubmit` hook runs `memctrl recall --format hook` |
+| Codex, Cursor | `memctrl context --write AGENTS.md` refreshes a marked block in AGENTS.md | Run `memctrl recall "<request>"` yourself, or from your host's prompt hook |
+| Any MCP host | The `memctrl_context` tool | The `memctrl_query` tool, when the agent calls it |
+
+Agents rarely search on their own, so the hooks matter: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query`. Setup for each host is in [Claude Code](/memctrl/agents/claude-code/), [Codex and Cursor](/memctrl/agents/codex-and-cursor/) and [MCP](/memctrl/agents/mcp/).
+
+## Local and predictable
+
+- **Nothing leaves your machine** unless you turn on search by meaning with a remote server, or pass `--llm` to use an LLM provider. Retrieval needs no network, model or embeddings.
+- **Output is JSON on stdout**, except the Markdown brief and recall output (and their `--format hook` JSON for Claude Code). `memctrl serve` writes only MCP protocol messages to stdout.
+- **Errors go to stderr** as `{"error": "…"}` with exit status 1. Warnings, such as a `.memoryrc` setting that was ignored, also go to stderr, as `{"warning": "…"}`.
+- **Reads don't wait for writers.** Searches, the brief and recall read from a snapshot without taking the write lock. Their bookkeeping (access counts, provenance, cache) is skipped rather than waited for when another process is writing.
+- **Hooks stay quiet.** Where no memctrl store exists, the brief and recall print nothing and create nothing, so the hooks are safe to install in your user settings.
+
+<Aside type="note" title="Memory is replayed">
+A memory reaches every future session, so a wrong memory is worse than none. That is why memctrl holds suspicious writes, flags memories whose code changed, keeps corrections moving between teammates, and never lets candidates, refuted or expired memories reach ordinary retrieval.
+</Aside>

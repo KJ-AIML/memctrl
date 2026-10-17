@@ -1,0 +1,54 @@
+---
+// Breadcrumbs above the title, built from the sidebar groups that lead to this page.
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+
+type Entry = { type: 'link' | 'group'; label: string; isCurrent?: boolean; entries?: Entry[] };
+
+function trail(entries: Entry[], path: string[] = []): string[] | null {
+  for (const entry of entries) {
+    if (entry.type === 'link' && entry.isCurrent) return path;
+    if (entry.type === 'group' && entry.entries) {
+      const found = trail(entry.entries, [...path, entry.label]);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const groups = trail(Astro.locals.starlightRoute.sidebar as Entry[]) ?? [];
+// The home page (a splash page) has its own hero and no title above it.
+const splash = Astro.locals.starlightRoute.entry.data.template === 'splash';
+---
+
+{
+  groups.length > 0 && (
+    <nav class="breadcrumbs" aria-label="Breadcrumbs">
+      <a href={import.meta.env.BASE_URL}>Docs</a>
+      {groups.map((label) => (
+        <>
+          <span aria-hidden="true">/</span>
+          <span>{label}</span>
+        </>
+      ))}
+    </nav>
+  )
+}
+{!splash && <Default />}
+
+<style>
+  .breadcrumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 1rem;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+  }
+  .breadcrumbs a {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+  .breadcrumbs a:hover {
+    color: var(--sl-color-accent-high);
+  }
+</style>

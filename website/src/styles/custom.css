@@ -1,0 +1,322 @@
+/*
+ * memctrl docs theme: charcoal with a dot grid, white type and a periwinkle accent.
+ * One theme only (see components/ThemeProvider.astro).
+ *
+ * Periwinkle #8B93FF · Soft periwinkle #A9AFFF · Lavender #C9CCFF · Mist #E9EAFF
+ * Charcoal #19191B · Raised #1F1F22 · Line #2C2C31
+ */
+
+/* ---------- Tokens ---------- */
+
+:root,
+:root[data-theme] {
+  --mc-peri: #8b93ff;
+  --mc-peri-2: #a9afff;
+  --mc-lavender: #c9ccff;
+  --mc-mist: #e9eaff;
+  --mc-peri-text: #a3a9ff; /* periwinkle that reads as text on charcoal */
+  --mc-peri-soft: rgb(139 147 255 / 13%);
+  --mc-on-peri: #141416; /* text on a periwinkle button */
+
+  --mc-bg: #19191b;
+  --mc-raised: #1f1f22;
+  --mc-raised-2: #242428;
+  --mc-ink: #f6f6f8; /* headings */
+  --mc-text: #c9c9d1; /* body */
+  --mc-muted: #8f8f9a;
+  --mc-faint: #61616b;
+  --mc-border: #2c2c31;
+  --mc-border-strong: #3a3a41;
+  --mc-dot: #2b2b30;
+  --mc-code-bg: #141416;
+  --mc-code-bar: #1b1b1e;
+  --mc-mark-top: #e9eaff;
+  --mc-mark-bottom: #8b93ff;
+
+  --sl-color-white: var(--mc-ink);
+  --sl-color-gray-1: #e6e6ea;
+  --sl-color-gray-2: var(--mc-text);
+  --sl-color-gray-3: var(--mc-muted);
+  --sl-color-gray-4: var(--mc-faint);
+  --sl-color-gray-5: var(--mc-border-strong);
+  --sl-color-gray-6: var(--mc-raised-2);
+  --sl-color-black: var(--mc-bg);
+
+  --sl-color-accent-low: #26284d;
+  --sl-color-accent: var(--mc-peri);
+  --sl-color-accent-high: var(--mc-lavender);
+  --sl-color-text-accent: var(--mc-peri-text);
+  --sl-color-text-invert: var(--mc-on-peri);
+  --sl-color-bg-nav: rgb(25 25 27 / 86%);
+  --sl-color-bg-sidebar: transparent;
+  --sl-color-bg-inline-code: var(--mc-raised-2);
+  --sl-color-hairline: var(--mc-border);
+  --sl-color-hairline-light: var(--mc-border);
+  --sl-color-hairline-shade: var(--mc-border);
+
+  --sl-font: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: 'Geist Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --sl-content-width: 46rem;
+  --sl-text-h1: 2.5rem;
+  --sl-text-h2: 1.6rem;
+  --sl-text-h3: 1.22rem;
+  --sl-text-h4: 1.06rem;
+  --sl-line-height: 1.72;
+  --sl-line-height-headings: 1.2;
+  --sl-nav-height: 4rem;
+}
+
+/* The dot grid runs behind every page. */
+body {
+  background-color: var(--mc-bg);
+  background-image: radial-gradient(circle, var(--mc-dot) 1.15px, transparent 1.4px);
+  background-size: 26px 26px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Header ---------- */
+
+header.header {
+  border-bottom: 1px solid var(--mc-border);
+  backdrop-filter: saturate(140%) blur(12px);
+}
+site-search button[data-open-modal] {
+  border: 1px solid var(--mc-border-strong);
+  border-radius: 0.5rem;
+  background: rgb(31 31 34 / 70%);
+  color: var(--mc-muted);
+}
+site-search button[data-open-modal]:hover {
+  border-color: var(--mc-peri);
+  color: var(--mc-ink);
+}
+/* No theme picker, so no divider after the social icons. */
+.social-icons::after {
+  display: none;
+}
+.social-icons a {
+  color: var(--mc-muted);
+}
+.social-icons a:hover {
+  color: var(--mc-ink);
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar-pane {
+  border-inline-end: 1px solid var(--mc-border);
+  background: rgb(25 25 27 / 82%);
+}
+.sidebar-content .group-label .large {
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--mc-ink);
+}
+.sidebar-content a {
+  border-radius: 0.4rem;
+  color: var(--mc-text);
+  font-size: 0.9rem;
+}
+.sidebar-content a:hover {
+  color: var(--mc-ink);
+  background: var(--mc-raised);
+}
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+  background: var(--mc-peri-soft);
+  color: var(--mc-lavender);
+  font-weight: 650;
+  box-shadow: inset 2px 0 0 var(--mc-peri);
+}
+.sidebar-content ul ul {
+  border-inline-start-color: var(--mc-border);
+}
+
+/* ---------- Page title and content ---------- */
+
+.content-panel {
+  border-top-color: var(--mc-border);
+}
+.content-panel h1#_top {
+  font-size: var(--sl-text-h1);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+.breadcrumbs {
+  font-size: 0.84rem;
+}
+
+.sl-markdown-content :is(h2, h3, h4):not(:where(.not-content *)) {
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  color: var(--mc-ink);
+}
+.sl-markdown-content h2:not(:where(.not-content *)) {
+  margin-top: 2.75rem;
+}
+.sl-markdown-content :is(p, li):not(:where(.not-content *)) {
+  max-width: 72ch;
+  color: var(--mc-text);
+  text-wrap: pretty;
+}
+.sl-markdown-content strong:not(:where(.not-content *)) {
+  color: var(--mc-ink);
+  font-weight: 700;
+}
+.sl-markdown-content a:not(:where(.not-content *)) {
+  color: var(--mc-peri-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  text-decoration-color: rgb(139 147 255 / 45%);
+}
+.sl-markdown-content a:not(:where(.not-content *)):hover {
+  color: var(--mc-lavender);
+  text-decoration-color: currentColor;
+}
+@media (min-width: 50rem) {
+  .sl-markdown-content :is(p, li) > code {
+    white-space: nowrap;
+  }
+}
+.sl-markdown-content :not(pre) > code {
+  padding: 0.12em 0.4em;
+  border-radius: 0.35rem;
+  border: 1px solid var(--mc-border);
+  background: var(--mc-raised);
+  color: var(--mc-mist);
+  font-size: 0.86em;
+}
+
+/* Tables as quiet panels. */
+.sl-markdown-content table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--mc-border);
+  border-radius: 0.6rem;
+  overflow: hidden;
+  background: rgb(31 31 34 / 72%);
+  font-size: var(--sl-text-sm);
+}
+.sl-markdown-content :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--mc-border);
+  padding: 0.65rem 0.9rem;
+  vertical-align: top;
+}
+.sl-markdown-content tr:last-child td {
+  border-bottom: 0;
+}
+.sl-markdown-content th {
+  background: var(--mc-raised-2);
+  color: var(--mc-ink);
+  font-weight: 680;
+  text-align: start;
+}
+.sl-markdown-content td code {
+  overflow-wrap: anywhere;
+}
+.sl-markdown-content table {
+  font-variant-numeric: tabular-nums;
+}
+.sl-markdown-content :is(td, th)[style*='right'] {
+  white-space: nowrap;
+}
+@media (max-width: 50rem) {
+  .sl-markdown-content table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* Asides. */
+.starlight-aside {
+  border-radius: 0.6rem;
+  border: 1px solid var(--mc-border);
+  border-inline-start-width: 3px;
+}
+.starlight-aside--note,
+.starlight-aside--tip {
+  --sl-color-asides-text-accent: var(--mc-lavender);
+  --sl-color-asides-border: var(--mc-peri);
+  background: rgb(139 147 255 / 8%);
+}
+.starlight-aside--caution {
+  --sl-color-asides-text-accent: #ffd08a;
+  --sl-color-asides-border: #e7a33e;
+  background: rgb(231 163 62 / 9%);
+}
+.starlight-aside--danger {
+  --sl-color-asides-text-accent: #ffaaad;
+  --sl-color-asides-border: #e5484d;
+  background: rgb(229 72 77 / 9%);
+}
+
+/* Cards and link cards. */
+.sl-markdown-content .card,
+.sl-link-card {
+  border: 1px solid var(--mc-border);
+  border-radius: 0.6rem;
+  background: rgb(31 31 34 / 80%);
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.sl-link-card:hover {
+  border-color: var(--mc-peri);
+  background: var(--mc-raised-2);
+}
+.sl-link-card .title {
+  color: var(--mc-ink);
+  font-weight: 700;
+}
+
+/* Steps: periwinkle squares, like the pixels on the home page. */
+.sl-steps > li::before {
+  border-radius: 0.3rem;
+  background: var(--mc-peri);
+  color: var(--mc-on-peri);
+  font-weight: 750;
+  box-shadow: none;
+}
+.sl-steps > li::after {
+  background: var(--mc-border);
+}
+
+/* On this page. */
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover {
+  color: var(--mc-peri-text);
+  font-weight: 650;
+}
+
+/* Previous and next. */
+.pagination-links a {
+  border: 1px solid var(--mc-border);
+  border-radius: 0.6rem;
+  background: rgb(31 31 34 / 80%);
+  box-shadow: none;
+}
+.pagination-links a:hover {
+  border-color: var(--mc-peri);
+}
+
+/* ---------- Home page: see src/styles/home.css ---------- */
+
+/* The home page has no title panel: hide the empty one Starlight leaves. */
+.content-panel:has(> .sl-container:empty) {
+  display: none;
+}
+.content-panel:has(> .sl-container:empty) + .content-panel {
+  border-top: 0;
+}
+
+/* The full-width hero must not make the page scroll sideways. */
+html,
+body {
+  overflow-x: clip;
+}

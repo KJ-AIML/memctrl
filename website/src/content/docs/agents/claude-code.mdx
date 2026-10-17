@@ -1,0 +1,167 @@
+---
+title: "Claude Code"
+description: "Give Claude Code the session brief and per-request recall with two hooks, and check, tune or remove them."
+---
+
+import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+
+Claude Code is the host memctrl supports most fully. Two hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, and one adds the memories each prompt matches. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
+
+## Install the hooks
+
+Run this in a project where you've run `memctrl init`:
+
+```bash
+memctrl install --tool claude --project --hook
+```
+
+```json
+{"path":"/home/you/your-project/.claude/skills/memctrl/SKILL.md","hook":"/home/you/your-project/.claude/settings.local.json","hook_changed":true}
+```
+
+`install` doesn't open or create a database. The hooks do nothing in a folder until it has a store.
+
+## What it writes
+
+| Option | Skill | Hooks |
+| --- | --- | --- |
+| `--project` | `.claude/skills/memctrl/SKILL.md` in the project | `.claude/settings.local.json` in the project |
+| No `--project` | `~/.claude/skills/memctrl/SKILL.md` | `~/.claude/settings.json` |
+
+- **The skill** tells the agent what the brief's sections mean, how to search and save memories, and never to accept a held memory itself.
+- **`--hook` adds two hooks.** Without it, `install` writes only the skill.
+- **The project folder** is the one with the nearest `.memoryrc` (the current folder if there is none), so running `install --project` from a subfolder of a set-up project still writes to its root.
+- **Project installs use `settings.local.json`**, Claude Code's personal settings file, so one machine's executable path never lands in the team's shared `.claude/settings.json`. Don't commit it.
+- **User installs** put the hooks in your user settings, so they run in every project you open with Claude Code. In a project without a memctrl store they print nothing.
+
+The settings file gets a `SessionStart` hook and a `UserPromptSubmit` hook:
+
+```json title=".claude/settings.local.json"
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memctrl context --format hook"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memctrl recall --format hook"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The command starts with plain `memctrl` when the first `memctrl` on your `PATH` is the binary you ran `install` with, so upgrades in place keep working. Otherwise it holds that binary's absolute path, quoted for the shell if it contains spaces.
+
+Running `install` again is safe. It updates the memctrl hooks in place, keeps every other hook and setting in their original order, and reports `"hook_changed":false` when nothing changed. If the settings file isn't valid JSON, it leaves the file alone and prints the command to add by hand. If memctrl 2.0 left a skill where Claude Code never reads it, the output lists it under `legacy_skill` so you can delete it.
+
+## When each hook runs
+
+**The brief runs when a session starts.** The `SessionStart` hook has no matcher, so it runs at startup and again after `/clear`, after resuming a session and after compaction, putting the brief back in context each time. `memctrl context --format hook` prints the brief as the hook's `additionalContext`. See [Session brief](/memctrl/concepts/session-brief/) for what goes in it.
+
+**Recall runs on every prompt.** `memctrl recall --format hook` reads your prompt from the JSON Claude Code passes on stdin and adds the memories it matches under "Project memory for this request". When nothing matches, it adds nothing and the prompt goes on unchanged. Slash commands and prompts under six characters are skipped. See [Recall](/memctrl/concepts/recall/) for how it decides.
+
+Neither hook changes your memories, and both stay quiet when they can't help: where no store exists they print nothing and create nothing, and when the database is committed to git they print a warning on stderr and add nothing. On the benchmark store of 70 memories, the brief took about 22 ms and recall about 12 ms ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+
+## Session records
+
+The two hooks share a record of what each session has seen, so a memory is never added twice. The brief writes the ids it showed to `.memctrl/sessions/<session id>`, using the `session_id` Claude Code passes, and recall adds the ids it shows:
+
+```text title=".memctrl/sessions/abc123"
+brief 759c05a4-77a3-4fed-891e-68f1ec7e6cd8
+brief 9814f7e5-725c-4213-84d1-46a4ae579691
+brief 5f515c75-0c45-41ec-aa54-519d01f433b5
+```
+
+- When a request matches a memory the brief already showed, recall points it out once more, marked "also in the session brief", since by then it's one line among many.
+- The record starts over whenever the brief runs again, such as after `/clear` or compaction, because the context it describes is gone.
+- Records older than three days are removed when a brief runs.
+- `memctrl recall` run by hand has no session, so it lists every match.
+
+<Aside type="caution">
+The `.memctrl/.gitignore` that memctrl 2.6.2 writes covers only the database files, so `git status` shows `.memctrl/sessions/`. Keep it out of git with `echo "sessions/" >> .memctrl/.gitignore`.
+</Aside>
+
+## Check that it works
+
+<Steps>
+
+1. Make sure the project has a store and some memories in the `project` or `user` layer:
+
+   ```bash
+   memctrl context
+   ```
+
+   If this prints nothing, memctrl found no store from this folder. See [Troubleshooting](/memctrl/help/troubleshooting/#the-brief-prints-nothing).
+
+2. Run the hook command the way Claude Code does. Copy it from your settings file:
+
+   ```bash
+   echo '{"prompt":"change the database pool size"}' | memctrl recall --format hook
+   memctrl context --format hook < /dev/null
+   ```
+
+   Each prints a JSON object with `hookSpecificOutput.additionalContext`. Recall prints nothing if the prompt matches no memory. Errors go to stderr as `{"error": …}`.
+
+3. Start Claude Code in the project and send a prompt. Afterwards `.memctrl/sessions/` holds a file named after the session id, starting with the `brief` lines.
+
+4. Run `/hooks` in Claude Code to see the hooks it loaded.
+
+</Steps>
+
+## Change the brief budget
+
+The brief holds up to about 3,000 tokens by default, about 70 one-line memories, so a small store arrives whole. To make it smaller or larger, add `--budget` to the `SessionStart` command in your settings file:
+
+```json title=".claude/settings.local.json" {8}
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "memctrl context --format hook --budget 1500"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The same way, `--layer project` keeps your `user` layer out of the brief. Whatever doesn't fit is named in the brief's header ("Not shown for space: …"), and up to 5 memories to check before trusting and 3 of your preferences keep reserved room.
+
+<Aside type="caution">
+Running `memctrl install --hook` again resets the command to `memctrl context --format hook`, dropping your `--budget`. Add it back afterwards.
+</Aside>
+
+## Remove the hooks
+
+There is no uninstall command. To remove memctrl from Claude Code:
+
+1. In `.claude/settings.local.json` (or `~/.claude/settings.json` for a user install), delete the `SessionStart` entry whose command contains `memctrl context --format hook` and the `UserPromptSubmit` entry whose command contains `memctrl recall --format hook`. Leave other hooks as they are.
+2. Delete the `.claude/skills/memctrl/` folder (or `~/.claude/skills/memctrl/`).
+
+Your memories stay in `.memctrl/` until you delete them. Re-run `memctrl install --tool claude --project --hook` at any time to put the hooks back.
+
+## Related
+
+<CardGrid>
+  <LinkCard title="Hooks reference" description="The hook commands, their input and output." href="/memctrl/reference/hooks/" />
+  <LinkCard title="Session brief" description="What the brief holds and how it ranks memories." href="/memctrl/concepts/session-brief/" />
+  <LinkCard title="Recall" description="How the prompt hook decides what a request needs." href="/memctrl/concepts/recall/" />
+  <LinkCard title="Codex and Cursor" description="Hosts without hooks get the brief through AGENTS.md." href="/memctrl/agents/codex-and-cursor/" />
+</CardGrid>

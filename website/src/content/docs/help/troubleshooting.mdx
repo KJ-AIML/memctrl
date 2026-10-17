@@ -1,0 +1,253 @@
+---
+title: "Troubleshooting"
+description: "Common problems with memctrl, what causes them and how to fix them."
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+Each entry starts with what you see, then the cause and the fix. memctrl reports errors on stderr as JSON, `{"error": "…"}`, with a nonzero exit status, and warnings as `{"warning": "…"}`; the messages quoted here are the start of those strings.
+
+## Start with memctrl doctor
+
+```bash
+memctrl doctor
+```
+
+`doctor` prints a JSON health report of the store. `status` is `ok` or `warn`, and these fields point at the problems on this page:
+
+| Field | What it means | See |
+| --- | --- | --- |
+| `database.integrity` | SQLite's integrity check of the store | |
+| `config_warnings` | Settings from `.memoryrc` that memctrl ignored | [A repository's .memoryrc can only tighten](#a-repositorys-memoryrc-can-only-tighten) |
+| `stray_stores` | Stores an older memctrl created in subfolders | [Stray stores in subfolders](#stray-stores-in-subfolders) |
+| `committed_database` | `true` when git tracks the database | [The database is committed to git](#the-database-is-committed-to-git) |
+| `withheld_from_brief` | Accepted memories the guard flags now, kept out of the brief | [A memory is missing from the brief](#a-memory-is-missing-from-the-brief) |
+| `stale_memories` | How many memories cite code that changed | [Keep memories fresh](/memctrl/guides/keep-memories-fresh/) |
+| `oversized_memories` | Memories over the 64 KiB limit, from older versions | |
+| `reclaimable_bytes` | Space `memctrl maintenance --vacuum` would give back | |
+
+`doctor` needs a store, like every command but `init`. It runs even when the database is committed to git, so you can diagnose that case, and it fails when the rules file can't be read.
+
+## Setting up
+
+### No memctrl project here
+
+```text
+no memctrl project in /path/to/folder or its parent folders (searched up to /path/to/repo); run `memctrl init` at the project root, or pass --db
+```
+
+**Cause:** memctrl walks up from the current folder to the nearest `.memoryrc`, stopping at the repository root, and found none. Only `memctrl init`, or a database path you name, creates a store, so no other command creates one by accident.
+
+**Fix:** run `memctrl init` at the project root, or pass `--db` to use a store elsewhere.
+
+### Rules but no store yet
+
+```text
+/path/to/project has memctrl rules but no store yet; run `memctrl init` there (it keeps your rules)
+```
+
+**Cause:** the project has a `.memoryrc`, usually one a teammate committed, but you haven't created your local database. The database never travels through git.
+
+**Fix:** run `memctrl init` in that folder. It keeps the existing `.memoryrc`.
+
+### Init says the folder is already a memctrl project
+
+```text
+/path/to/project is already a memctrl project, and commands work from any folder inside it; to start a separate project here, run `memctrl init --force`
+```
+
+**Cause:** you ran `init` in a subfolder of a project that already has a `.memoryrc`. Every command already works from there.
+
+**Fix:** nothing, in most cases. Run `init --force` only if you want a separate project with its own rules and store in that subfolder.
+
+### Invalid .memoryrc TOML
+
+```text
+invalid .memoryrc TOML: TOML parse error at line 26, column 6
+```
+
+**Cause:** the rules file doesn't parse. Every command fails, including the Claude Code hooks, rather than run with rules you didn't intend.
+
+**Fix:** correct the line the error names. To start over with the default rules, run `memctrl init --force`, which replaces the file; your changes to it are lost.
+
+### Stray stores in subfolders
+
+**Cause:** memctrl 2.1.0 created a store in whatever folder a command ran in. Current versions read only the project's store, so memories saved into those stray stores seem to have vanished. `doctor` lists them under `stray_stores`:
+
+```json
+"stray_stores": ["src/.memctrl/memories.db"],
+"stray_stores_note": "stores an earlier memctrl created in subfolders; this project no longer reads them. …"
+```
+
+**Fix:** to keep a stray store's memories, export them and import them into the project's store, then delete the stray `.memctrl/` folder:
+
+```bash
+memctrl --db src/.memctrl/memories.db export --out stray.md --layer project --layer user
+memctrl import stray.md
+```
+
+Imported entries arrive as candidates for you to review. See [Review candidates](/memctrl/guides/review-candidates/).
+
+## Warnings about settings
+
+### A repository's .memoryrc can only tighten
+
+```text
+ignored [guard] mode = Off from /path/to/project/.memoryrc: a repository's .memoryrc can only tighten memctrl's defenses. To allow it, set it in ~/.config/memctrl/config.toml, or list this repository under [trust] repos there
+```
+
+**Cause:** a `.memoryrc` arrives with every clone, so memctrl ignores any setting in it that loosens defenses: a lower guard mode, more trusted sources, a citation root or database path outside the repository, or a trigger that moves `user` notes into a shared layer. It prints the warning on every command and lists it in `doctor` under `config_warnings`.
+
+**Fix:** if the setting is yours, move it to your user config (`~/.config/memctrl/config.toml`, or `%APPDATA%\memctrl\config.toml` on Windows). If you trust the repository, list it there:
+
+```toml title="~/.config/memctrl/config.toml"
+[trust]
+repos = ["~/code/our-team-repo"]
+```
+
+A `.memoryrc` that holds only the values `memctrl init` writes doesn't warn when your user config is stricter.
+
+### Search by meaning is off
+
+```text
+semantic search is off: semantic search needs a threshold for some-other-model; run `memctrl semantic tune` and add the threshold it suggests to [semantic]
+```
+
+**Cause:** memctrl ships measured thresholds only for EmbeddingGemma and multilingual-e5-small. For another model it keeps search by meaning off until you add yours.
+
+**Fix:** run `memctrl semantic tune` and add the lines it prints to `[semantic]` in your user config. See [Set up search by meaning](/memctrl/guides/set-up-search-by-meaning/).
+
+### semantic_unavailable in a search's trace
+
+```json
+"trace": ["lexical_bm25", "terms:2", "runs:0", "candidates:1", "semantic_unavailable: can't reach the embedding server"]
+```
+
+**Cause:** search by meaning is on, but the embedding server didn't answer. memctrl fell back to word matches, so the results are what you'd get with it off.
+
+**Fix:** start the server, then check with `memctrl semantic status`, which shows `reachable` and the error. To skip the model for one command, set `MEMCTRL_SEMANTIC=off`.
+
+## The brief and the hooks
+
+### The brief prints nothing
+
+**Cause:** `memctrl context` found no store from the current folder. This is deliberate: a user-level session hook runs in every repository, so where memctrl isn't set up it prints nothing and creates nothing. To tell this apart from other problems, ask for JSON:
+
+```bash
+memctrl context --format json
+```
+
+```json
+{"entries":[],"eligible":0,"store":"missing"}
+```
+
+**Fix:** run the command from inside the project, or run `memctrl init` at its root. If a warning on stderr says the database is committed to git, see [The database is committed to git](#the-database-is-committed-to-git). An empty store prints a short brief that says "No saved memories yet".
+
+### A memory is missing from the brief
+
+| Cause | How to tell | Fix |
+| --- | --- | --- |
+| It's in the `session` layer, the default for `add` | `memctrl show <id>` says `"layer":"session"` | The brief reads `project` and `user`. Add it again with `--layer project` |
+| It's a candidate waiting for review | `memctrl candidates` lists it; the brief's header says memories wait for review | Review it: [Review candidates](/memctrl/guides/review-candidates/) |
+| The guard flags it now | `doctor` lists it under `withheld_from_brief` | Read it with `memctrl show <id>`, then `memctrl accept <id>` at a terminal or `memctrl forget <id>` |
+| It expired | `memctrl show <id>` gives an `expires_at` in the past; `doctor` counts them as `expired_count` | `user` memories last 90 days and `session` memories seven. Save it again in `project` if it should last |
+| It didn't fit the budget | The header says "Not shown for space: …" | Raise `--budget`, or retire memories you no longer need |
+
+### The hooks don't run
+
+Check these in order:
+
+1. **Start Claude Code in the project.** With `--project`, the hooks are in that project's `.claude/settings.local.json`; Claude Code doesn't see them from another folder.
+2. **Run the hook's command yourself** from the project folder, copied from the settings file:
+
+   ```bash
+   memctrl context --format hook < /dev/null
+   ```
+
+   It should print JSON with `hookSpecificOutput`. If it prints an error, fix that first. If your shell can't find the command, the binary moved since you ran `install`; run `memctrl install --tool claude --project --hook` again to point the hooks at it.
+3. **Check that the settings file was written.** If it wasn't valid JSON, `install` changed nothing and printed "is not valid JSON; add this SessionStart hook manually: …". Fix the file, or add the hook by hand.
+4. **Look for a session record.** After a session starts, `.memctrl/sessions/` should hold a file named after the session id. If it does, the brief ran.
+
+[Claude Code](/memctrl/agents/claude-code/#check-that-it-works) describes the hooks and what they write.
+
+### Recall adds nothing to a prompt
+
+**Cause:** usually none of your memories matches the request closely enough, which is by design. A memory must share two topics with a sentence of the request (a path or identifier counts once), and request verbs like *add* and *fix* don't count. Slash commands and prompts under six characters are skipped, and a memory already added in this session isn't added again.
+
+**Fix:** see what a request matches:
+
+```bash
+memctrl recall "the request, worded as you'd type it"
+```
+
+If the memory you expected doesn't appear, the request and the memory probably use different words. Add the missing words as aliases under `[retrieval]` in `.memoryrc`, or turn on [search by meaning](/memctrl/concepts/search-by-meaning/). See [Recall](/memctrl/concepts/recall/) for how it decides.
+
+### The database is committed to git
+
+```text
+.memctrl/memories.db is committed to git, so anyone with push access could have written its memories; memctrl won't load it. Run `git rm --cached .memctrl/memories.db` and share memory through memory.md (export/import), or list this repository under [trust] repos in ~/.config/memctrl/config.toml
+```
+
+**Cause:** git tracks the database, even if it's only staged. Its memories were never seen by the write guard and arrive already accepted, so memctrl refuses to load it. The hooks stay silent with this warning on stderr; other commands fail. `doctor` reports `"committed_database": true`.
+
+**Fix:** stop tracking it and share memory through the reviewed Markdown file instead:
+
+```bash
+git rm --cached .memctrl/memories.db
+memctrl export
+```
+
+See [Share with your team](/memctrl/guides/share-with-your-team/).
+
+## Reviewing and saving
+
+### accept says only a person can release a memory
+
+```text
+908581a6 is held for review; only a person can release it: run `memctrl accept 908581a6` yourself in a terminal
+```
+
+**Cause:** the write guard or an import held the memory, and `accept` releases it only at an interactive terminal, after showing the text and asking you to type the id back. An agent's shell, a pipe or a script can't answer, and no flag or environment variable skips this. The same goes for `import --accept` and `sync --accept`.
+
+**Fix:** run the command yourself in a terminal. If an agent asked you to, read the memory first; that is the point of the check.
+
+### A citation is refused
+
+```text
+cited file src/nope.rs does not exist
+src/db.rs has 7 lines; cannot cite 99-120
+```
+
+**Cause:** `--cite` paths are relative to the project root and must name an existing file and lines inside it. Secrets files such as `.env` or keys can't be cited at all.
+
+**Fix:** check the path from the project root, not from your current folder, and the line range.
+
+### Another program can't write to the database
+
+```text
+no such module: fts5
+```
+
+**Cause:** memctrl keeps its full-text indexes current with SQLite triggers, so anything that writes to the `memories` table needs a SQLite build with FTS5. memctrl bundles one; some tools don't, such as macOS's `/usr/bin/sqlite3`. Reads work, the write fails, and nothing is corrupted.
+
+**Fix:** use a SQLite build with FTS5. If you must write with a tool that lacks it, drop the three `memory_fts_*` triggers first; memctrl notices on its next start, recreates them and re-indexes. `memctrl maintenance` also rebuilds the search indexes.
+
+### AGENTS.md markers are broken
+
+```text
+cannot update AGENTS.md: found 1 begin and 0 end memctrl markers; fix or remove them so the block can be replaced safely
+```
+
+**Cause:** `context --write` replaces only a well-formed block, so a hand edit that removed or duplicated a marker stops it.
+
+**Fix:** remove the leftover markers, or restore the pair, and run the command again. See [Codex and Cursor](/memctrl/agents/codex-and-cursor/).
+
+### --hook is only available for Claude Code
+
+**Cause:** the hooks exist only for Claude Code. **Fix:** for other tools, install the skill without `--hook` and write the brief with `memctrl context --write AGENTS.md`.
+
+<Aside type="tip">
+If none of this helps, open an issue on [GitHub](https://github.com/KJ-AIML/memctrl/issues) with the command, its full output and the `memctrl doctor` report. The report holds memory ids and a few memory samples, so check it before you share it.
+</Aside>
+
+<LinkCard title="Limits" description="What memctrl doesn't do, and what to do instead." href="/memctrl/help/limits/" />

@@ -1,0 +1,187 @@
+---
+title: "Share memory with your team"
+description: "Review memory in pull requests through memory.md, sync after pulling, and check the file in CI."
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Each person's memctrl store is a local SQLite file that stays out of git. The team shares memory through one Markdown file, `.memctrl/memory.md`, which you commit and review in pull requests like code. Teammates' entries reach your store as candidates for you to review, and corrections such as refutations reach everyone.
+
+## The shared file
+
+`memctrl export` writes the project layer to `.memctrl/memory.md`. Each entry is the memory's text, followed by a comment with its id, layer, claim type, verification state, citations and a hash of the text:
+
+```markdown title=".memctrl/memory.md"
+<!-- memctrl export v2. Review changes like code. Edit entry text freely (edited entries return as candidates on import) and add new `- ` bullets for teammates to review; keep the memctrl comments intact. -->
+# Project memory
+
+Shared memory for this repository. After pulling, run `memctrl sync` (or `memctrl import`, then `memctrl export`), so your export keeps teammates' entries.
+
+## Decisions
+
+- We chose SQLx over Diesel: compile-time query checks caught 3 prod bugs
+  <!-- memctrl {"id":"d2b97a93-3745-4313-99fd-adeb5812de51","layer":"project","claim_type":"decision","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:31:53.937393Z","sha":"7d70ca7fdc9e3ca29b6fab44e8385a0a"} -->
+
+## Facts and conventions
+
+- Rotating the JWT key: send the new public key to the mobile team in #platform
+  <!-- memctrl {"id":"7b39c94a-fc33-4947-b88d-832d13e09430","layer":"project","claim_type":"assertion","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:31:53.962049Z","sha":"808f036b0f62ad84773b00c73800d655"} -->
+- Integration tests TRUNCATE ledger_entries; never point them at a shared database
+  <!-- memctrl {"id":"9c1add8d-a309-4246-8715-56e6dfe72ed3","layer":"project","claim_type":"assertion","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:31:53.949900Z","sha":"0641ccad8066caaf7f9f2905bedab009"} -->
+```
+
+Your `user` and `session` layers aren't exported unless you name them with `--layer`. [memory.md](/memctrl/reference/memory-md/) describes the format in full.
+
+## Start sharing
+
+<Steps>
+
+1. Export the project's memories:
+
+   ```bash
+   memctrl export
+   ```
+
+   ```json
+   {"output":"…/.memctrl/memory.md","memories":3,"changed":true}
+   ```
+
+2. Commit the file along with the project's rules. `.memctrl/.gitignore`, which `memctrl init` writes, keeps the database out:
+
+   ```bash
+   git add .memoryrc .memctrl/.gitignore .memctrl/memory.md
+   git commit -m "Add project memory"
+   ```
+
+3. Each teammate runs `memctrl init` once in their clone. It keeps the committed `.memoryrc` and creates their own store.
+
+4. From then on, everyone follows the loop below.
+
+</Steps>
+
+## After saving or correcting memories
+
+Export and commit `memory.md` with the change it belongs to, or in its own pull request:
+
+```bash
+memctrl export
+git add .memctrl/memory.md
+```
+
+The diff shows exactly what changes for the team. Here one memory replaces another:
+
+```diff
+ ## Facts and conventions
+
+-- Rotating the JWT key: send the new public key to the mobile team in #platform
+-  <!-- memctrl {"id":"7b39c94a-…","layer":"project","claim_type":"assertion",…} -->
++- Rotating the JWT key: publish the new public key at /.well-known/jwks.json; mobile apps fetch it, no #platform hand-off needed
++  <!-- memctrl {"id":"1ea9c49f-…","layer":"project","claim_type":"assertion",…} -->
+ - Integration tests TRUNCATE ledger_entries; never point them at a shared database
+   <!-- memctrl {"id":"9c1add8d-…",…} -->
++
++## Retracted
++
++- Rotating the JWT key: send the new public key to the mobile team in #platform
++  <!-- memctrl {"id":"7b39c94a-…","layer":"project","state":"superseded","superseded_by":"1ea9c49f-…","sha":"…"} -->
+```
+
+Review memory changes the way you review code: every entry you merge will be replayed into your teammates' agents.
+
+## After pulling
+
+<Steps>
+
+1. Run `sync`. It imports `memory.md` into your store, applies its corrections, then exports your store merged with it:
+
+   ```bash
+   memctrl sync
+   ```
+
+   ```json
+   {"import":{"entries":4,"imported":[],"candidates":["1ea9c49f-4cb1-44ec-a971-23c2df128de4"],"unchanged":2,"retracted":{"superseded":1},
+     "note":"new entries are candidates until reviewed: read the file's changes, then run `memctrl import --accept <file>`, or review them one by one with `memctrl candidates`",…},
+    "export":{"memories":3,"changed":false,"carried":1,…}}
+   ```
+
+   New entries arrive as candidates, because anyone who can edit the file can write an entry and its metadata. Retractions are applied at once: here the superseded memory left your brief.
+
+2. Read the changes to `memory.md` in what you pulled (the pull request, or `git log -p .memctrl/memory.md`).
+
+3. Accept what you read, in a terminal:
+
+   ```bash
+   memctrl sync --accept
+   ```
+
+   ```text
+   memctrl: importing .memctrl/memory.md accepts 1 entry:
+     1. Rotating the JWT key: publish the new public key at /.well-known/jwks.json; mobile apps fetch it, no #platform hand-off needed
+   Accept only what you have read in the file's changes. Type accept to continue, or anything else to cancel:
+   ```
+
+   Type `accept`. It accepts the new entries and the candidates an earlier sync created from them. To go through them one at a time instead, use `memctrl candidates` and `memctrl accept <id>`; see [Review candidates](/memctrl/guides/review-candidates/).
+
+</Steps>
+
+Without a terminal (an agent's shell, a script), `--accept` refuses and changes nothing:
+
+```json
+{"error":"import --accept would accept 1 entries, which only a person can do: run it yourself in a terminal. Without --accept they arrive as candidates for review"}
+```
+
+`memctrl import <file>` and `memctrl import --accept <file>` do the import half of `sync` on its own, and `import --dry-run` reports what an import would change without changing anything.
+
+## What sync guarantees
+
+- **Corrections travel.** Refuting, superseding or forgetting a memory adds a record to the Retracted section, and every teammate's store applies it on sync. A disputed entry marks their copy disputed. Import only lowers a memory's state and never revives one; [Correct and retire memories](/memctrl/guides/correct-and-retire/) shows what each correction does.
+- **Nothing is dropped.** `export` merges with the file on disk: a teammate's entries you haven't accepted yet, hand-written bullets and every retraction record are kept (the report counts them as `carried`). Only `export --force` writes from your store alone.
+- **Local memories are never overwritten.** If the file holds a different text for an id you have, your copy stays (`kept_local`).
+- **Edits come back as candidates.** Anyone can edit an entry's text or add a plain `- ` bullet in the file. A bullet without metadata arrives as a new entry with source `import`, and `sync --accept` accepts it with the others. An edited entry arrives as a separate candidate tagged `import:edited`, which `sync --accept` leaves alone: accept it on its own, then supersede the original if the edit is right.
+- **Few merge conflicts.** Entries are ordered by id within each section, so two pull requests that each add an entry rarely touch the same lines.
+- **Verification arrives as `unverified`.** A `supported` claim in the file is imported as `unverified`, since anyone can write that field. If you trust everyone who can merge to the file, `memctrl import --trust-verification .memctrl/memory.md` keeps it.
+
+## Check memory.md in CI
+
+[`memctrl check`](/memctrl/reference/cli/check/) validates the file without a database: the header, merge-conflict markers, ids, each entry's hash and the layout `export` writes. With `--base`, it compares with the base branch's version and fails when a retraction record was removed or a retracted memory is live again. That catches a teammate's `export --force` from an out-of-date store, or an export by an older memctrl:
+
+```json
+{"error":".memctrl/memory.md failed the check: 7b39c94a was superseded and is live again; an export from memctrl 2.1 or a hand edit may have restored it"}
+```
+
+A passing check prints a summary:
+
+```json
+{"format":2,"entries":3,"retracted":1,"errors":[],"warnings":[]}
+```
+
+Edited and hand-written entries are warnings, so teammates can propose memories by editing the file. Add `--strict` to fail on warnings too. A GitHub Actions job that installs memctrl with the install script and runs the check:
+
+```yaml title=".github/workflows/memory.yml"
+name: memory
+on: pull_request
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # fetches origin/main for --base
+      - name: Install memctrl
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.6.2 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Check .memctrl/memory.md
+        run: memctrl check --base origin/main
+```
+
+`MEMCTRL_VERSION` pins the release; leave it out to install the latest. If your default branch isn't `main`, change `--base`. When the base branch has no `memory.md` yet, the check warns that there is nothing to compare and passes, unless you pass `--strict`.
+
+<Aside type="tip">
+`memctrl export --check` fails when `memory.md` doesn't match your local store, which suits a local pre-commit hook. It needs a store, so use `memctrl check` in CI.
+</Aside>
+
+## Upgrade the team together
+
+memctrl 2.1 can't read the file format 2.2 and later write ("not a memctrl export"), and an export from 2.1 overwrites the file without its Retracted section. When a team mixes versions, corrections stop travelling. Upgrade everyone at once, and keep `memctrl check --base origin/main` in CI to catch a dropped retraction. A file from a newer memctrl than yours is refused with a message to upgrade. [Upgrading](/memctrl/releases/upgrading/) lists the changes between versions.

@@ -1,0 +1,194 @@
+---
+title: "memory.md format"
+description: "The Markdown export teams commit and review in pull requests: layout, metadata, retraction records, and what import does with each entry."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`memory.md` is how a team shares memory through git. [`memctrl export`](/memctrl/reference/cli/export/) writes your store's shared memories as readable Markdown with a metadata comment under each entry, and [`memctrl import`](/memctrl/reference/cli/import/) and [`memctrl sync`](/memctrl/reference/cli/sync/) bring a teammate's changes back in, as candidates for your review. This page describes the file exactly, so you can review diffs, edit it by hand and validate it in CI. The workflow is in [Share with your team](/memctrl/guides/share-with-your-team/).
+
+## Where it lives
+
+The file is `.memctrl/memory.md` in the project folder; `export --out`, and the file argument of `import`, `sync` and `check`, name another. It holds the `project` layer unless you pass `--layer`, which you can repeat. Writing it into `.memctrl/` also creates `.memctrl/.gitignore` if it's missing, so committing the file never commits the database.
+
+Only active memories are exported as entries: candidates, rejected, archived and expired memories stay local. Refuted, superseded and forgotten memories go to the [Retracted](#the-retracted-section) section.
+
+## A complete file
+
+This is a real export:
+
+```md title=".memctrl/memory.md"
+<!-- memctrl export v2. Review changes like code. Edit entry text freely (edited entries return as candidates on import) and add new `- ` bullets for teammates to review; keep the memctrl comments intact. -->
+# Project memory
+
+Shared memory for this repository. After pulling, run `memctrl sync` (or `memctrl import`, then `memctrl export`), so your export keeps teammates' entries.
+
+## Decisions
+
+- We chose SQLx over Diesel: compile-time checks caught 3 prod bugs
+  <!-- memctrl {"id":"41f20753-a61b-4f20-9290-33338a554299","layer":"project","claim_type":"decision","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:28:55.743783Z","sha":"ca52783a65d59d8f460b482a6c966790"} -->
+
+## Facts and conventions
+
+- The Postgres pool size is 30 connections
+  <!-- memctrl {"id":"6321c429-3c24-4757-8b1d-556ab83da432","layer":"project","claim_type":"assertion","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:29:56.543380Z","cite":[{"path":"src/db.rs","lines":"1-4","file_hash":"1eebaa63f43513ceac82fb99fb062b69","span_hash":"4f6d22751ae67284644df8856154c0e5","head_hash":"02362467784b0dba407ce1227be0cbc0","head_offset":0}],"sha":"e9551dc8c38ac2a9d33b390e795a354d"} -->
+
+## Lessons
+
+- Mocking the clock in integration tests hid a timezone bug; use a fixed UTC instant instead
+  <!-- memctrl {"id":"1243d48f-3e7c-4f58-b317-070251f155fa","layer":"project","claim_type":"derived_lesson","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:29:08.636813Z","sha":"5cb0516003409ebf6479efb31977b788"} -->
+
+## Open hypotheses
+
+- Retries in the payment worker may cause the duplicate charges
+  <!-- memctrl {"id":"703d70e3-dab5-4065-a9a3-e295b604aac5","layer":"project","claim_type":"hypothesis","verification_state":"unverified","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:28:55.791998Z","sha":"4c9e9d7530ac22aff0f054c6ebe93415"} -->
+
+## Disputed
+
+- CI runs on GitHub Actions with a 20 minute timeout
+  <!-- memctrl {"id":"11e7b16a-dd0c-45a2-8a11-c79ef972c476","layer":"project","claim_type":"assertion","verification_state":"disputed","confidence":1.0,"source":"manual","created_at":"2026-10-17T09:29:08.651933Z","sha":"68a55a14f73793f4b053fdd8a9350fb0"} -->
+
+## Retracted
+
+- (forgotten)
+  <!-- memctrl {"id":"2b620ec6-578a-49cd-a4f5-48c0ba9e5f6a","layer":"project","state":"forgotten","sha":"a757d97858dac2bc35c20374eabfefe4"} -->
+- The Postgres pool size is 20 connections
+  <!-- memctrl {"id":"61bb4571-287c-4581-bd5f-18a68ca894f5","layer":"project","state":"superseded","superseded_by":"6321c429-3c24-4757-8b1d-556ab83da432","sha":"3f61790d015017432f3a0cce13e29cd2"} -->
+- Release builds use the nightly toolchain
+  <!-- memctrl {"id":"6f35789c-a193-46be-b8b3-d377a95d7187","layer":"project","state":"refuted","reason":"We moved to stable in 2.4","sha":"802bbd8e6aa236199ea4651009a08103"} -->
+```
+
+## Layout
+
+1. **The header line** comes first: `<!-- memctrl export v2. … -->`. The number is the format version, and import uses it to recognize the file.
+2. **The title and intro**, `# Project memory` and one paragraph.
+3. **Live entries under `##` sections**, in the order of the table below, each present only when it has entries.
+4. **`## Retracted`** last, when there are retraction records.
+
+| Section | Holds |
+| --- | --- |
+| Decisions | Claim type `decision` |
+| Facts and conventions | Claim types `assertion` and `observation` |
+| Lessons | Claim type `derived_lesson` |
+| Open hypotheses | Claim type `hypothesis` |
+| Disputed | Any memory whose verification is `disputed` |
+
+Entries are sorted by id within each section, so two pull requests that each add an entry rarely touch the same lines. Bullets without metadata follow the entries with ids, in the order they appear. The output is deterministic: it holds no timestamps of its own and no access counts, and `export` leaves the file untouched (`"changed":false`) when nothing changed.
+
+## Entries
+
+An entry is a `- ` bullet with the memory's text, followed by its metadata comment on a line of its own, indented exactly two spaces:
+
+```md
+- First line of the memory
+  A second line, indented two spaces
+
+  \<!-- a line that would look like markup is escaped with a backslash
+  <!-- memctrl {"id":"…","layer":"project",…,"sha":"…"} -->
+```
+
+- Continuation lines are indented two spaces, and blank lines inside the text are kept.
+- A line of text that starts with `\` or with `<!--` (at any indentation) gets a leading backslash, which import removes.
+- Anything else ends an entry. A bullet with no metadata comment is a hand-written entry.
+
+### Metadata fields
+
+The comment holds one JSON object:
+
+| Field | Present | What it holds |
+| --- | --- | --- |
+| `id` | always | The memory's UUID. |
+| `layer` | always | Its layer. |
+| `claim_type` | always | `assertion`, `observation`, `decision`, `hypothesis` or `derived_lesson`. |
+| `verification_state` | always | `unverified`, `supported` or `disputed`. |
+| `confidence` | always | 0 to 1, rounded to 2 decimals. |
+| `source` | always | Where the memory came from, such as `manual` or `mcp`. |
+| `tags` | when it has tags | Its tags. |
+| `created_at` | always | When it was saved, RFC 3339 in UTC. |
+| `expires_at`, `observed_at`, `valid_from`, `valid_until` | when set | Its expiry and validity window. |
+| `cite` | when it cites code | One object per citation; see below. |
+| `sha` | always | The hash of the entry's text when it was exported. |
+
+Each `cite` object has the `path` relative to the project root, `lines` (`"12"` or `"12-40"`, absent for a whole file), and the hashes memctrl compares to tell whether the code changed: `file_hash`, plus `span_hash`, `head_hash` and `head_offset` for a line range. Citations of secrets files are never exported, even ones an older version stored.
+
+### The content hash
+
+`sha` is the first 32 hex digits of the SHA-256 of the entry's text, ignoring trailing whitespace on each line and trailing blank lines, so an editor that trims whitespace doesn't count as an edit. Import compares it with the text it finds: a mismatch means someone edited the entry. Citation hashes use the same 32-digit form.
+
+## The Retracted section
+
+Corrections travel through the file too. Refuting, superseding or forgetting a memory adds a record here, and teammates' stores apply it when they import. Each record is a bullet with the memory's text, or a placeholder in parentheses, and a comment:
+
+| Field | Present | What it holds |
+| --- | --- | --- |
+| `id` | always | The retracted memory's id. |
+| `layer` | always | Its layer. |
+| `state` | always | `superseded`, `refuted` or `forgotten`. |
+| `reason` | refuted memories, when known | The reason given to `refute`. |
+| `superseded_by` | superseded memories, when known | The id of the memory that replaced it. |
+| `sha` | always | The hash of the memory's text, so the same text under another id stays out too. |
+
+A forgotten record never repeats the text, which may be the very thing that had to be forgotten: its bullet reads `(forgotten)`. Records are sorted by id, and every entry under `## Retracted` needs its record.
+
+Import applies retractions one way only, from weaker to stronger: active, then disputed, then superseded or refuted, then forgotten. A record can lower a memory's state but never revive it. A teammate's forget archives your copy, so you can still undo it locally, and a retraction of a memory your store never had is remembered, so an older export can't bring it in later.
+
+## What import does with each entry
+
+Anyone who can edit the file can write an entry and its metadata, so import never raises trust on its own. Every entry passes the [write guard](/memctrl/concepts/guard-and-trust/), and guard-flagged entries stay candidates even with `--accept`.
+
+| What the file has | What import does |
+| --- | --- |
+| An entry with metadata whose id your store doesn't have | Adds it as a candidate tagged `import:new`, keeping its id, citations and `created_at` (a time in the future becomes now). `supported` verification arrives as `unverified` unless you pass `--trust-verification`. With `--accept`, it's accepted. |
+| An entry whose text no longer matches its `sha` | Adds the edited text as a candidate under a new id, tagged `import:edited`, with verification `unverified`. It stays a candidate even with `--accept`. |
+| A bullet without metadata | Adds it as a candidate in the first imported layer, with source `import`, tagged `import:new`. Its claim type comes from the section: `decision` under a heading containing "decision", `hypothesis` under one containing "hypothes", `assertion` otherwise. `--accept` accepts it. |
+| One id written with different texts | Holds each text as a candidate tagged `import:conflict`, so a forged copy placed first can't win. |
+| An id your store has, with the same text | Nothing (`unchanged`), except that a `disputed` entry marks your accepted copy disputed, and `--accept` accepts the candidate an earlier import made from it. |
+| An id your store has, with different text | Keeps your version (`kept_local`). |
+| Text your store already holds under another id, in any state | Skips it (`duplicate_content`), so a refuted claim can't come back under a new id. |
+| An id or text that was forgotten or retracted | Skips it (`forgotten`). |
+| An entry in a layer you didn't import | Skips it (`other_layers`). Import reads `project` unless you pass `--layer`. |
+| An entry over 64 KiB | Skips it and lists its line under `skipped.oversized`. |
+| A retraction record | Applies it as described above. |
+
+`--accept` is the reviewed bulk accept: it lists the entries it would accept and asks you to type `accept`, and it works only at a terminal. The whole import is one transaction, and `--dry-run` runs it and rolls it back. A real report, for a file with one edited entry and one hand-written bullet:
+
+```json
+{"entries":9,"imported":[],"candidates":["23e6d8f8-4d5b-42cf-9f5d-3723e4618ce8","b52296d6-91d0-46f1-86a5-2fb703110f3b","6321c429-3c24-4757-8b1d-556ab83da432","1243d48f-3e7c-4f58-b317-070251f155fa","703d70e3-dab5-4065-a9a3-e295b604aac5","11e7b16a-dd0c-45a2-8a11-c79ef972c476"],"unchanged":0,"kept_local":0,"skipped":{"forgotten":0,"duplicate_id":0,"duplicate_content":0,"other_layers":0,"oversized":[]},"verification_capped":0,"quarantined":0,"dry_run":false,"retracted":{"tombstoned":3},"note":"new entries are candidates until reviewed: read the file's changes, then run `memctrl import --accept <file>`, or review them one by one with `memctrl candidates`","file":".memctrl/memory.md"}
+```
+
+Import refuses the whole file and changes nothing when it finds unresolved merge-conflict markers, a metadata comment without an entry above it, an entry under `## Retracted` without its record, an invalid id, timestamp or hash, or a first line that isn't an export header. The error names the line, as in `entry at line 6: memory id must be a UUID: …`.
+
+## What export keeps
+
+Exporting over an existing file merges with it instead of replacing it:
+
+- **Entries your store hasn't decided on are carried over verbatim**: a teammate's new entries after `git pull`, hand-written bullets, and edits waiting for review. The report counts them as `carried` and suggests importing them.
+- **Every retraction record is kept**, from the file and from your store, and anything retracted on either side leaves the live sections.
+- **An edit of an entry your store also writes** keeps the edited text but loses its metadata, so the file never holds one id twice.
+
+`export --force` writes from your store alone, dropping all of that. A file that isn't a memctrl export is never overwritten without `--force`. `export --check` fails when the file isn't up to date with your store.
+
+## Validating in CI
+
+[`memctrl check`](/memctrl/reference/cli/check/) validates the file without a database: the header, merge markers, canonical and unique ids, each entry's `sha` and the layout `export` writes. Edited and hand-written entries are warnings, and errors with `--strict`. With `--base origin/main` it also fails when a retraction record was removed or a retracted memory is live again.
+
+```bash
+memctrl check --base origin/main
+```
+
+```json
+{"format":2,"entries":6,"retracted":3,"errors":[],"warnings":["line 8: edited since it was exported; teammates import it as a candidate","line 13: hand-written entry; teammates import it as a candidate for review","not in the layout export writes (order, sections or spacing); run `memctrl export` to rewrite it"]}
+```
+
+## Compatibility
+
+| Version | Reads | Writes |
+| --- | --- | --- |
+| memctrl 2.2 and later | v1 and v2 | v2 |
+| memctrl 2.1 | v1 only | v1 |
+
+<Aside type="caution" title="Upgrade the team together">
+memctrl 2.1 can't read a v2 file ("not a memctrl export"), and an `export` from 2.1 overwrites it, dropping its Retracted section. Run `memctrl check --base origin/main` in CI to catch that; the next export from a newer version restores the records. The first export after upgrading from 2.1 rewrites the file once in the new order, so commit that change on its own.
+</Aside>
+
+A file written by a newer memctrl than yours is refused ("written by a newer memctrl"). A byte-order mark and Windows line endings are accepted and don't count as changes.

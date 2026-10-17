@@ -1,0 +1,90 @@
+---
+// The 404 page: "404" drawn in the home page's pixels, and the ways back into the docs.
+const GLYPHS: Record<string, string[]> = {
+  '4': ['#...#', '#...#', '#...#', '#####', '....#', '....#', '....#'],
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+};
+const COLORS = ['#8b93ff', '#8b93ff', '#9aa1ff', '#a9afff', '#c9ccff', '#e9eaff'];
+const CELL = 16;
+const cells: { x: number; y: number; fill: string }[] = [];
+let n = 0;
+'404'.split('').forEach((ch, g) => {
+  GLYPHS[ch].forEach((row, y) => {
+    [...row].forEach((c, x) => {
+      if (c === '#') cells.push({ x: g * 6 + x, y, fill: COLORS[(n++ * 7 + y * 3) % COLORS.length] });
+    });
+  });
+});
+const width = (3 * 6 - 1) * CELL;
+const height = 7 * CELL;
+---
+
+<div class="mc-404 not-content">
+  <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="404" shape-rendering="crispEdges">
+    {cells.map((c) => <rect x={c.x * CELL} y={c.y * CELL} width={CELL - 2} height={CELL - 2} fill={c.fill} />)}
+  </svg>
+  <h1>This page isn't here</h1>
+  <p>It may have moved when the docs were reorganized. Search with <kbd>⌘K</kbd>, or start from one of these:</p>
+  <ul>
+    <li><a href="/memctrl/">Home</a></li>
+    <li><a href="/memctrl/get-started/quick-start/">Quick start</a></li>
+    <li><a href="/memctrl/reference/cli/">CLI reference</a></li>
+    <li><a href="/memctrl/help/troubleshooting/">Troubleshooting</a></li>
+  </ul>
+</div>
+
+<style>
+  .mc-404 {
+    max-width: 34rem;
+    margin: clamp(3rem, 10vh, 6rem) auto 4rem;
+  }
+  svg {
+    display: block;
+    width: min(100%, 17rem);
+    height: auto;
+  }
+  h1 {
+    margin: 2.25rem 0 0;
+    font-size: clamp(1.9rem, 4vw, 2.5rem);
+    font-weight: 750;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+    color: var(--mc-ink);
+  }
+  p {
+    margin: 1rem 0 0;
+    line-height: 1.65;
+    color: var(--mc-muted);
+  }
+  kbd {
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--mc-border-strong);
+    border-radius: 0.3rem;
+    font-family: var(--__sl-font-mono);
+    font-size: 0.85em;
+    color: var(--mc-text);
+  }
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: inline-block;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid var(--mc-border-strong);
+    border-radius: 0.35rem;
+    font-size: 0.92rem;
+    font-weight: 650;
+    color: var(--mc-ink);
+    text-decoration: none;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  a:hover {
+    border-color: var(--mc-peri);
+    color: var(--mc-lavender);
+  }
+</style>

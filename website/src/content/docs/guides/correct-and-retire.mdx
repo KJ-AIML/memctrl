@@ -1,0 +1,179 @@
+---
+title: "Correct and retire memories"
+description: "Dispute, refute, supersede, forget or reject a memory that is wrong or outdated, and what each does for your teammates."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A wrong memory is worse than none: it is replayed into every session, and the agent may act on it. memctrl has several ways to take a memory back. They differ in what the agent still sees, whether your teammates' stores follow when they sync, and whether the memory can ever come back.
+
+## Choose the command
+
+| Situation | Command | Your brief | Search and recall | Shared file and teammates' stores |
+| --- | --- | --- | --- | --- |
+| You doubt it but haven't checked | `memctrl dispute <id>` | Moves to "Check before trusting", marked `disputed` | Still found; recall marks it `disputed` | Listed under "Disputed"; teammates' copies become disputed |
+| It's wrong and nothing replaces it | `memctrl refute <id> --reason "…"` | Gone | Gone | A Retracted record with the reason; teammates' copies are refuted |
+| It changed, and you know what's true now | `memctrl add` the new fact, then `memctrl supersede <old> <new>` | Old one gone, new one shown | Old one gone | A Retracted record naming the replacement; teammates' copies are superseded |
+| It should never have been saved | `memctrl forget <id>` | Gone, deleted from your store | Gone | A Retracted record without the text; teammates' copies are archived |
+| A candidate you won't accept, or a note only you hold | `memctrl reject <id> --reason "…"` | Gone | Gone | Left out of your next export; teammates' copies are untouched |
+
+Every command takes the full id or its first 8 characters. Corrections reach teammates through `.memctrl/memory.md` when you export and they sync; see [how corrections travel](#how-corrections-reach-your-team).
+
+## Dispute: flag a doubt
+
+Use [`dispute`](/memctrl/reference/cli/dispute/) when a memory may be wrong but you haven't confirmed it. The memory stays, with a warning:
+
+```bash
+memctrl dispute 8d7cc2a3
+```
+
+```text
+## Check before trusting
+
+- Webhook retries use exponential backoff capped at 10 minutes · `8d7cc2a3` · disputed
+```
+
+Once you've checked, resolve it. If the memory holds, `memctrl accept <id>` clears the dispute, setting the memory back to `unverified` (never to `supported`: accepting isn't evidence):
+
+```json
+{"id":"8d7cc2a3-ab75-4b56-adcb-b0cda7159302","action":"accept","status":"updated","cleared":"disputed"}
+```
+
+If it's wrong, refute or supersede it.
+
+## Refute: it's wrong
+
+[`refute`](/memctrl/reference/cli/refute/) needs a reason, which is kept with the memory as evidence and in the audit log. Pass `--refuting-id` to link a memory that shows it is wrong.
+
+```bash
+memctrl refute 59516250 --reason "The limit is configured in config/rate.yml but no middleware enforces it"
+```
+
+```json
+{"id":"59516250-4cc3-4b78-aa33-0a9e0b733783","status":"refuted"}
+```
+
+The memory leaves the brief, search and recall. Refutation is terminal: memctrl won't dispute, accept or re-add it, so a disproven claim can't drift back into retrieval.
+
+```text
+$ memctrl dispute 59516250
+{"error":"refuted memory cannot be re-verified; supersede it with a new memory instead"}
+$ memctrl accept 59516250
+{"error":"refuted memory cannot be accepted"}
+$ memctrl add "API rate limit is 100 requests per minute per key" --layer project
+{"error":"this text was refuted as 59516250; add the corrected fact instead"}
+```
+
+To record what's true instead, add a new memory with different text.
+
+## Supersede: replace it
+
+When a fact changed, save the new one and point the old one at it with [`supersede`](/memctrl/reference/cli/supersede/), old id first:
+
+```bash
+memctrl add "The nightly export job runs at 03:00 UTC since the DST change" --layer project
+memctrl supersede ddfaf9c3 2f790de7
+```
+
+```json
+{"id":"2f790de7-376c-43c8-81b9-f224442e8ec9","status":"stored"}
+{"old_id":"ddfaf9c3-9ad3-4485-ab18-3d2c4f9c3e59","new_id":"2f790de7-376c-43c8-81b9-f224442e8ec9","status":"superseded"}
+```
+
+Prefer supersede over refute when there is a replacement: it keeps the link between the two, so anyone who reads the history sees what replaced what. If the old memory cited code, cite the new one too (`--cite`); see [Keep memories fresh](/memctrl/guides/keep-memories-fresh/).
+
+## Forget: remove it
+
+[`forget`](/memctrl/reference/cli/forget/) deletes the memory from your store and records a tombstone (its id and a digest of its text), so importing an older export can't bring it back, under that id or any other:
+
+```bash
+memctrl forget ab4897a8
+```
+
+```json
+{"id":"ab4897a8-ba18-409f-9759-aef92a99c1b5","status":"deleted"}
+```
+
+Use it for memories that should not exist at all: a secret that slipped past redaction, noise, a duplicate. The shared file records only that the memory was forgotten, never its text, so a forgotten secret is not published again. Because the memory is deleted, `memctrl history` no longer finds it.
+
+## Reject: decline it
+
+[`reject`](/memctrl/reference/cli/reject/) is mainly for [candidates](/memctrl/guides/review-candidates/) you won't accept, but works on any memory. The reason goes to the audit log, and re-adding the same text to the layer is refused.
+
+```bash
+memctrl reject e871c6a4 --reason "We moved to SES in March"
+```
+
+A rejection stays in your store. Your next export leaves the entry out of `memory.md`, but adds no Retracted record, so teammates who already imported the memory keep it. To retract something for the whole team, refute, supersede or forget it instead.
+
+## How corrections reach your team
+
+When you export, refuted, superseded and forgotten memories go to a `## Retracted` section at the end of `.memctrl/memory.md`, and disputed ones to `## Disputed`:
+
+```markdown title=".memctrl/memory.md"
+## Disputed
+
+- Webhook retries use exponential backoff capped at 10 minutes
+  <!-- memctrl {"id":"8d7cc2a3-…","layer":"project","claim_type":"assertion","verification_state":"disputed",…} -->
+
+## Retracted
+
+- API rate limit is 100 requests per minute per key
+  <!-- memctrl {"id":"59516250-…","layer":"project","state":"refuted","reason":"The limit is configured in config/rate.yml but no middleware enforces it","sha":"…"} -->
+- (forgotten)
+  <!-- memctrl {"id":"ab4897a8-…","layer":"project","state":"forgotten","sha":"…"} -->
+- The nightly export job runs at 02:00 UTC
+  <!-- memctrl {"id":"ddfaf9c3-…","layer":"project","state":"superseded","superseded_by":"2f790de7-…","sha":"…"} -->
+```
+
+A teammate who pulls and runs `memctrl sync` gets each correction applied to their own copy. The import report counts them:
+
+```json
+{"retracted":{"disputed":1,"forgotten":1,"refuted":1,"superseded":1}}
+```
+
+Their store now holds the following, condensed from `memctrl list --include-history` to id, lifecycle state, verification state and text:
+
+```text
+2f790de7 candidate  unverified  The nightly export job runs at 03:00 UTC since the DST change
+e871c6a4 accepted   unverified  Customer emails are sent through Postmark
+59516250 rejected   refuted     API rate limit is 100 requests per minute per key
+ab4897a8 archived   unverified  Staging uses the prod Stripe account in test mode
+ddfaf9c3 superseded unverified  The nightly export job runs at 02:00 UTC
+8d7cc2a3 accepted   disputed    Webhook retries use exponential backoff capped at 10 minutes
+```
+
+The replacement for the 02:00 entry arrives as a candidate, like any new entry, for your teammate to accept after reading the change. The rejected Postmark memory is still accepted there, because a rejection doesn't travel.
+
+- **Import only lowers a memory's state**, in the order active, disputed, superseded or refuted, forgotten. A sync never revives anything, and an older export can't undo a newer correction.
+- **A teammate's forget archives your copy instead of deleting it.** Archived memories leave the brief and search. If you need one back on your machine, `memctrl accept <id>` restores it locally; it stays forgotten in the shared file.
+- **Retraction records are kept on every export,** even by teammates whose stores never had the memory. Only `memctrl export --force`, which writes from your store alone, or an export by memctrl 2.1 drops them. CI can check that none was dropped: see [Share with your team](/memctrl/guides/share-with-your-team/).
+
+## See the lineage
+
+[`memctrl history <id>`](/memctrl/reference/cli/history/) shows a memory with its relations and evidence. For the superseded memory above, trimmed:
+
+```json
+{"memory":{"id":"ddfaf9c3-…","content":"The nightly export job runs at 02:00 UTC","lifecycle_state":"superseded",…},
+ "relations":[{"from_memory_id":"2f790de7-…","to_memory_id":"ddfaf9c3-…","relation_type":"supersedes",…}],
+ "evidence":[]}
+```
+
+For a refuted memory, `evidence` holds the reason (`"source_id":"refute"`, `"metadata":{"reason":"…"}`). To see retired memories next to live ones, use `memctrl list --include-history`.
+
+## Clear a store or a layer
+
+[`memctrl clear`](/memctrl/reference/cli/clear/) deletes memories in bulk and needs `--yes`:
+
+```bash
+memctrl clear --layer session --yes    # only the session layer
+memctrl clear --yes                    # the whole store, tombstones included
+```
+
+```json
+{"deleted":1}
+```
+
+<Aside type="caution">
+`clear` deletes without writing retraction records, and `clear` without `--layer` also deletes the tombstones that keep forgotten memories out. After clearing the project layer, the next `memctrl sync` brings every entry in `memory.md` back as a candidate. To take memories back for the team, refute, supersede or forget them one by one.
+</Aside>

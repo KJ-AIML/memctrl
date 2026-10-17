@@ -1,0 +1,19 @@
+---
+// Two shapes: an upturned corner and a slash, filled with the violet-to-indigo gradient.
+const { class: className } = Astro.props;
+const id = `mc-mark-${Math.random().toString(36).slice(2, 8)}`;
+---
+
+<svg class={className} viewBox="0 0 100 100" aria-hidden="true">
+  <defs>
+    <linearGradient id={id} x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" style="stop-color: var(--mc-mark-top)" />
+      <stop offset="1" style="stop-color: var(--mc-mark-bottom)" />
+    </linearGradient>
+  </defs>
+  <path
+    fill={`url(#${id})`}
+    d="M83 10H36A24 24 0 0 0 12 34V63.5A2.5 2.5 0 0 0 14.5 66H31.5A2.5 2.5 0 0 0 34 63.5V37A5 5 0 0 1 39 32H83A3 3 0 0 0 86 29V13A3 3 0 0 0 83 10Z"
+  />
+  <path fill={`url(#${id})`} d="M86 38V68L61 90H24Z" />
+</svg>

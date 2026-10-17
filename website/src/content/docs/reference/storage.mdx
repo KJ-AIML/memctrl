@@ -1,0 +1,145 @@
+---
+title: "Storage"
+description: "Where memctrl keeps its data, how it finds the store, what's inside the SQLite database, and how to maintain and back it up."
+---
+
+import { Aside, FileTree } from '@astrojs/starlight/components';
+
+memctrl keeps everything in one SQLite file per project, next to a rules file and a Markdown export you commit. This page covers what's on disk, how a command picks its store, what the database holds, the limits that keep it small, and how to maintain and back it up.
+
+## Files on disk
+
+<FileTree>
+- your-project/
+  - .memoryrc the project rules, committed
+  - .memctrl/
+    - .gitignore keeps the database out of git
+    - memories.db the store, local only
+    - memories.db-wal while memctrl has the store open
+    - memories.db-shm while memctrl has the store open
+    - memory.md the export, committed
+    - sessions/ what each Claude Code session has seen, local only
+      - abc123
+</FileTree>
+
+| Path | Written by | Commit it? |
+| --- | --- | --- |
+| `.memoryrc` | `memctrl init` | Yes. See [.memoryrc](/memctrl/reference/memoryrc/). |
+| `.memctrl/memories.db` | `memctrl init`, then every write | No. A database committed to git is never loaded. |
+| `.memctrl/memories.db-wal`, `.memctrl/memories.db-shm` | SQLite, while a connection is open | No. |
+| `.memctrl/.gitignore` | `memctrl init`, and `export` when it's missing | Yes. It lists `*.db`, `*.db-wal`, `*.db-shm` and `*.db-journal`. |
+| `.memctrl/memory.md` | `memctrl export` and `memctrl sync` | Yes. See [memory.md format](/memctrl/reference/memory-md/). |
+| `.memctrl/sessions/<session id>` | The Claude Code hooks | No. See [session records](/memctrl/reference/hooks/#session-records). |
+
+<Aside type="caution">
+The `.gitignore` memctrl writes doesn't cover `sessions/`. If you commit the `.memctrl/` folder, add `sessions/` to `.memctrl/.gitignore` first.
+</Aside>
+
+`memctrl init` keeps an existing `.memctrl/.gitignore`, and memctrl never writes it through a symlink. The `sessions/` folder sits next to whichever store you use, so a store at another path keeps its session records beside it.
+
+## Which store a command uses
+
+| Order | Source | Notes |
+| --- | --- | --- |
+| 1 | `--db <path>` | A global option every command takes. |
+| 2 | `MEMCTRL_DB_PATH` | The same, from the environment. |
+| 3 | `[memctrl] db_path` in `.memoryrc` | Relative to the folder that holds `.memoryrc`. A repository's file may only name a path inside the repository. |
+| 4 | `.memctrl/memories.db` in the project folder | The project folder is where the nearest `.memoryrc` is, found by walking up to the repository root. |
+
+- **Only `memctrl init`, or a path you name, creates a store.** Elsewhere, commands fail with a hint (`no memctrl project in … or its parent folders`) instead of creating an empty store in whatever folder they run in. `context` and `recall` print nothing and create nothing, so hooks stay quiet where memctrl isn't set up.
+- **A store committed to git is never loaded**, because anyone with push access could have written its memories, already accepted. `context` and `recall` print a warning and nothing else; other commands refuse; `doctor` reports `committed_database`. Run `git rm --cached .memctrl/memories.db` and share memory through `memory.md`, or trust the repository in your [user config](/memctrl/reference/user-config/).
+- **`--db :memory:`** uses a throwaway in-memory store, for example to check an import without touching anything: `memctrl --db :memory: import --dry-run .memctrl/memory.md`.
+- **`memctrl doctor`** lists stores that memctrl 2.1.0 left in subfolders under `stray_stores`. The project doesn't read them.
+
+## Inside the database
+
+The store is an ordinary SQLite database in WAL mode, with `synchronous=NORMAL` and a 30-second busy timeout. Every table is created with `IF NOT EXISTS` and changes only by adding things.
+
+| Table | What it holds |
+| --- | --- |
+| `memories` | One row per memory: `id`, `layer`, `content`, `source`, `confidence`, `tags` (a JSON array), `created_at`, `updated_at`, `last_accessed_at`, `access_count`, `expires_at`, `observed_at`, `valid_from`, `valid_until`, `claim_type`, `lifecycle_state` and `verification_state`. |
+| `memory_fts` | Full-text index (FTS5) of `content` and `tags`, with Porter stemming and diacritics removed. |
+| `memory_fts_tri` | Full-text index (FTS5) of `content` as character trigrams, for scripts written without spaces and for substrings. |
+| `memory_citations` | Each citation: `path`, `line_start`, `line_end`, the `file_hash`, `span_hash`, `head_hash` and `head_offset` used to detect changes, the `commit_sha` checked out when it was taken, and timestamps. |
+| `memory_relations` | Links between memories: `derived_from`, `supports`, `contradicts`, `supersedes`, `refutes`. |
+| `memory_evidence` | Evidence attached to a memory, such as a refutation's reason or the task a lesson came from. |
+| `memory_tombstones` | Forgotten and retracted ids with a digest of their text, their layer, state and reason, so an import can't bring them back. |
+| `provenance` | The query log: each search's query, method, the ids it returned, their scores and `why`. Never memory text. |
+| `rust_query_cache` | Cached query results, holding ids and explanations only. |
+| `rust_revision` | A counter that changes with every write, which binds cache entries to the store's state. |
+| `tree_nodes` | The memory tree, when you build it (`memctrl tree --rebuild`). |
+| `triggers_log` | The audit log: trigger consolidations and proposals, refutations, rejections with a reason, citation refreshes and releases of held memories. |
+| `otel_spans` | Timings of each operation, for `memctrl spans` and `memctrl otel-export`. |
+| `agent_checkpoints` | JSON state saved with `memctrl agent put`. |
+| `maintenance_state` | When maintenance tasks last ran, such as the one-time compaction and tree builds. |
+| `schema_version` | The schema version, 4. |
+| `query_cache`, `cache_meta` | Tables from older versions. memctrl doesn't use them and empties `query_cache` on every change. |
+| `semantic_vectors` | Embeddings of memories (`memory_id`, `space`, `vector` as little-endian `f32` of unit length, `created_at`). Created only when [search by meaning](/memctrl/concepts/search-by-meaning/) first stores a vector; `memctrl semantic clear` drops it. |
+
+Triggers inside SQLite keep everything consistent whichever program writes:
+
+| Trigger | What it does |
+| --- | --- |
+| `memory_fts_insert`, `memory_fts_delete`, `memory_fts_update` | Keep both full-text indexes in step with `memories`. |
+| `rust_revision_<table>_insert`, `_update`, `_delete` | On `memories`, `tree_nodes`, `memory_relations` and `memory_evidence`: bump the revision and empty the query caches. |
+| `semantic_vectors_delete`, `semantic_vectors_update` | Drop a memory's vectors when it's deleted or its text changes. Only present with `semantic_vectors`. |
+
+Indexes cover `memories` by layer, expiry, lifecycle and verification state, relations by both ends, evidence by memory and by source, tree nodes by parent and layer, the query log and audit log by time, spans by trace and operation, and citations by memory.
+
+### Schema versions
+
+The schema version stays 4 and every change since 2.0 is additive: new tables, columns, indexes and triggers, never a rewrite. Opening an older database adds what's missing, fills empty states with their defaults (`assertion`, `accepted`, `unverified`) and indexes existing memories once. A database whose version is newer than 4 is refused with `unsupported future schema version`. Because the indexes are maintained by triggers, older 2.x binaries keep the store consistent when they write to it.
+
+## Reads and writes
+
+- **Reads never take the write lock.** A search or brief reads from a snapshot, so it answers while another process writes. Opening a store checks the schema with a read and takes the write lock only when something needs migrating.
+- **Bookkeeping never blocks a result.** Access counts, the query log, cache entries and timings are written after the answer, in their own short transaction with a 25 ms lock timeout, and skipped when another process holds the write lock. Under heavy contention some of them aren't recorded.
+- **Writes take the lock up front** (`BEGIN IMMEDIATE`), so concurrent writers wait, up to the 30-second busy timeout, instead of failing halfway. Changes that touch several rows, such as superseding, importing or firing triggers, are one transaction.
+
+## Limits
+
+| Limit | Value | What happens |
+| --- | --- | --- |
+| Memory size | 64 KiB of UTF-8 text | `add`, `memctrl_add`, triggers and every other write refuse a longer memory with a hint to split it or cite a file. Import skips it and lists its line. Reflection and Heli lessons are cut to fit. `doctor` counts older oversized memories as `oversized_memories`. |
+| Query log | The newest 10,000 records, none older than 30 days | Trimmed as new records are written. Logged queries are cut to 1,024 characters. |
+| Query cache | Entries live 5 minutes; at most 256 entries of up to 32 KiB each | Every change to the store empties it. Results that used search by meaning aren't cached. |
+| Cited files | 8 MB per file; 2,000 lines per citation | A larger file's citations report `unchecked`, and a longer line range is refused. |
+
+## Maintenance
+
+[`memctrl maintenance`](/memctrl/reference/cli/maintenance/) rebuilds both full-text indexes, checkpoints the WAL into the database file, and prints the store's statistics. The checkpoint fails with `WAL checkpoint blocked by active readers` while another process is reading; run it again when they're done.
+
+```json
+{"status":"checkpointed","stats":{"memories":9,"eligible_memories":8,"tree_nodes":0,"triggers":0,"provenance_records":12,"otel_spans":35,"memory_relations":0,"memory_evidence":0,"revision":12,"by_layer":{"project":7,"user":2}}}
+```
+
+`memctrl maintenance --vacuum` also rewrites the database to give free space back to the file system, taking the write lock briefly, and adds `reclaimed_bytes` to the report. `memctrl doctor` shows how much it would reclaim as `reclaimable_bytes`.
+
+memctrl repairs the search indexes itself: when it opens a store whose full-text triggers are missing, or whose indexes hold a different number of rows than `memories`, it recreates the triggers and reindexes.
+
+## Backups
+
+A copy of `memories.db` alone can miss recent changes, which may still be in `memories.db-wal`. Either:
+
+- **Copy while nothing writes.** Stop the agents, hooks and MCP servers that use the store, run `memctrl maintenance` to checkpoint the WAL, then copy `memories.db`.
+- **Use SQLite's online backup**, which copies a consistent snapshot while other connections are open:
+
+  ```bash
+  sqlite3 .memctrl/memories.db ".backup memories-backup.db"
+  ```
+
+Check a backup with `memctrl --db memories-backup.db stats`, or `memctrl --db memories-backup.db doctor`. To share memory with teammates, use [`memory.md`](/memctrl/reference/memory-md/) instead of copying the database: its entries are reviewed on import.
+
+## Other programs that use the database
+
+Any SQLite client can read the store. A program that writes to `memories` fires the full-text triggers, so it needs SQLite with FTS5; memctrl's own binaries include it. A build without FTS5 can still read, but its writes fail with `no such module: fts5` and change nothing. To check a `sqlite3` build:
+
+```bash
+sqlite3 :memory: "CREATE VIRTUAL TABLE t USING fts5(x)"
+```
+
+To write with a client that lacks FTS5, drop the three `memory_fts_*` triggers first; memctrl recreates them and reindexes the next time it opens the store.
+
+<Aside type="caution" title="Direct writes skip the guard">
+The write guard and the size limit run when memctrl writes. A row another program inserts into `memories` skips them and is stored as written, accepted by default. The brief and the prompt hook check every memory against the guard again and leave out what it flags, and everything memctrl prints is redacted, but `memctrl query` returns such a row like any other. Keep the store local, and share memory through `memory.md`.
+</Aside>

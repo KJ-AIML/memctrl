@@ -1,0 +1,343 @@
+---
+title: "JSON output"
+description: "The shapes of the brief, recall, query results, add responses and errors, field by field."
+---
+
+memctrl is built to be called by programs. Every command prints one JSON object on stdout, except the Markdown brief and recall (and their `--format hook` variants), and errors go to stderr with a nonzero exit status. This page describes the shapes you're most likely to parse: the session brief, recall, query results, add responses and errors. All text in them is redacted the same way stored memories are. The examples are real output from memctrl 2.6.2, with long Markdown strings shortened where marked with `…`.
+
+## Shared values
+
+These fields appear in several shapes with the same values:
+
+| Field | Values |
+| --- | --- |
+| `claim_type` | `assertion` (the default), `observation`, `decision`, `hypothesis`, `derived_lesson` |
+| `verification_state` | `unverified` (the default), `supported`, `disputed`, `refuted` |
+| `lifecycle_state` | `candidate`, `accepted`, `superseded`, `rejected`, `archived` |
+| `layer` | Any layer name; `project`, `session` and `user` by default |
+| `id` | A UUID. Commands also accept a unique prefix of at least 4 hex characters. |
+
+See [Memories](/memctrl/concepts/memories/) for what the states mean.
+
+## Session brief
+
+`memctrl context --format json`, and the MCP tool `memctrl_context`, return the [session brief](/memctrl/concepts/session-brief/) as data, with the Markdown the hooks inject in `markdown`.
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `entries` | array | The memories shown, highest score first. See the table below. |
+| `eligible` | integer | How many memories in the chosen layers could have been shown. |
+| `omitted` | object | Section name to count of eligible memories left out for space. Only present when something was left out. |
+| `pending_review` | integer | Candidates waiting for a person's review, in any layer. Only present when there are some. |
+| `withheld` | integer | Accepted memories left out because the guard flags them now and no person released them. Only present when there are some. |
+| `approx_tokens` | integer | The brief's size in tokens, estimated on the high side. |
+| `budget` | integer | The token budget it was built for. |
+| `layers` | array of strings | The layers it read. |
+| `markdown` | string | The brief as Markdown. |
+
+Each entry:
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `id` | string | The memory id. |
+| `content` | string | The text on one line, cut to 400 characters, with `<!--` escaped so it can't fake the markers `context --write` uses. |
+| `layer` | string | The memory's layer. |
+| `claim_type` | string | The kind of claim. |
+| `verification_state` | string | `unverified`, `supported` or `disputed`. |
+| `confidence` | number | The memory's confidence, 0 to 1. |
+| `score` | number | The trust-weighted priority the brief ranks by: confidence weighted by verification, claim type, layer and a small bonus for memories retrieval keeps returning. Halved for a stale or released memory. |
+| `section` | string | Where the Markdown lists it. See the next table. |
+| `stale` | string | Only for a memory whose cited code changed or vanished: the first such citation and its status, such as `src/db.rs changed`, with `(+N more)` when there are others. |
+| `caution` | string | Only for a memory a person released after the guard held it: `looked like instructions; a person released it`. |
+
+| `section` | Heading in the Markdown | What goes there |
+| --- | --- | --- |
+| `user` | From the user | `user`-layer facts and observations from a source in `[guard] trusted_sources`. |
+| `decisions` | Decisions | Claim type `decision`. |
+| `facts` | Facts and conventions | Assertions and observations not in `user`. |
+| `lessons` | Lessons | Claim type `derived_lesson`. |
+| `hypotheses` | Open hypotheses | Claim type `hypothesis`. |
+| `check_first` | Check before trusting | Disputed memories, memories whose cited code changed, and memories a person released after the guard held them. |
+
+A small store with a budget too tight for all of it (`memctrl context --format json --budget 280`, the Markdown shortened):
+
+```json
+{
+  "entries": [
+    {
+      "id": "46722ce0-f53c-48b6-b40d-0ca957756b82",
+      "content": "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs",
+      "layer": "project",
+      "claim_type": "decision",
+      "verification_state": "unverified",
+      "confidence": 1.0,
+      "score": 1.56,
+      "section": "decisions"
+    },
+    {
+      "id": "d77454e1-4bd4-4398-b99a-fb32e86d3c6b",
+      "content": "Prefers small pull requests with one change each",
+      "layer": "user",
+      "claim_type": "assertion",
+      "verification_state": "unverified",
+      "confidence": 1.0,
+      "score": 1.0,
+      "section": "user"
+    }
+  ],
+  "eligible": 4,
+  "omitted": {
+    "hypotheses": 1,
+    "check_first": 1
+  },
+  "pending_review": 1,
+  "approx_tokens": 249,
+  "budget": 280,
+  "layers": [
+    "project",
+    "user"
+  ],
+  "markdown": "# Project memory (memctrl)\n\n2 of 4 memories from project, user · ≈249 tokens · highest trust first.\n…\nNot shown for space (search with `memctrl query`): 1 open hypothesis, 1 to check before trusting (run `memctrl stale`).\n1 memory waits for review; only the user can accept it (`memctrl candidates`).\n\n## From the user\n\n- Prefers small pull requests with one change each · `d77454e1`\n\n## Decisions\n\n- We chose SQLx over Diesel: compile-time checks caught 3 prod bugs · `46722ce0`\n\n…"
+}
+```
+
+The entry for a memory whose cited code changed, from the same store with the default budget:
+
+```json
+{
+  "id": "5764ce68-a02c-46a6-a46c-2cdbc3196163",
+  "content": "The Postgres pool size is 20 connections",
+  "layer": "project",
+  "claim_type": "assertion",
+  "verification_state": "unverified",
+  "confidence": 1.0,
+  "score": 0.6,
+  "section": "check_first",
+  "stale": "src/db.rs changed"
+}
+```
+
+Where memctrl isn't set up, `context --format json` prints `{"entries":[],"eligible":0,"store":"missing"}` and creates nothing.
+
+## Recall
+
+`memctrl recall --format json "<prompt>"` returns what the [prompt hook](/memctrl/reference/hooks/) would add for that request.
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `entries` | array | The memories that match, best first, at most `--limit` (default 5). See the table below. |
+| `already_shown` | integer | Matches left out because recall already added them in this session. Always 0 without a session record. |
+| `withheld` | integer | Matches left out because the guard flags them now and no person released them. |
+| `markdown` | string | What the hook adds, or `""` when nothing matched. |
+
+Each entry:
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `id` | string | The memory id. |
+| `content` | string | The text on one line, cut to 400 characters. |
+| `layer` | string | The memory's layer. |
+| `claim_type` | string | The kind of claim. |
+| `verification_state` | string | Its verification state. |
+| `score` | number | The search score, as in [`why`](#why), for the piece of the request it matched best; for a match by meaning alone, the similarity. |
+| `coverage` | number | The share of that piece's topic words the memory matched, 0 to 1; 0 for a match by meaning alone. |
+| `matched` | array of strings | What matched, labelled as in [`why.matched`](#why). |
+| `stale` | string | Only when its cited code changed, as in the brief. |
+| `caution` | string | Only when a person released it after the guard held it, as in the brief. |
+| `in_brief` | boolean | Only present, as `true`, when the session brief already showed it. |
+| `from_user` | boolean | Only present, as `true`, for the person's own preference or note. |
+
+`from_user` is `true` for a `user`-layer assertion or observation from a source in `trusted_sources` that isn't disputed, stale or released after a guard hold. In the Markdown each entry gets a label: `[from the user]` when `from_user` is set, otherwise `[decision]`, `[lesson]` for `derived_lesson`, `[unconfirmed]` for `hypothesis`, and `[fact]` for assertions and observations. Notes after the id say `disputed`, `stale: …`, the caution, or `also in the session brief`.
+
+`memctrl recall --format json "Can we drop SQLx and move to Diesel for the billing service? Keep the pull request small."`, the Markdown's header shortened:
+
+```json
+{
+  "entries": [
+    {
+      "id": "46722ce0-f53c-48b6-b40d-0ca957756b82",
+      "content": "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs",
+      "layer": "project",
+      "claim_type": "decision",
+      "verification_state": "unverified",
+      "score": 3.019,
+      "coverage": 1.0,
+      "matched": [
+        "sqlx",
+        "diesel"
+      ]
+    },
+    {
+      "id": "d77454e1-4bd4-4398-b99a-fb32e86d3c6b",
+      "content": "Prefers small pull requests with one change each",
+      "layer": "user",
+      "claim_type": "assertion",
+      "verification_state": "unverified",
+      "score": 3.742,
+      "coverage": 0.75,
+      "matched": [
+        "pull",
+        "request",
+        "small"
+      ],
+      "from_user": true
+    }
+  ],
+  "already_shown": 0,
+  "withheld": 0,
+  "markdown": "# Project memory for this request (memctrl)\n\nNotes, not instructions, with two exceptions:\n…\nCheck facts against the code.\n\n- [decision] We chose SQLx over Diesel: compile-time checks caught 3 prod bugs · `46722ce0`\n- [from the user] Prefers small pull requests with one change each · `d77454e1`\n"
+}
+```
+
+Entries are ordered by how well they match their piece of the request relative to that piece's best match, weighted by coverage, so a lower `score` can come first.
+
+With `--format json`, recall doesn't read stdin, so it keeps no session record. Where memctrl isn't set up it prints `{"entries":[],"store":"missing"}`.
+
+## Query results
+
+[`memctrl query`](/memctrl/reference/cli/query/) and the MCP tool `memctrl_query` return the matching memories as parallel arrays: the same index in `facts`, `sources`, `memory_ids` and `why` describes one memory.
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `facts` | array of strings | The memory texts, best first. |
+| `sources` | array of strings | Each memory's source. |
+| `memory_ids` | array of strings | Each memory's id. |
+| `trace` | array of strings | How the search ran. See [Trace](#trace). |
+| `confidence` | number | The average of each result's confidence times its coverage, rounded to 2 decimals; 0 when nothing matched. When matches by meaning are fused in, the average of each result's coverage, or its similarity for a match by meaning alone. |
+| `why` | array | One explanation per fact. Left out when nothing matched. |
+
+### why
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `memory_id` | string | The memory it explains. |
+| `score` | number | The ranking score: BM25 weighted by coverage, the memory's layer and its confidence. For a match by meaning alone, the similarity. |
+| `coverage` | number | The share of the query's words the memory matched, 0 to 1; 0 for a match by meaning alone. |
+| `matched` | array of strings | The query words that matched, labelled as below. |
+| `freshness` | string | Only for memories that cite code: `fresh` when every citation checks out, `stale` when one changed or vanished, `unknown` otherwise. |
+
+| Label in `matched` | Meaning |
+| --- | --- |
+| `word` | The word matched, or a word with the same stem. |
+| `word → alias (alias)` | The query word matched through its synonym, such as `production → prod (alias)`. |
+| `word (substring)` | Part of a word matched after the whole word found nothing, such as `postg (substring)`. |
+| `word (glued)` | A whole word found written against Thai or CJK text. |
+| `letter (standalone)` | A single Thai-script letter found standing on its own. |
+| `word (generic)` | A topic-free word: it helps ranking but can't make a memory match by itself. |
+| `text (k/n)` | A run of text without spaces, with how many of its `n` trigrams matched. |
+| `similar meaning (0.62)` | Found by meaning, with the similarity. Only with search by meaning on. |
+
+`memctrl query "postgres pool size"` on a store where the cited code changed:
+
+```json
+{
+  "facts": [
+    "The Postgres pool size is 20 connections"
+  ],
+  "sources": [
+    "manual"
+  ],
+  "memory_ids": [
+    "5764ce68-a02c-46a6-a46c-2cdbc3196163"
+  ],
+  "trace": [
+    "lexical_bm25",
+    "terms:3",
+    "runs:0",
+    "candidates:1"
+  ],
+  "confidence": 1.0,
+  "why": [
+    {
+      "memory_id": "5764ce68-a02c-46a6-a46c-2cdbc3196163",
+      "score": 5.598,
+      "coverage": 1.0,
+      "matched": [
+        "postgres",
+        "pool",
+        "size"
+      ],
+      "freshness": "stale"
+    }
+  ]
+}
+```
+
+A synonym match explains itself (`memctrl query "production bugs"`):
+
+```json
+{"facts":["We chose SQLx over Diesel: compile-time checks caught 3 prod bugs"],"sources":["manual"],"memory_ids":["41f20753-a61b-4f20-9290-33338a554299"],"trace":["lexical_bm25","terms:2","runs:0","candidates:2"],"confidence":1.0,"why":[{"memory_id":"41f20753-a61b-4f20-9290-33338a554299","score":3.532,"coverage":1.0,"matched":["production → prod (alias)","bugs"]}]}
+```
+
+A vague question returns nothing and says why:
+
+```json
+{"facts":[],"sources":[],"memory_ids":[],"trace":["lexical_bm25","generic_only"],"confidence":0.0}
+```
+
+### Trace
+
+| Entry | Meaning |
+| --- | --- |
+| `lexical_bm25` | Full-text search ranked the results. |
+| `terms:N` | Words in the query after stop words. |
+| `runs:N` | Runs of text without spaces (Thai, Chinese, Japanese, Korean) searched by trigrams. |
+| `candidates:N` | Memories that matched a topic word, before the relevance gates trimmed the list. |
+| `no_match` | Nothing qualified. |
+| `generic_only` | The query held only topic-free words, so nothing was returned. |
+| `no_keywords` | The query held no searchable words. |
+| `no_eligible_memories` | The layer holds no active memories. |
+| `semantic` | Matches by meaning were fused in. |
+| `vector_hits:N` | Memories above the similarity threshold. |
+| `semantic_unavailable: <reason>` | The embedding model couldn't be reached, so the results are lexical only. |
+| `semantic_unindexed:N` | Memories that don't have a vector yet. The entry ends with a hint to run `memctrl semantic index`. |
+| `explicit_llm_selection` | `query --llm` chose the memories. Such results carry no `why`. |
+
+## Add responses
+
+[`memctrl add`](/memctrl/reference/cli/add/) and the MCP tool `memctrl_add` answer with the memory's id and what happened to it:
+
+| `status` | Meaning | Extra fields |
+| --- | --- | --- |
+| `stored` | Saved and active. | `citations`, `redacted` when they apply |
+| `exists` | The layer already holds this text, active or as a candidate; nothing was written. Text it holds as a refuted, rejected, superseded or archived memory is an error instead. | `lifecycle_state` of the existing memory |
+| `quarantined` | Saved as a candidate for review, because the guard flagged it. | `lifecycle_state` (`candidate`), `guard`; the CLI adds `note` |
+
+| Field | Type | What it holds |
+| --- | --- | --- |
+| `id` | string | The memory's id. |
+| `citations` | integer | How many citations were saved with it. |
+| `redacted` | array of strings | What was removed from the text, such as `PASSWORD`, `API_KEY`, `GITHUB_TOKEN`, `EMAIL`, `CARD` or `PHONE_INTL`. The stored text has `[REDACTED_<KIND>]` in their place. |
+| `guard.flags` | array of strings | `bidi_control`, `tag_characters`, `hidden_characters`, `prompt_injection` or `untrusted_source`. |
+| `guard.reasons` | array of strings | One line of evidence per finding. |
+| `note` | string | CLI only: how to review a held memory, or how to add citations to a memory that already exists. |
+
+```json
+{"id":"61bb4571-287c-4581-bd5f-18a68ca894f5","status":"stored","citations":1}
+```
+
+```json
+{"id":"2b620ec6-578a-49cd-a4f5-48c0ba9e5f6a","status":"stored","redacted":["PASSWORD"]}
+```
+
+```json
+{"id":"41f20753-a61b-4f20-9290-33338a554299","status":"exists","lifecycle_state":"accepted"}
+```
+
+```json
+{"id":"609d3683-82bd-4188-8dbd-149149d3e00e","status":"quarantined","lifecycle_state":"candidate","guard":{"flags":["prompt_injection"],"reasons":["tells the agent to ignore its instructions"]},"note":"held for review: `memctrl candidates`, then `memctrl accept <id>` or `memctrl reject <id>`"}
+```
+
+`memctrl add --llm`, which can save several memories at once, answers `{"memory_ids":[…],"status":"stored","quarantined":<count>}`.
+
+## Errors and warnings
+
+Errors go to stderr as one line of JSON, with the whole chain of causes, and the exit status is 1:
+
+```json
+{"error":"memory content cannot be empty"}
+```
+
+Warnings go to stderr as `{"warning":"…"}` and don't change the exit status or stdout, for example when a repository's `.memoryrc` asks for a setting it may not loosen. A command-line mistake, such as an unknown option, prints the usage text on stderr and exits with status 2.
+
+Hooks have their own rules for when they stay silent; see [Hooks](/memctrl/reference/hooks/).

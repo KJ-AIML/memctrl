@@ -1,0 +1,175 @@
+---
+title: "Set up search by meaning"
+description: "Run an embedding model with Ollama or LM Studio, turn on semantic search in your user config and check that it works."
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Word search misses a question worded unlike the memory: "which JWT library" never finds "we verify tokens with jose". With an embedding model running on your machine, `memctrl query`, the MCP server and the prompt hook also match by meaning. This page sets it up with Ollama or LM Studio. [Search by meaning](/memctrl/concepts/search-by-meaning/) explains how matches are fused with word search and what it does and doesn't improve.
+
+It is off until you add a `[semantic]` section to your user config, `~/.config/memctrl/config.toml` (`$XDG_CONFIG_HOME/memctrl/config.toml` if that's set, `%APPDATA%\memctrl\config.toml` on Windows). A repository's `.memoryrc` can't turn it on or choose the server: a `[semantic]` section there is ignored with a warning.
+
+<Aside type="caution">
+With semantic search on, memctrl sends memory text to the model to index it, and sends every search and, through the prompt hook, every request you type. Keep the model on your machine unless you mean to send that text elsewhere.
+</Aside>
+
+## Run an embedding model
+
+memctrl talks to any server with an OpenAI-compatible `/embeddings` endpoint.
+
+<Tabs>
+<TabItem label="Ollama">
+
+<Steps>
+
+1. With Ollama installed and running, pull EmbeddingGemma:
+
+   ```bash
+   ollama pull embeddinggemma
+   ```
+
+2. Add this to your user config. Ollama's address, `http://localhost:11434/v1`, is the default, so `base_url` can be left out:
+
+   ```toml title="~/.config/memctrl/config.toml"
+   [semantic]
+   model = "embeddinggemma"
+   ```
+
+</Steps>
+
+</TabItem>
+<TabItem label="LM Studio">
+
+<Steps>
+
+1. Download an embedding model in LM Studio, load it and start the local server.
+
+2. Find the identifier the server uses for the model:
+
+   ```bash
+   curl http://localhost:1234/v1/models
+   ```
+
+3. Add this to your user config, with that identifier as `model`:
+
+   ```toml title="~/.config/memctrl/config.toml"
+   [semantic]
+   model = "text-embedding-nomic-embed-text-v1.5"
+   base_url = "http://localhost:1234/v1"
+   ```
+
+4. If the identifier doesn't contain `embeddinggemma` or `multilingual-e5-small`, memctrl has no thresholds for it: [tune it](#tune-thresholds-for-another-model) before semantic search turns on.
+
+</Steps>
+
+</TabItem>
+</Tabs>
+
+memctrl ships measured thresholds for models whose name contains `embeddinggemma` (or `embedding-gemma`) and `multilingual-e5-small`. It also knows the query and document prefixes that EmbeddingGemma, e5, nomic-embed-text, mxbai-embed and Qwen3-Embedding models expect, and sets them from the model name.
+
+## Settings
+
+Every key in `[semantic]`. An unknown key or an invalid value is an error, so a typo can't quietly leave semantic search off.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `model` | required | The name the server knows the model by |
+| `base_url` | `http://localhost:11434/v1` | The server; memctrl appends `/embeddings` |
+| `threshold` | measured value for known models | Similarity a memory found by meaning alone needs to appear in `query` (from -1 to 1) |
+| `recall_threshold` | measured value for known models | The same for the prompt hook, which adds memories nobody asked for; never lower than `threshold` |
+| `query_prefix`, `document_prefix` | set from the model name | Text put before a query or a memory before embedding |
+| `dimensions` | all | Keep only the first N dimensions, for Matryoshka models such as EmbeddingGemma |
+| `timeout_ms` | `3000` | How long a search waits for the model; indexing waits up to 120 s |
+| `allow_remote` | `false` | Required for a server that isn't on this machine; it must then use HTTPS |
+| `api_key_env` | none | The name of an environment variable holding a key, sent as a bearer token |
+| `enabled` | `true` | `false` keeps the section but turns semantic search off |
+
+The shipped thresholds are 0.455 and 0.56 for EmbeddingGemma, and 0.849 and 0.85 for multilingual-e5-small. For any other model, semantic search stays off until you set `threshold`.
+
+## Check it and index your memories
+
+<Steps>
+
+1. Ask memctrl what it sees:
+
+   ```bash
+   memctrl semantic status
+   ```
+
+   It prints your settings (never the key), whether the model answered (`reachable`, with `dimensions` and `ping_ms` when it did), and how many memories have vectors (`indexed` of `eligible`). Trimmed:
+
+   ```json
+   {"enabled":true,"config":"/home/you/.config/memctrl/config.toml",
+    "settings":{"model":"embeddinggemma","base_url":"http://localhost:11434/v1","threshold":0.455,"recall_threshold":0.56,
+      "query_prefix":"task: search result | query: ","document_prefix":"title: none | text: ","dimensions":null,
+      "allow_remote":false,"timeout_ms":3000,"key_variable":null},
+    "indexed":0,"eligible":4,"stored_vectors":0,…,
+    "hint":"4 memories have no vector yet; run `memctrl semantic index` (searches embed up to 16 at a time)"}
+   ```
+
+2. Embed the memories you already have:
+
+   ```bash
+   memctrl semantic index
+   ```
+
+   It reports `indexed`, `already_indexed`, `eligible` and `seconds`. `--layer` limits it to one layer. You only need this once: after that, each search embeds up to 16 memories that have no vector yet, and editing or deleting a memory drops its vector.
+
+3. Search. A memory found by meaning shows `similar meaning (…)` in `why.matched`, and `trace` includes `semantic`:
+
+   ```bash
+   memctrl query "which JWT library do we use"
+   ```
+
+</Steps>
+
+## Tune thresholds for another model
+
+`memctrl semantic tune` embeds the built-in eval suite (never your memories) and measures both thresholds for the model in your config. `threshold` balances finding answers against answering vague questions with nothing; `recall_threshold` is set just above the closest any unanswerable question came to a memory.
+
+```bash
+memctrl semantic tune
+```
+
+The result includes `threshold`, `recall_threshold`, the hit rate and decline rate at that threshold (`at_threshold`), and a `config` field with the two lines to paste into `[semantic]`. Use `--file` to tune on your own [eval suite](/memctrl/guides/measure-retrieval/) and `--top-k` to change how many results count as a hit (default 5). On LM Studio with `text-embedding-nomic-embed-text-v1.5`, the published run measured 0.664 and 0.75 ([benchmark](/memctrl/benchmarks/search-by-meaning/)); measure your own, since quantized builds of one model differ.
+
+To see what the model changes on a suite, compare `memctrl eval --retriever semantic` and `--retriever recall` with `MEMCTRL_SEMANTIC=off memctrl eval --retriever recall`; see [Measure retrieval](/memctrl/guides/measure-retrieval/).
+
+## Turn it off
+
+- **For one command:** `MEMCTRL_SEMANTIC=off memctrl query "…"`.
+- **Until you turn it back on:** `enabled = false` in `[semantic]`, or remove the section.
+- **Delete stored vectors:** `memctrl semantic clear` deletes every vector (`{"cleared":N}`). While `[semantic]` is on, searches rebuild them a few at a time, and `semantic index` rebuilds them all.
+
+Vectors are stored per model, document prefix and dimensions, so after switching models, old vectors stay in the store unused. Run `memctrl semantic clear`, then `memctrl semantic index`.
+
+## A server on another machine
+
+Text leaves your machine only when you say so. A `base_url` that isn't `localhost` or a loopback address needs both `allow_remote = true` and HTTPS. Put a key in an environment variable and name it:
+
+```toml title="~/.config/memctrl/config.toml"
+[semantic]
+model = "embeddinggemma"
+base_url = "https://embeddings.internal.example.com/v1"
+allow_remote = true
+api_key_env = "EMBEDDINGS_API_KEY"
+```
+
+## Troubleshooting
+
+| What you see | Why | What to do |
+| --- | --- | --- |
+| `semantic status` says `"reason":"no [semantic] section in your user config"` | memctrl reads a different config file than you edited | Check the `config` path in the output; `XDG_CONFIG_HOME` changes it |
+| `"reachable":false,"error":"can't reach the embedding server"` | The server isn't running, or `base_url` is wrong | Start Ollama or LM Studio's server; check the address and port |
+| `trace` shows `semantic_unavailable: can't reach the embedding server` | Same, during a search | Results fall back to word search, so nothing breaks; fix the server |
+| `"reason":"semantic search is off: semantic search needs a threshold for <model>; …"` | No measured thresholds for this model | Run `memctrl semantic tune` and add the two lines it prints |
+| Every memctrl command fails with `invalid [semantic] in …: unknown setting semantic.threshhold` | A typo or invalid value in `[semantic]` | Fix the key. Until you do, the hooks fail too |
+| `semantic.base_url … is not on this machine. Memories and every prompt would be sent there; set allow_remote = true …` | A remote `base_url` without `allow_remote` | Add `allow_remote = true` if that's intended |
+| `semantic.base_url must use https for a server off this machine` | A remote server over plain HTTP | Use HTTPS |
+| `trace` shows `semantic_unindexed:N` | Memories without vectors yet | Run `memctrl semantic index` |
+| `"reason":"turned off by MEMCTRL_SEMANTIC=off"` | The variable is set in your environment | Unset it |
+| A vague question now returns a memory | A match by meaning above `threshold` | Raise `threshold` a little, or re-run `tune` on a suite with your own vague questions |
+
+<Aside type="note">
+Search by meaning adds matches; it doesn't replace word search. The concept page covers [what it doesn't reach](/memctrl/concepts/search-by-meaning/), such as a rule that applies to a request only by inference.
+</Aside>

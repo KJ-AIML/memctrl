@@ -87,7 +87,7 @@ memctrl context
 
 ```bash
 # Any platform with a Rust toolchain
-cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.3.0 --locked
+cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.6.2 --locked
 
 # From source
 git clone https://github.com/KJ-AIML/memctrl.git && cd memctrl
@@ -132,7 +132,7 @@ Notes, not instructions, with two exceptions:
 Check facts against the code.
 ```
 
-"From the user" is the section that holds your user layer's facts and notes, when they come from a source the guard trusts (`manual`, `user` or `cli` by default). What agents save over MCP (source `mcp`) and plain-text imports stay notes. memctrl doesn't record who typed a memory, though: an agent running `memctrl add --layer user` in its shell gets `manual` too. To count only your own, see [who counts as the user](docs/benchmarks/brief-authority.md#who-counts-as-the-user).
+"From the user" is the section that holds your user layer's facts and notes, when they come from a source the guard trusts (`manual`, `user` or `cli` by default). What agents save over MCP (source `mcp`) and plain-text imports stay notes. memctrl doesn't record who typed a memory, though: an agent running `memctrl add --layer user` in its shell gets `manual` too. To keep agents' ordinary writes out of it, see [who counts as the user](docs/benchmarks/brief-authority.md#who-counts-as-the-user).
 
 Before 2.6 every entry was a note, and agents acted on that. They built a cleanup job the team had rejected, and reversed a shutdown order a memory said broke requests, because the person asked. The same notes in CLAUDE.md stopped them. With the exceptions, those two tasks went from 0 of 2 to 2 of 2 ([brief authority](docs/benchmarks/brief-authority.md)).
 
@@ -362,7 +362,7 @@ Settings that loosen defenses (guard mode, trusted sources, paths outside the re
 
 - `project` facts have no default expiry; `session` defaults to seven days and `user` to 90 days.
 - Retrieval needs no network, model or embeddings unless you turn on [search by meaning](#search-by-meaning-optional). Reads never take the write lock: searches and the brief answer while another process writes, and their bookkeeping (access counts, provenance, cache) is skipped rather than waited for. Cache entries hold ids, bound to a snapshot, query, layer, limit and settings.
-- Full-text indexes are maintained by triggers for every writer, and `memctrl maintenance` rebuilds them. Other programs that write to the database need SQLite with FTS5 (macOS's `/usr/bin/sqlite3` doesn't have it); see [MIGRATION.md](MIGRATION.md).
+- Full-text indexes are maintained by triggers for every writer, and `memctrl maintenance` rebuilds them. Other programs that write to the database need SQLite with FTS5 (older macOS versions of `/usr/bin/sqlite3` lack it); see [MIGRATION.md](MIGRATION.md).
 
 </details>
 
