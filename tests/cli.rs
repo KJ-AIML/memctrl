@@ -578,10 +578,11 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         .as_str()
         .unwrap();
     assert!(recall.ends_with("recall --format hook"), "{recall}");
-    assert!(
-        failure(&dir, &["install", "--tool", "cursor", "--project", "--hook"])
-            .contains("--hook works with claude, codex and gemini")
-    );
+    assert!(failure(
+        &dir,
+        &["install", "--tool", "cursor", "--project", "--hook"]
+    )
+    .contains("--hook works with claude, codex and gemini"));
 }
 
 /// Runs a hook command the way Claude Code does: the event's JSON on stdin.

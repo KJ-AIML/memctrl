@@ -192,7 +192,7 @@ enum Command {
         layer: String,
         #[arg(
             long,
-            help = "Where the memory came from (default: manual; claude-code when Claude Code runs this, which can't record a source the guard trusts)"
+            help = "Where the memory came from (default: manual). Run by a coding agent, it records the agent instead (such as claude-code), and never a source the guard trusts"
         )]
         source: Option<String>,
         #[arg(long, default_value_t = 1.0)]

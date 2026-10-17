@@ -5,7 +5,7 @@ description: "Local, explainable memory for coding agents, what it does, and whe
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-memctrl gives coding agents such as Claude Code, Codex and Cursor a memory of your project: the decisions, conventions and dead ends that aren't in the code. It is one Rust binary and a SQLite file on your machine. This page covers the problem it solves, what it does, what it doesn't, and when a plain CLAUDE.md is the better choice.
+memctrl gives coding agents such as Claude Code, Codex, Gemini CLI and Cursor a memory of your project: the decisions, conventions and dead ends that aren't in the code. It is one Rust binary and a SQLite file on your machine. This page covers the problem it solves, what it does, what it doesn't, and when a plain CLAUDE.md is the better choice.
 
 ## The problem
 
@@ -84,8 +84,9 @@ Each setup ran 16 or 32 times with one judge, so a difference of one or two task
 | Agent | How memory arrives | Setup |
 | --- | --- | --- |
 | Claude Code | Session-start hook for the brief, prompt hook for recall | [Claude Code](/memctrl/agents/claude-code/) |
-| Codex, Cursor | The brief in a marked block of AGENTS.md; a skill file | [Codex and Cursor](/memctrl/agents/codex-and-cursor/) |
-| axga, pi, kimi | A skill file that tells the agent to load the brief with `memctrl context` | [Codex and Cursor](/memctrl/agents/codex-and-cursor/) |
+| Codex, Gemini CLI | The same two hooks as Claude Code | [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/) |
+| Cursor | The brief in a marked block of AGENTS.md; a skill file | [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/) |
+| axga, pi, kimi | A skill file that tells the agent to load the brief with `memctrl context` | [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/) |
 | Any MCP host | Nine tools over stdio, including the brief | [MCP hosts](/memctrl/agents/mcp/) |
 
 Prebuilt binaries ship for macOS (Apple silicon and Intel), Linux (x86_64 and arm64) and Windows (x86_64). On other platforms, build from source with a Rust toolchain. See [Install](/memctrl/get-started/install/).

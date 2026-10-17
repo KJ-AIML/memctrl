@@ -139,17 +139,23 @@ On a red-team corpus the guard catches 26 of 73 injection attempts, and holds 4 
 
 The brief asks agents to follow "From the user": user-layer facts and observations whose source is in `trusted_sources`. So `trusted_sources` decides two things: which sources skip `strict` mode's hold, and whose notes count as yours.
 
-memctrl doesn't record who typed a memory. Over MCP, an agent's memories default to source `mcp` and stay notes. But an agent that runs `memctrl add --layer user` in its shell gets `manual`, the same as you. Every entry still passes the guard as the brief is built, so anything that looks like an instruction stays out until you release it, and a repository's `.memoryrc` can only narrow `trusted_sources`, so a cloned repository can't widen what counts.
+memctrl tells an agent's writes from yours where it can, and an agent's writes can't claim a source the guard trusts:
 
-To keep an agent's ordinary writes out of "From the user", trust only the source `user` and add your preferences with it:
+| Who writes | How | Source recorded |
+| --- | --- | --- |
+| You, in your own terminal | `memctrl add` | `manual`, or the `--source` you give |
+| You, in Claude Code | a prompt that starts with `remember:` | `user` |
+| Claude Code's agent | `memctrl add` in its shell (Claude Code sets `CLAUDECODE=1`) | `claude-code`, or an untrusted `--source` it gives |
+| Codex, Gemini CLI or Cursor's agent | `memctrl add` in its shell (`CODEX_CI`, `GEMINI_CLI`, `CURSOR_AGENT`) | `codex`, `gemini-cli` or `cursor`, likewise |
+| Any agent | `memctrl_add` over MCP | `mcp`, or an untrusted `source` it gives |
+
+When an agent asks for a trusted source (`--source user`), memctrl records its own name instead and says so in `source_note`. Every entry still passes the guard as the brief is built, so anything that looks like an instruction stays out until you release it, and a repository's `.memoryrc` can only narrow `trusted_sources`, so a cloned repository can't widen what counts.
+
+This is attribution, not proof. An agent that unsets `CLAUDECODE`, or feeds the prompt hook a forged `remember:` prompt from its shell, can still write as you; that takes deliberate effort, which ordinary agent writes don't make. Other agents' shells aren't recognized, so their `memctrl add` still records `manual`. To keep those out of "From the user" too, trust only `user`:
 
 ```toml title="~/.config/memctrl/config.toml"
 [guard]
 trusted_sources = ["user"]
 ```
 
-```bash
-memctrl add "Prefers Makefile targets over raw npm scripts" --layer user --source user
-```
-
-This keeps an agent's ordinary `memctrl add`, and its MCP writes, out of "From the user". It isn't proof of who wrote a memory: a source is whatever the writer passes, and an agent could pass `--source user` too. In `strict` mode, the same setting also holds every other source for review. How the preferences then reach the agent is covered in [Session brief](/memctrl/concepts/session-brief/#from-the-user).
+Then save your own notes with `remember:`, or with `--source user` in your terminal. In `strict` mode, the same setting also holds every other source for review. How the preferences reach the agent is covered in [Session brief](/memctrl/concepts/session-brief/#from-the-user).

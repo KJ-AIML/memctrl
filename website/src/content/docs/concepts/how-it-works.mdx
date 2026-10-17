@@ -88,10 +88,12 @@ Your own settings live outside any repository, in `~/.config/memctrl/config.toml
 | Host | Session start | Each request |
 | --- | --- | --- |
 | Claude Code | A `SessionStart` hook runs `memctrl context --format hook`, also after `/clear`, resume and compaction | A `UserPromptSubmit` hook runs `memctrl recall --format hook` |
-| Codex, Cursor | `memctrl context --write AGENTS.md` refreshes a marked block in AGENTS.md | Run `memctrl recall "<request>"` yourself, or from your host's prompt hook |
+| Codex | The same `SessionStart` hook, in `.codex/hooks.json` | The same `UserPromptSubmit` hook |
+| Gemini CLI | A `SessionStart` hook runs `memctrl context --format gemini` | A `BeforeAgent` hook runs `memctrl recall --format gemini` |
+| Cursor and others | `memctrl context --write AGENTS.md` refreshes a marked block in AGENTS.md | Run `memctrl recall "<request>"` yourself, or from your host's prompt hook |
 | Any MCP host | The `memctrl_context` tool | The `memctrl_query` tool, when the agent calls it |
 
-Agents rarely search on their own, so the hooks matter: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query`. Setup for each host is in [Claude Code](/memctrl/agents/claude-code/), [Codex and Cursor](/memctrl/agents/codex-and-cursor/) and [MCP](/memctrl/agents/mcp/).
+Agents rarely search on their own, so the hooks matter: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query`. Setup for each host is in [Claude Code](/memctrl/agents/claude-code/), [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/), [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/) and [MCP](/memctrl/agents/mcp/).
 
 ## Local and predictable
 

@@ -143,9 +143,10 @@ It leaves out:
 
 - user-layer decisions, which stay under Decisions;
 - anything disputed, stale or released by a person after the guard held it, which goes under "Check before trusting";
-- memories an agent saved over MCP (source `mcp`) and plain-text imports (source `import`), which stay facts.
+- what an agent saved: over MCP (source `mcp`) or in Claude Code's shell (source `claude-code`), which stays facts;
+- plain-text imports (source `import`), which stay facts too.
 
-memctrl doesn't record who typed a memory: an agent that runs `memctrl add --layer user` in its shell gets source `manual`, as you do. To keep agents' ordinary writes out of this section, see [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
+You add to it by starting a prompt with `remember:` in Claude Code, or with `memctrl add --layer user` in your own terminal. This is attribution, not proof; see [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
 
 ## The guard checks again
 
@@ -169,7 +170,7 @@ A database committed to git is never loaded unless you trust its repository in y
 | --- | --- |
 | `memctrl context` | Markdown, for you to read |
 | `memctrl context --format hook` | Claude Code's session-start hook, which installs with `memctrl install --tool claude --hook` and also runs after `/clear`, resume and compaction |
-| `memctrl context --write AGENTS.md` | Codex, Cursor and other hosts that read AGENTS.md: the brief goes between `memctrl:context` markers and is replaced on every run |
+| `memctrl context --write AGENTS.md` | Cursor and other hosts that read AGENTS.md: the brief goes between `memctrl:context` markers and is replaced on every run |
 | `memctrl context --format json` | Scripts: entries with their scores and sections, plus the Markdown |
 | `memctrl_context` | MCP hosts |
 
