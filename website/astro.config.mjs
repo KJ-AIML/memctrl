@@ -61,7 +61,12 @@ export default defineConfig({
         },
         {
           label: 'Connect your agent',
-          items: [{ slug: 'agents/claude-code' }, { slug: 'agents/codex-and-cursor' }, { slug: 'agents/mcp' }],
+          items: [
+            { slug: 'agents/claude-code' },
+            { slug: 'agents/codex-and-gemini' },
+            { slug: 'agents/codex-and-cursor' },
+            { slug: 'agents/mcp' },
+          ],
         },
         {
           label: 'Concepts',

@@ -1,0 +1,126 @@
+---
+title: "Codex and Gemini CLI"
+description: "Give Codex and Gemini CLI the session brief at startup and the memories each prompt needs, through their hooks."
+---
+
+import { Aside, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Codex and Gemini CLI run hooks the way Claude Code does, so memctrl works the same in both. When a session starts, a hook adds the session brief. When you send a prompt, a second hook adds the memories it matches. Both hooks need a store: run `memctrl init` in the project first.
+
+## Install the hooks
+
+<Tabs>
+<TabItem label="Codex">
+
+```bash
+memctrl install --tool codex --project --hook
+```
+
+```json
+{"path":"/home/you/your-project/.agents/skills/memctrl/SKILL.md","hook":"/home/you/your-project/.codex/hooks.json","hook_changed":true,"hook_note":"Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the two memctrl hooks. Project hooks also need the project trusted"}
+```
+
+Then start Codex, run `/hooks` and trust the two memctrl hooks. Codex skips a new or changed hook until you do.
+
+</TabItem>
+<TabItem label="Gemini CLI">
+
+```bash
+memctrl install --tool gemini --project --hook
+```
+
+```json
+{"path":"/home/you/your-project/.agents/skills/memctrl/SKILL.md","hook":"/home/you/your-project/.gemini/settings.json","hook_changed":true,"hook_note":"with folder trust on, Gemini CLI runs these hooks only in folders you've trusted, and it warns about new project hooks the first time"}
+```
+
+With folder trust on, Gemini CLI runs hooks only in folders you've trusted.
+
+</TabItem>
+</Tabs>
+
+`--project` writes into the project folder. Without it, the hooks go in your home folder (`~/.codex/hooks.json` or `~/.gemini/settings.json`) and run in every project, staying silent where there's no store. Pick one: Codex runs hooks from both places, so installing both would add the brief twice.
+
+Both tools also get the skill, which explains memctrl to the agent, in `.agents/skills/memctrl/SKILL.md`. Codex reads it there, and Gemini CLI prefers it over `.gemini/skills/`.
+
+## What it writes
+
+<Tabs>
+<TabItem label="Codex">
+
+```json title=".codex/hooks.json"
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "memctrl context --format hook", "additionalContextLimit": 4000}]}
+    ],
+    "UserPromptSubmit": [
+      {"hooks": [{"type": "command", "command": "memctrl recall --format hook"}]}
+    ]
+  }
+}
+```
+
+The commands are the ones Claude Code runs: Codex passes hooks the same JSON and reads the same output. Codex shortens hook output past about 2,500 tokens, and the brief can reach 3,000, so the brief's hook raises that limit to 4,000.
+
+</TabItem>
+<TabItem label="Gemini CLI">
+
+```json title=".gemini/settings.json"
+{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "memctrl context --format gemini", "name": "memctrl-brief", "timeout": 10000}]}
+    ],
+    "BeforeAgent": [
+      {"hooks": [{"type": "command", "command": "memctrl recall --format gemini", "name": "memctrl-recall", "timeout": 10000}]}
+    ]
+  }
+}
+```
+
+`--format gemini` prints the same brief and recall under Gemini's event names, and `{}` when there's nothing to add, because Gemini reads only JSON from a hook. Its timeouts are in milliseconds.
+
+</TabItem>
+</Tabs>
+
+- **The command** starts with plain `memctrl` when the first `memctrl` on your `PATH` is the executable you ran `install` with, otherwise its absolute path. A project file with an absolute path is specific to your machine, so think before committing it.
+- **Your other hooks and settings stay**, in their order. Running `install` again updates memctrl's hooks in place and keeps flags you added, such as `--budget 2000`.
+- **A file that isn't valid JSON is never rewritten.** `install` fails and prints the hook to add by hand.
+
+## When the hooks run
+
+| | Codex | Gemini CLI |
+| --- | --- | --- |
+| The brief | At startup, on resume, after `/clear`, after compaction and on a fork | At startup, on resume and after `/clear` |
+| Recall | Before each prompt goes to the model | After you send a prompt, before the agent plans |
+| Where the context goes | Developer context for the session or the turn | The brief as the first turn; recall appended to your prompt for that turn |
+
+Gemini CLI has no session-start event after it compresses a conversation, so the brief isn't added again then. Recall still runs on every prompt. Both tools pass a session id, so the [session record](/memctrl/reference/hooks/#session-records) works as in Claude Code: a session never gets the same memory twice from recall.
+
+## remember: and who wrote what
+
+- **`remember:` works here too.** Start a prompt with `remember:` (or `จำไว้:` / `จำไว้ว่า`) and the prompt hook saves the rest as your note. See [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember).
+- **The agent's writes are the agent's.** Codex sets `CODEX_CI=1` for commands its agent runs, and Gemini CLI sets `GEMINI_CLI=1`. memctrl records those writes as `codex` or `gemini-cli` and never as a source it trusts, so they stay out of "From the user". Codex doesn't document its variable, so it could change. Gemini CLI also sets its variable for commands you type with `!`, so those count as the agent's too.
+
+## Check that it works
+
+1. Start a session in the project and send a prompt that names something a memory covers.
+2. Look in `.memctrl/sessions/`. A file named after the session id should hold the brief's memories as `brief <id>` lines, and the ids recall added. If there's no file, the hooks didn't run: in Codex, check `/hooks` for trust; in Gemini CLI, check that the folder is trusted.
+3. Ask the agent what it knows about the project. It should name memories from the brief.
+
+<Aside type="note" title="New in 2.7">
+The Codex hooks were tested in Codex 0.160: its request to the model carried the brief and the recalled memory. The Gemini CLI hooks follow Gemini CLI's documented hook format (0.64), but haven't run in Gemini CLI itself yet. If either seems to do nothing, check trust first, then [open an issue](https://github.com/KJ-AIML/memctrl/issues).
+</Aside>
+
+## Remove the hooks
+
+Delete the two memctrl entries from `.codex/hooks.json` or `.gemini/settings.json` (or the copies in your home folder). memctrl doesn't remove them for you.
+
+## Related
+
+<CardGrid>
+  <LinkCard title="Claude Code" description="The same hooks, where memctrl started." href="/memctrl/agents/claude-code/" />
+  <LinkCard title="Hooks reference" description="Exact input and output of both hook commands." href="/memctrl/reference/hooks/" />
+  <LinkCard title="Cursor and AGENTS.md" description="For agents without hooks memctrl can use." href="/memctrl/agents/codex-and-cursor/" />
+  <LinkCard title="Recall" description="How memctrl decides which memories a request needs." href="/memctrl/concepts/recall/" />
+</CardGrid>

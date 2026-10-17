@@ -36,7 +36,15 @@ memctrl add "Postgres pool max_connections is 20: pgbouncer allows 25 per app an
 {"id":"07917cc1-a2e2-4a1a-b614-7d0185a9ce10","status":"stored","citations":1}
 ```
 
-A memory you saved without one can cite code later: `memctrl cite 07917cc1 docs/adr/004-pool.md`. A path without lines cites the whole file. Paths are relative to the project root, which is the nearest folder containing `.git` unless `MEMCTRL_PROJECT_ROOT` or `[citations] root` in `.memoryrc` says otherwise. Secrets files such as `.env` can't be cited.
+A memory you saved without one can cite code later: `memctrl cite 07917cc1 docs/adr/004-pool.md`. A path without lines cites the whole file.
+
+memctrl points out what to cite. When the text of a memory you add names files in the project but you gave no `--cite`, `add` says so:
+
+```json
+{"id":"13eda323-2a0c-4188-90da-621ead0603aa","status":"stored","hint":"it names src/config.ts, .github/workflows/ci.yml; run `memctrl cite 13eda323 src/config.ts .github/workflows/ci.yml` so memctrl can tell when that code changes"}
+```
+
+A word counts as a file when it looks like a path (it has a `/`, or a name with an extension) and names a regular file inside the project that memctrl may cite. A line range written in the text, such as `src/config.ts:12`, is kept. For memories you already have, [`memctrl doctor`](/memctrl/reference/cli/doctor/) lists the same commands under `cite_suggestions`, up to 20, with the count of such memories in `uncited_files`. Paths are relative to the project root, which is the nearest folder containing `.git` unless `MEMCTRL_PROJECT_ROOT` or `[citations] root` in `.memoryrc` says otherwise. Secrets files such as `.env` can't be cited.
 
 ## When the code moves
 

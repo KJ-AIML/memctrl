@@ -16,7 +16,7 @@ Your user config holds the settings only you should make: how strict the write g
 
 memctrl reads the file on every command, and the MCP server reads it again for every tool call. A missing file means the defaults. A file that isn't valid TOML, or holds an invalid value under `[guard]` or `[trust]`, makes every command fail with the reason on stderr, so a typo can't quietly weaken a setting. A mistake under `[semantic]` only turns search by meaning off, with a warning on stderr, so commands and hooks keep working without it (2.6.2 and earlier failed every command). `memctrl semantic status` prints the path it uses under `config`.
 
-The file has three sections. Other sections and keys are ignored, except in `[semantic]`, where an unknown key turns search by meaning off with a warning.
+The file has four sections: `[guard]`, `[trust]`, `[semantic]` and `[capture]`. Other sections and keys are ignored, except in `[semantic]`, where an unknown key turns search by meaning off with a warning.
 
 ## [guard]
 
@@ -115,6 +115,16 @@ memctrl knows these models by a lowercase substring of `model`, most specific fi
 Without a measured or configured `threshold`, search by meaning stays off with a warning (`memctrl semantic status` shows the reason) until you add the values [`memctrl semantic tune`](/memctrl/reference/cli/semantic/) prints. Without a threshold every question would return something.
 
 Changing `model`, `document_prefix` or `dimensions` starts a new set of stored vectors; vectors made with other settings are never mixed in. To turn search by meaning off for one command, set `MEMCTRL_SEMANTIC=off`.
+
+[`memctrl semantic setup`](/memctrl/guides/set-up-search-by-meaning/) writes this section for you: it finds the model on Ollama or LM Studio, measures thresholds when memctrl has none for it, and appends the section, never replacing one that's there.
+
+## [capture]
+
+| Key | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `remember` | boolean | `true` | A Claude Code prompt that starts with `remember:` (or `จำไว้:` / `จำไว้ว่า`) saves the rest as your note. `false` turns that off. See [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember). |
+
+A value that isn't `true` or `false` turns capture off with a warning, rather than stopping every command. A repository's `.memoryrc` can't change this.
 
 ## Examples
 

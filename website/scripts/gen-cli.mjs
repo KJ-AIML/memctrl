@@ -11,7 +11,6 @@ const GLOBAL = new Set(['--db', '--rc', '-h, --help', '-V, --version']);
 // Options whose help text is empty in the binary: what they mean, per command.
 const FILL = {
   'add --layer': '`project` (no default expiry), `user` (90 days) or `session` (7 days)',
-  'add --source': 'Where the memory came from; the guard and the brief trust `manual`, `user` and `cli` by default',
   'add --confidence': 'From 0 to 1; weighs the memory in the brief and in search',
   'add --claim-type': '`assertion`, `observation`, `decision`, `hypothesis` or `derived_lesson`',
   'add --lifecycle-state': '`accepted`, `candidate`, `superseded`, `rejected` or `archived`',

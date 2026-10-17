@@ -39,7 +39,7 @@ memctrl keeps memory small, local and checkable:
 
 <table>
 <tr>
-<td width="33%" valign="top"><b>Arrives on its own</b><br>A session-start hook injects a brief of the highest-trust memories, and a prompt hook adds the ones that match each request. In our agent benchmark, agents never searched memory themselves.</td>
+<td width="33%" valign="top"><b>Arrives on its own</b><br>In Claude Code, Codex and Gemini CLI, a session-start hook injects a brief of the highest-trust memories, and a prompt hook adds the ones that match each request. In our agent benchmark, agents never searched memory themselves.</td>
 <td width="33%" valign="top"><b>Explains every answer</b><br>Search ranks with SQLite full-text search (BM25), and every result says which words matched and why.</td>
 <td width="33%" valign="top"><b>Knows when code changed</b><br>A memory can cite <code>src/db.rs:12-40</code>. memctrl hashes those lines and flags the memory when they change.</td>
 </tr>
@@ -64,7 +64,7 @@ memctrl init                                    # writes .memoryrc and .memctrl/
 memctrl install --tool claude --project --hook  # the skill, plus the session-start and prompt hooks for Claude Code
 ```
 
-That's the whole setup, and memctrl works from any folder inside the project. Save a fact and look at what the agent will see next session:
+That's the whole setup, and memctrl works from any folder inside the project. In Claude Code, start a prompt with `remember:` to save a note as yours. From a terminal, save a fact and look at what the agent will see next session:
 
 ```bash
 memctrl add "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs" \
@@ -73,21 +73,22 @@ memctrl context
 ```
 
 <details>
-<summary><b>Codex, Cursor, MCP hosts and other install options</b></summary>
+<summary><b>Codex, Gemini CLI, Cursor, MCP hosts and other install options</b></summary>
 <br>
 
 | Host | Setup |
 | --- | --- |
 | Claude Code | `memctrl install --tool claude --project --hook`. With `--project` the hooks go in `.claude/settings.local.json`, which is personal and not committed; without it, in your user settings. The brief also runs after `/clear`, resume and compaction, and recall runs on every prompt. |
-| Codex | `memctrl install --tool codex --project`, then `memctrl context --write AGENTS.md` to refresh a marked block in AGENTS.md |
-| Cursor | `memctrl install --tool cursor --project`, then `memctrl context --write AGENTS.md` |
+| Codex | `memctrl install --tool codex --project --hook`, then trust the two hooks with `/hooks` in Codex. The same brief and recall as Claude Code, from `.codex/hooks.json`. |
+| Gemini CLI | `memctrl install --tool gemini --project --hook`: the brief and recall from `.gemini/settings.json`, in folders you've trusted. |
+| Cursor | `memctrl install --tool cursor --project`, then `memctrl context --write AGENTS.md` to refresh a marked block in AGENTS.md. Cursor's prompt hook can't add context, so there's no recall. |
 | Any MCP host | `memctrl serve` ([configuration](#reference)) |
 
 `install` also supports `axga`, `pi` and `kimi`.
 
 ```bash
 # Any platform with a Rust toolchain
-cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.6.3 --locked
+cargo install --git https://github.com/KJ-AIML/memctrl --tag v2.7.0 --locked
 
 # From source
 git clone https://github.com/KJ-AIML/memctrl.git && cd memctrl
@@ -132,7 +133,7 @@ Notes, not instructions, with two exceptions:
 Check facts against the code.
 ```
 
-"From the user" is the section that holds your user layer's facts and notes, when they come from a source the guard trusts (`manual`, `user` or `cli` by default). What agents save over MCP (source `mcp`) and plain-text imports stay notes. memctrl doesn't record who typed a memory, though: an agent running `memctrl add --layer user` in its shell gets `manual` too. To keep agents' ordinary writes out of it, see [who counts as the user](docs/benchmarks/brief-authority.md#who-counts-as-the-user).
+"From the user" is the section that holds your user layer's facts and notes, when they come from a source the guard trusts (`manual`, `user` or `cli` by default). What agents save stays notes: over MCP (source `mcp`), or from the shell of Claude Code, Codex, Gemini CLI or Cursor's agent, which memctrl records under the agent's name. To add to it yourself, start a Claude Code, Codex or Gemini CLI prompt with `remember:`, or use `memctrl add --layer user` in your own terminal. This is attribution, not proof: an agent that hides its variable can still write as you; see [who counts as the user](https://kj-aiml.github.io/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
 
 Before 2.6 every entry was a note, and agents acted on that. They built a cleanup job the team had rejected, and reversed a shutdown order a memory said broke requests, because the person asked. The same notes in CLAUDE.md stopped them. With the exceptions, those two tasks went from 0 of 2 to 2 of 2 ([brief authority](docs/benchmarks/brief-authority.md)).
 
@@ -429,7 +430,7 @@ The server uses the official Rust MCP SDK over stdio, and stdout carries only pr
 
 - **Without a model, search matches words, not meaning.** A paraphrase that shares no words with the memory won't find it: add aliases, ask with the names, paths and errors the memory uses, or turn on search by meaning.
 - **Some links are inference, not wording or meaning.** "Add a BODY_LIMIT_BYTES env var" and "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold, and EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold. Even with the preference in the brief, agents skipped it in 3 of 3 runs, and followed it from CLAUDE.md in 3 of 3: put rules you want followed in CLAUDE.md.
-- **The prompt hook is Claude Code's.** Other hosts get the brief through AGENTS.md; run `memctrl recall "<request>"` yourself, or call it from your host's prompt hook.
+- **Recall needs a prompt hook.** Claude Code, Codex and Gemini CLI have one; Cursor's can't add context, and other hosts get the brief through AGENTS.md. Run `memctrl recall "<request>"` yourself, or call it from your host's prompt hook.
 - **Freshness covers cited memories only**, and it compares against your working tree, not a specific commit.
 - **The guard is a tripwire.** Review candidates yourself before accepting them.
 - **memctrl 2.1 can't read the 2.2 file format**, and an export from 2.1 drops its Retracted section. Upgrade the team together, and run `memctrl check --base origin/main` in CI to catch it.

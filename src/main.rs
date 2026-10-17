@@ -105,8 +105,25 @@ enum ContextFormat {
     Markdown,
     /// Machine-readable entries plus the Markdown.
     Json,
-    /// Claude Code hook output (additionalContext), reading the hook's JSON from stdin.
+    /// Claude Code and Codex hook output (additionalContext), reading the hook's JSON from stdin.
     Hook,
+    /// Gemini CLI hook output: the same, as SessionStart or BeforeAgent, and `{}` when there's
+    /// nothing to add, since Gemini reads only JSON.
+    Gemini,
+}
+impl ContextFormat {
+    /// Run as a hook: reads the hook's JSON from stdin.
+    fn hook(self) -> bool {
+        matches!(self, Self::Hook | Self::Gemini)
+    }
+    /// What a hook prints when it has nothing to add.
+    fn nothing(self) -> &'static [u8] {
+        if self == Self::Gemini {
+            b"{}\n"
+        } else {
+            b""
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum EvalRetriever {
@@ -133,7 +150,7 @@ enum Command {
         project: bool,
         #[arg(
             long,
-            help = "Claude Code only: add a SessionStart hook that injects `memctrl context`"
+            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt"
         )]
         hook: bool,
     },
@@ -173,8 +190,11 @@ enum Command {
         content: String,
         #[arg(long, default_value = "session")]
         layer: String,
-        #[arg(long, default_value = "manual")]
-        source: String,
+        #[arg(
+            long,
+            help = "Where the memory came from (default: manual). Run by a coding agent, it records the agent instead (such as claude-code), and never a source the guard trusts"
+        )]
+        source: Option<String>,
         #[arg(long, default_value_t = 1.0)]
         confidence: f64,
         #[arg(long, default_value = "assertion")]
@@ -476,6 +496,16 @@ enum Command {
 }
 #[derive(Subcommand)]
 enum SemanticCommand {
+    /// Find an embedding model on this machine (Ollama, LM Studio) and turn search by meaning on:
+    /// adds [semantic] to your user config and indexes this project's memories.
+    Setup {
+        /// An OpenAI-compatible server on this machine to use instead of looking for Ollama and LM Studio.
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Show what would be written, without writing or indexing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Settings, whether the model answers, and how many memories have vectors.
     Status,
     /// Embed every memory without a vector (searches embed a few on the spot).
@@ -778,11 +808,15 @@ fn install(
     project: &Project,
 ) -> Result<Value> {
     let tool =
-        tool.context("--tool is required; choose claude, cursor, kimi, codex, axga or pi")?;
-    ensure!(
-        !hook || matches!(tool, "claude" | "claude_code"),
-        "--hook is only available for Claude Code; for other tools run `memctrl context --write AGENTS.md`"
-    );
+        tool.context("--tool is required; choose claude, codex, gemini, cursor, kimi, axga or pi")?;
+    let host = match installer::Host::for_tool(tool) {
+        Some(host) => Some(host),
+        None if hook => bail!(
+            "--hook works with claude, codex and gemini; for {tool}, run `memctrl context --write AGENTS.md`"
+        ),
+        None => None,
+    }
+    .filter(|_| hook);
     let root = if project_scope {
         project.dir.clone()
     } else {
@@ -802,22 +836,162 @@ fn install(
         output["note"] =
             json!("memctrl 2.0 installed the skill where this tool never reads it; you can delete legacy_skill");
     }
-    if hook {
-        let executable = std::env::current_exe()?;
-        let (settings, changed) = installer::install_hook(
-            &root,
-            installer::settings_file(project_scope),
-            &installer::hook_command(&executable),
-        )?;
-        let (_, recall_changed) = installer::install_recall_hook(
-            &root,
-            installer::settings_file(project_scope),
-            &installer::recall_hook_command(&executable),
-        )?;
+    if let Some(host) = host {
+        let (settings, changed) =
+            host.install_hooks(&root, project_scope, &std::env::current_exe()?)?;
         output["hook"] = json!(settings);
-        output["hook_changed"] = json!(changed || recall_changed);
+        output["hook_changed"] = json!(changed);
+        if let Some(note) = host.note() {
+            output["hook_note"] = json!(note);
+        }
     }
     Ok(output)
+}
+
+/// `memctrl semantic setup`: finds an embedding model on this machine, checks that it answers,
+/// measures thresholds when memctrl has none for it, adds `[semantic]` to your user config (never
+/// replacing one) and indexes `store`.
+fn semantic_setup(
+    user: &UserConfig,
+    base_url: Option<&str>,
+    dry_run: bool,
+    store: std::result::Result<&MemoryStore, &&str>,
+) -> Result<Value> {
+    let path = user
+        .path
+        .clone()
+        .context("can't tell where your user config goes: set HOME (APPDATA on Windows)")?;
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let parsed: toml::Value =
+        toml::from_str(&existing).with_context(|| format!("invalid TOML in {}", path.display()))?;
+    ensure!(
+        parsed.get("semantic").is_none(),
+        "{} already has [semantic], and setup never replaces it; `memctrl semantic status` checks it",
+        path.display()
+    );
+    let servers: Vec<(&str, &str)> = match base_url {
+        Some(url) => vec![("the server", url)],
+        None => semantic::LOCAL_SERVERS.to_vec(),
+    };
+    let mut answered = Vec::new();
+    let mut models = Vec::new();
+    for (name, url) in &servers {
+        let listed = semantic::list_models(url, std::time::Duration::from_secs(2));
+        if base_url.is_some() {
+            // A server you named must answer; a default one that doesn't is just not running.
+            listed
+                .as_ref()
+                .map_err(|error| anyhow::anyhow!("{url}: {error:#}"))?;
+        }
+        if let Ok(listed) = listed {
+            answered.push(format!("{name} ({url})"));
+            for model in listed {
+                if let Some(rank) = semantic::suitability(&model) {
+                    models.push((rank, *name, *url, model));
+                }
+            }
+        }
+    }
+    // Models with measured thresholds first, then known families; ties keep the servers' order.
+    models.sort_by_key(|(rank, ..)| std::cmp::Reverse(*rank));
+    let Some((_, server, url, model)) = models.into_iter().next() else {
+        if answered.is_empty() {
+            bail!(
+                "no embedding server answered at {}. Install Ollama (https://ollama.com) and run `ollama pull embeddinggemma`, or start LM Studio's server with an embedding model, then run `memctrl semantic setup` again; for another server on this machine, pass --base-url",
+                servers.iter().map(|(_, url)| *url).collect::<Vec<_>>().join(" or ")
+            );
+        }
+        bail!(
+            "{} answered but lists no embedding model. Run `ollama pull embeddinggemma` (or load an embedding model in LM Studio), then run this again",
+            answered.join(" and ")
+        );
+    };
+    let quote = |text: &str| toml::Value::String(text.to_string()).to_string();
+    let mut section = format!(
+        "[semantic]\nmodel = {}\nbase_url = {}\n",
+        quote(&model),
+        quote(url)
+    );
+    let settings = |section: &str| -> Result<semantic::Settings> {
+        let table: toml::Value = toml::from_str(section)?;
+        semantic::Settings::parse(&table["semantic"])?.context("setup wrote enabled = false")
+    };
+    let draft = settings(&section)?;
+    let started = Instant::now();
+    let dimensions = semantic::Client::new(&draft)?
+        .embed(
+            vec!["memctrl semantic setup".into()],
+            std::time::Duration::from_secs(120),
+        )
+        .with_context(|| format!("{model} at {url} didn't embed a test sentence"))?
+        .first()
+        .map_or(0, Vec::len);
+    let first_ms = started.elapsed().as_millis() as u64;
+    let thresholds = if draft.thresholds().0.is_some() {
+        "built in: memctrl measured this model"
+    } else {
+        let suite = memctrl::eval::parse_suite(memctrl::eval::BUILTIN_SUITE)?;
+        let tuned = semantic::tune(&draft, &suite, 5)?;
+        section.push_str(&format!(
+            "# Measured by `memctrl semantic setup` on the built-in suite; rerun `memctrl semantic tune` to check.\nthreshold = {}\nrecall_threshold = {}\n",
+            tuned["threshold"], tuned["recall_threshold"]
+        ));
+        "measured now on the built-in suite"
+    };
+    let final_settings = settings(&section)?;
+    let mut report = json!({
+        "server": server, "base_url": url, "model": model, "dimensions": dimensions,
+        "first_request_ms": first_ms, "thresholds": thresholds,
+        "settings": final_settings.summary(), "config": path, "section": section,
+    });
+    if dry_run {
+        report["written"] = json!(false);
+        report["next"] =
+            json!("run without --dry-run to add this to your user config and index your memories");
+        return Ok(report);
+    }
+    let mut text = existing;
+    if !text.is_empty() {
+        if !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push('\n');
+    }
+    text.push_str(&section);
+    // The whole file must still load before it replaces the old one.
+    toml::from_str::<toml::Value>(&text)
+        .context("the updated user config wouldn't parse; nothing written")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    memctrl::fsutil::write_atomic(&path, text.as_bytes(), None)?;
+    report["written"] = json!(true);
+    report["indexed"] = match store {
+        Ok(store) => semantic::Engine::new(&final_settings)?.index(store, None)?,
+        Err(why) => json!(why),
+    };
+    report["next"] = json!("search by meaning is on for query, recall and the MCP server; `memctrl semantic status` checks it");
+    Ok(report)
+}
+
+/// The command that cites `files` for a memory, if there are any.
+fn cite_command(id: &str, files: &[String]) -> Option<String> {
+    let short: String = id.chars().take(8).collect();
+    (!files.is_empty()).then(|| format!("memctrl cite {short} {}", files.join(" ")))
+}
+
+/// What `add` says when the text names project files but cites none.
+fn cite_hint(id: &str, files: &[String]) -> Option<String> {
+    cite_command(id, files).map(|command| {
+        format!(
+            "it names {}; run `{command}` so memctrl can tell when that code changes",
+            files.join(", ")
+        )
+    })
 }
 
 /// `memctrl recall`, kept out of `execute` so its locals don't enlarge that function's frame
@@ -842,7 +1016,7 @@ fn recall_command(
         }
         layers.to_vec()
     };
-    let input = if format == ContextFormat::Hook {
+    let input = if format.hook() {
         hook_input(std::time::Duration::from_secs(2))
     } else {
         Value::Null
@@ -857,7 +1031,36 @@ fn recall_command(
         })
         .unwrap_or_default();
     let record = session_record(&input, db);
-    let seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
+    let mut seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
+    // A prompt that starts with `remember:` saves the note first. Only the hook's own input does
+    // this: it's the prompt the user typed, while a PROMPT argument only looks things up.
+    let mut kept = Vec::new();
+    let captured = memctrl::capture::request(&text)
+        .filter(|_| format.hook() && prompt.is_none() && rules.remember)
+        .map(
+            |note| match memctrl::capture::save(store, &note, &rules.guard) {
+                Ok(saved) => {
+                    if saved.status != "quarantined" {
+                        seen.recalled.insert(saved.id.clone());
+                        kept.push(saved.id.clone());
+                    }
+                    memctrl::capture::markdown(&saved, &note)
+                }
+                Err(error) => {
+                    let error = sanitize_text(&format!("{error:#}"));
+                    eprintln!(
+                        "{}",
+                        json!({"warning": format!("cannot save the note: {error}")})
+                    );
+                    format!(
+                        "# Note not saved (memctrl)
+
+The user asked memctrl to remember something, but it couldn't save the note: {error}. Tell the user.
+"
+                    )
+                }
+            },
+        );
     let root = project_root(rules).ok();
     let stale = |ids: &[String]| -> std::collections::HashMap<String, String> {
         let Some(root) = root.as_deref() else {
@@ -882,8 +1085,11 @@ fn recall_command(
         &stale,
         &seen,
     )?;
-    if let Some(record) = record.filter(|_| !found.entries.is_empty()) {
-        let ids: Vec<String> = found.entries.iter().map(|e| e.id.clone()).collect();
+    let ids: Vec<String> = kept
+        .into_iter()
+        .chain(found.entries.iter().map(|e| e.id.clone()))
+        .collect();
+    if let Some(record) = record.filter(|_| !ids.is_empty()) {
         if let Err(error) = recall::remember_recalled(&record, &ids) {
             eprintln!(
                 "{}",
@@ -891,10 +1097,11 @@ fn recall_command(
             );
         }
     }
-    Ok(if format == ContextFormat::Json {
-        serde_json::to_value(&found)?
-    } else {
-        Value::String(found.markdown)
+    Ok(match (format, captured) {
+        (ContextFormat::Json, _) => serde_json::to_value(&found)?,
+        (_, Some(note)) if found.markdown.is_empty() => Value::String(note),
+        (_, Some(note)) => Value::String(format!("{note}\n{}", found.markdown)),
+        (_, None) => Value::String(found.markdown),
     })
 }
 
@@ -982,7 +1189,7 @@ async fn execute(
                 &|m| notes.get(&m.id).cloned(),
                 &rules.guard,
             )?;
-            if *format == ContextFormat::Hook && write.is_none() {
+            if format.hook() && write.is_none() {
                 record_brief(&brief, db);
             }
             if let Some(path) = write {
@@ -1028,7 +1235,13 @@ async fn execute(
             llm,
         } => {
             validate_layer(Some(layer))?;
-            validate_identifier(source, "source")?;
+            if let Some(source) = source {
+                validate_identifier(source, "source")?;
+            }
+            // An agent running memctrl in its shell writes as itself, not as you.
+            let writer = memctrl::origin::agent(|name| std::env::var(name).ok());
+            let (source, attribution) =
+                memctrl::origin::source(source.as_deref(), writer, &rules.guard);
             review::check_tags(tags)?;
             ensure!(
                 cite.is_empty() || !llm.llm,
@@ -1066,7 +1279,7 @@ async fn execute(
                 let mut memories = client.extract(content, layer).await?;
                 let mut quarantined = 0;
                 for m in &mut memories {
-                    m.source = source.clone();
+                    m.source.clone_from(&source);
                     m.expires_at = rules.expiry(&m.layer);
                     m.validate()?;
                     if guard::apply(m, &rules.guard).quarantined() {
@@ -1074,7 +1287,13 @@ async fn execute(
                     }
                 }
                 let ids = store.insert_memories(memories)?;
-                json!({"memory_ids":ids,"status":"stored","quarantined":quarantined})
+                let mut output =
+                    json!({"memory_ids":ids,"status":"stored","quarantined":quarantined});
+                if let Some(note) = &attribution {
+                    output["source"] = json!(source);
+                    output["source_note"] = json!(note);
+                }
+                output
             } else if let Some(same) = store.existing_for_add(layer, content)? {
                 // Adding the same text again returns the memory that holds it.
                 let mut output =
@@ -1096,6 +1315,16 @@ async fn execute(
                 let mut output = json!({"id":id,"status":"stored"});
                 if !anchors.is_empty() {
                     output["citations"] = json!(anchors.len());
+                } else if let Some(hint) = project_root(rules)
+                    .ok()
+                    .and_then(|root| cite_hint(&id, &citations::named_files(&root, content)))
+                {
+                    // Only cited memories go stale when their code changes.
+                    output["hint"] = json!(hint);
+                }
+                if let Some(note) = &attribution {
+                    output["source"] = json!(source);
+                    output["source_note"] = json!(note);
                 }
                 // Say what was removed, so nobody assumes the stored text is what they typed.
                 let redacted = memctrl::sanitize::redactions(content);
@@ -1407,6 +1636,23 @@ async fn execute(
             report["withheld_from_brief"] = json!(withheld);
             report["oversized_memories"] = json!(store.count_oversized()?);
             report["reclaimable_bytes"] = json!(store.reclaimable_bytes()?);
+            // Memories that name project files but cite none: nothing tells you when they go stale.
+            if let Ok(root) = project_root(rules) {
+                let cited: std::collections::HashSet<String> =
+                    store.cited_memory_ids()?.into_iter().collect();
+                let suggestions: Vec<String> = store
+                    .list_memories(None, false)?
+                    .iter()
+                    .filter(|m| !cited.contains(&m.id))
+                    .filter_map(|m| cite_command(&m.id, &citations::named_files(&root, &m.content)))
+                    .collect();
+                report["uncited_files"] = json!(suggestions.len());
+                if !suggestions.is_empty() {
+                    report["cite_suggestions"] =
+                        json!(suggestions.into_iter().take(20).collect::<Vec<_>>());
+                    report["cite_note"] = json!("these memories name project files but cite none, so memctrl can't tell when that code changes; run the commands to cite them");
+                }
+            }
             report["committed_database"] = json!(project::tracked_by_git(db));
             report["stale_memories"] = match project_root(rules) {
                 Ok(root) => json!(citations::stale_report(store, &root, None, false)?["stale"]
@@ -1577,7 +1823,9 @@ async fn execute(
                 engine.index(store, layer.as_deref())?
             }
             SemanticCommand::Clear => json!({"cleared": semantic::clear(store)?}),
-            SemanticCommand::Tune { .. } => bail!("tune is handled separately"),
+            SemanticCommand::Tune { .. } | SemanticCommand::Setup { .. } => {
+                bail!("tune and setup are handled separately")
+            }
         },
         Command::Agent { command } => match command {
             AgentCommand::Put { thread_id, state } => {
@@ -1698,6 +1946,23 @@ async fn run(cli: Cli) -> Result<()> {
         std::io::stdout().lock().write_all(encoded.as_bytes())?;
         return Ok(());
     }
+    // Setup writes your user config, so it works from any folder; it indexes a store if there is one.
+    if let Command::Semantic {
+        command: SemanticCommand::Setup { base_url, dry_run },
+    } = &cli.command
+    {
+        let store = if !db.exists() {
+            Err("no store here: run `memctrl semantic index` in a project")
+        } else if project::tracked_by_git(&db) && !user.trusts(&db) {
+            Err("not indexed: this store is committed to git, so memctrl won't load it")
+        } else {
+            Ok(MemoryStore::open(&db)?)
+        };
+        let report = semantic_setup(&user, base_url.as_deref(), *dry_run, store.as_ref())?;
+        let encoded = serde_json::to_string(&sanitize_value(&report))? + "\n";
+        std::io::stdout().lock().write_all(encoded.as_bytes())?;
+        return Ok(());
+    }
     if let Command::Install {
         tool,
         project: project_scope,
@@ -1761,13 +2026,38 @@ async fn run(cli: Cli) -> Result<()> {
     }
     // A session-start hook runs in every repository; where memctrl was never set up it must
     // print nothing and create nothing.
-    if let Command::Recall { format, .. } = &cli.command {
+    if let Command::Recall { format, prompt, .. } = &cli.command {
         if !db.exists() {
+            // Silent, unless the user asked to remember something: then the agent should know
+            // nothing was saved.
+            let asked = (format.hook() && prompt.is_none() && rules.remember)
+                .then(|| hook_input(std::time::Duration::from_secs(2)))
+                .and_then(|input| {
+                    input
+                        .get("prompt")?
+                        .as_str()
+                        .and_then(memctrl::capture::request)
+                });
+            if asked.is_some() {
+                let note = "# Note not saved (memctrl)\n\nThe user asked memctrl to remember something, but memctrl isn't set up in this project, so nothing was saved. Tell the user they can run `memctrl init` here first.\n";
+                let event = if *format == ContextFormat::Gemini {
+                    "BeforeAgent"
+                } else {
+                    "UserPromptSubmit"
+                };
+                let output =
+                    json!({"hookSpecificOutput":{"hookEventName":event,"additionalContext":note}});
+                std::io::stdout()
+                    .lock()
+                    .write_all((output.to_string() + "\n").as_bytes())?;
+                return Ok(());
+            }
             if *format == ContextFormat::Json {
                 std::io::stdout()
                     .lock()
                     .write_all(b"{\"entries\":[],\"store\":\"missing\"}\n")?;
             }
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
     }
@@ -1785,6 +2075,7 @@ async fn run(cli: Cli) -> Result<()> {
                     .lock()
                     .write_all((empty.to_string() + "\n").as_bytes())?;
             }
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
     }
@@ -1823,12 +2114,16 @@ async fn run(cli: Cli) -> Result<()> {
             shown(&db),
             user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
         );
-        if matches!(
-            &cli.command,
-            Command::Context { write: None, .. } | Command::Recall { .. }
-        ) {
+        if let Command::Context {
+            write: None,
+            format,
+            ..
+        }
+        | Command::Recall { format, .. } = &cli.command
+        {
             // The session-start and prompt hooks stay silent rather than failing every session.
             eprintln!("{}", json!({"warning": sanitize_text(&message)}));
+            std::io::stdout().lock().write_all(format.nothing())?;
             return Ok(());
         }
         bail!(message);
@@ -1871,24 +2166,27 @@ async fn run(cli: Cli) -> Result<()> {
         store.best_effort(|s| telemetry::record(s, operation, elapsed, json!({"interface":"cli"})));
     }
     let encoded = match (&cli.command, &result) {
-        (Command::Context { format, .. }, Value::String(markdown)) => match format {
-            ContextFormat::Hook => {
-                json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
-                    .to_string()
-                    + "\n"
-            }
-            _ => markdown.clone(),
-        },
+        (Command::Context { format, .. }, Value::String(markdown)) if format.hook() => {
+            json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":markdown}})
+                .to_string()
+                + "\n"
+        }
         (Command::Recall { format, .. }, Value::String(markdown)) => match format {
             // Nothing matched: the prompt goes on unchanged.
-            _ if markdown.is_empty() => String::new(),
+            _ if markdown.is_empty() => String::from_utf8_lossy(format.nothing()).into_owned(),
             ContextFormat::Hook => {
                 json!({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":markdown}})
                     .to_string()
                     + "\n"
             }
+            ContextFormat::Gemini => {
+                json!({"hookSpecificOutput":{"hookEventName":"BeforeAgent","additionalContext":markdown}})
+                    .to_string()
+                    + "\n"
+            }
             _ => markdown.clone(),
         },
+        (Command::Context { .. }, Value::String(markdown)) => markdown.clone(),
         _ => serde_json::to_string(&sanitize_value(&result))? + "\n",
     };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;

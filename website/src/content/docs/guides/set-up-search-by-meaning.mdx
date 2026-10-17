@@ -13,6 +13,27 @@ It is off until you add a `[semantic]` section to your user config, `~/.config/m
 With semantic search on, memctrl sends memory text to the model to index it, and sends every search and, through the prompt hook, every request you type. Keep the model on your machine unless you mean to send that text elsewhere.
 </Aside>
 
+## The quick way
+
+With Ollama or LM Studio running an embedding model, one command does the rest:
+
+```bash
+memctrl semantic setup
+```
+
+```json
+{"server":"LM Studio","base_url":"http://localhost:1234/v1","model":"text-embedding-nomic-embed-text-v1.5","dimensions":768,"thresholds":"measured now on the built-in suite","written":true,"indexed":{"indexed":2,"already_indexed":0,"eligible":2,"seconds":0.0},…}
+```
+
+It looks for Ollama at `localhost:11434` and LM Studio at `localhost:1234`, and picks an embedding model, preferring one memctrl has measured thresholds for (EmbeddingGemma, multilingual-e5-small). It checks that the model answers. If memctrl has no thresholds for the model, it measures them on the built-in suite, as `semantic tune` does, which takes a few seconds. Then it adds a `[semantic]` section to your user config and indexes this project's memories.
+
+- **`--dry-run`** shows the section it would write, without writing or indexing.
+- **`--base-url http://localhost:8080/v1`** uses another OpenAI-compatible server on this machine. Setup only uses servers on this machine; for one elsewhere, write the section yourself (below).
+- **It never replaces a `[semantic]` section** that's already there, and stops instead.
+- **It runs from any folder.** Outside a project, it writes the config and leaves indexing for `memctrl semantic index`.
+
+If nothing answers, it says how to get a model: `ollama pull embeddinggemma`, or load an embedding model in LM Studio and start its server. The steps below do the same by hand.
+
 ## Run an embedding model
 
 memctrl talks to any server with an OpenAI-compatible `/embeddings` endpoint.

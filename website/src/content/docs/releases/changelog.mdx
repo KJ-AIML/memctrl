@@ -5,6 +5,20 @@ description: "What changed in each release, newest first."
 
 What each memctrl 2.x release added and fixed, newest first, condensed from the release notes. Before you move between versions, read [Upgrading](/memctrl/releases/upgrading/): it lists what you need to do for each step.
 
+## 2.7.0
+
+**Fixing what an honest review found.** The code-fixable weak points of memctrl, fixed.
+
+- **`remember:` saves a note as yours.** Start a prompt with `remember:` (or `จำไว้:`) in Claude Code, Codex or Gemini CLI, and the hook saves the rest under "From the user". [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember)
+- **What an agent saves is the agent's.** Writes from the shells of Claude Code, Codex, Gemini CLI and Cursor's agent are recorded under the agent's name, and no agent can claim a source the guard trusts. [Who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user)
+- **Codex and Gemini CLI hooks.** The session brief and per-prompt recall, as in Claude Code, from `install --tool codex --hook` or `--tool gemini --hook`. Tested in Codex 0.160; Gemini CLI follows its documented format. [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/)
+- **`memctrl semantic setup`** turns on search by meaning with a model from Ollama or LM Studio in one command. [Set up search by meaning](/memctrl/guides/set-up-search-by-meaning/#the-quick-way)
+- **Citation hints.** `add` and `doctor` print the `memctrl cite` command for memories that name project files but cite none.
+- **Every download is tested** with the full suite before release, Intel macOS included.
+- Retrieval results are unchanged from 2.6.3.
+
+[Release on GitHub](https://github.com/KJ-AIML/memctrl/releases/tag/v2.7.0) · [Upgrade notes](/memctrl/releases/upgrading/#263--270)
+
 ## 2.6.3
 
 **Fixes found while writing these docs.** Two could send data where it shouldn't go; the rest made memctrl harder to live with.

@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 const RECOGNIZED: &[&str] = &[
     "manual",
+    "user",
     "mcp",
     "cli",
     "test",
@@ -90,7 +91,12 @@ pub fn report(store: &MemoryStore) -> Result<Value> {
         if m.confidence < threshold {
             low.push(summary(m));
         }
-        if !RECOGNIZED.contains(&m.source.to_lowercase().as_str()) {
+        let source = m.source.to_lowercase();
+        if !RECOGNIZED.contains(&source.as_str())
+            && !crate::origin::AGENT_MARKERS
+                .iter()
+                .any(|(_, agent)| *agent == source)
+        {
             risky.push(summary(m));
         }
         if secret_ids.contains(&m.id) || has_secrets(&m.content) {

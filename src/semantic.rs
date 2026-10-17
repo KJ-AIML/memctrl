@@ -122,6 +122,63 @@ fn preset(model: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| model.contains(p.pattern))
 }
 
+/// Local servers `semantic setup` looks for: OpenAI-compatible, on this machine, in this order.
+pub const LOCAL_SERVERS: &[(&str, &str)] = &[
+    ("Ollama", "http://localhost:11434/v1"),
+    ("LM Studio", "http://localhost:1234/v1"),
+];
+
+/// How well a model suits search by meaning, judged by its name: 2 when memctrl has measured
+/// thresholds for it, 1 for another embedding model it knows, 0 for any other name with "embed"
+/// in it. `None` when the name doesn't say it's an embedding model.
+pub fn suitability(model: &str) -> Option<u8> {
+    match preset(model) {
+        Some(known) if known.threshold.is_some() => Some(2),
+        Some(_) => Some(1),
+        None => model.to_ascii_lowercase().contains("embed").then_some(0),
+    }
+}
+
+/// The models an OpenAI-compatible server on this machine lists at `{base_url}/models`.
+pub fn list_models(base_url: &str, timeout: Duration) -> Result<Vec<String>> {
+    let mut url = Url::parse(base_url).with_context(|| format!("{base_url} is not a URL"))?;
+    ensure!(
+        is_loopback(&url) && matches!(url.scheme(), "http" | "https"),
+        "semantic setup only uses servers on this machine; for {base_url}, add [semantic] to your user config yourself"
+    );
+    let path = format!("{}/models", url.path().trim_end_matches('/'));
+    url.set_path(&path);
+    let reply = std::thread::Builder::new()
+        .name("memctrl-models".into())
+        .spawn(move || -> Result<Value> {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(async move {
+                let client = reqwest::Client::builder()
+                    .connect_timeout(timeout)
+                    .timeout(timeout)
+                    .redirect(Policy::none())
+                    .build()?;
+                let response = client.get(url).send().await?;
+                ensure!(
+                    response.status().is_success(),
+                    "the server answered {}",
+                    response.status()
+                );
+                Ok(response.json::<Value>().await?)
+            })
+        })?
+        .join()
+        .map_err(|_| anyhow!("listing models failed"))??;
+    Ok(reply["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["id"].as_str().map(str::to_owned))
+        .collect())
+}
+
 /// `[semantic]` in your user config:
 ///
 /// ```toml
@@ -907,12 +964,14 @@ pub fn tune(settings: &Settings, suite: &crate::eval::Suite, top_k: usize) -> Re
         .filter(|(c, _)| c.expect.is_empty())
         .filter_map(|(_, row)| row.first().map(|(s, _)| *s))
         .fold(f32::MIN, f32::max);
+    // Just above the closest vague question, but similarity never exceeds 1.
     let recall_threshold = if highest_negative > f32::MIN {
         ((highest_negative * 100.0).floor() + 1.0) / 100.0
     } else {
         threshold
     }
-    .max(threshold);
+    .max(threshold)
+    .min(1.0);
     let round = |x: f32| (f64::from(x) * 1000.0).round() / 1000.0;
     let (hit, declined) = score(threshold);
     Ok(json!({
@@ -932,6 +991,25 @@ mod tests {
 
     fn settings(text: &str) -> Result<Option<Settings>> {
         Settings::parse(&toml::from_str::<toml::Value>(text)?)
+    }
+
+    #[test]
+    fn setup_prefers_models_with_measured_thresholds() {
+        assert_eq!(suitability("embeddinggemma:latest"), Some(2));
+        assert_eq!(
+            suitability("text-embedding-embeddinggemma-300m-qat"),
+            Some(2)
+        );
+        assert_eq!(suitability("multilingual-e5-small"), Some(2));
+        assert_eq!(suitability("nomic-embed-text:v1.5"), Some(1));
+        assert_eq!(suitability("snowflake-arctic-embed2"), Some(0));
+        assert_eq!(suitability("llama3.2:3b"), None);
+        assert!(
+            list_models("https://api.openai.com/v1", Duration::from_secs(1))
+                .unwrap_err()
+                .to_string()
+                .contains("only uses servers on this machine")
+        );
     }
 
     #[test]

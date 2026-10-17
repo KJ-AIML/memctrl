@@ -82,6 +82,10 @@ pub struct Rules {
     /// Semantic search from your user config's `[semantic]` (never from `.memoryrc`).
     #[serde(skip)]
     pub semantic: Option<crate::semantic::Engine>,
+    /// Whether a prompt starting with `remember:` saves the note (`[capture] remember` in your
+    /// user config; see `capture`).
+    #[serde(skip, default = "default_true")]
+    pub remember: bool,
 }
 
 impl Default for Rules {
@@ -146,6 +150,7 @@ impl Default for Rules {
             project_dir: None,
             warnings: Vec::new(),
             semantic: None,
+            remember: true,
         }
     }
 }
@@ -162,6 +167,8 @@ impl Default for Rules {
 /// repos = ["~/code/my-team-repo"]    # repositories whose .memoryrc applies in full
 /// [semantic]
 /// model = "embeddinggemma"           # optional semantic search (see `semantic::Settings`)
+/// [capture]
+/// remember = true                    # a prompt starting with `remember:` saves the note
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UserConfig {
@@ -174,6 +181,10 @@ pub struct UserConfig {
     /// Why `[semantic]` was ignored. Search by meaning is optional, so a mistake there turns it off
     /// with a warning instead of stopping every command, the hooks included.
     pub semantic_error: Option<String>,
+    /// `[capture] remember`; unset means on.
+    pub capture_remember: Option<bool>,
+    /// Mistakes in optional sections, each of which turned its feature off.
+    pub warnings: Vec<String>,
     /// Where the file is (or would be).
     pub path: Option<PathBuf>,
 }
@@ -242,6 +253,20 @@ impl UserConfig {
                 config
                     .trusted_repos
                     .push(repo.canonicalize().unwrap_or(repo));
+            }
+        }
+        if let Some(capture) = raw.get("capture") {
+            // Optional like [semantic]: a mistake turns capture off rather than stopping the hooks.
+            match capture.get("remember").map(toml::Value::as_bool) {
+                None if capture.is_table() => {}
+                Some(Some(on)) if capture.is_table() => config.capture_remember = Some(on),
+                _ => {
+                    config.capture_remember = Some(false);
+                    config.warnings.push(format!(
+                        "remember: capture is off: [capture] remember in {} must be true or false",
+                        path.display()
+                    ));
+                }
             }
         }
         if let Some(semantic) = raw.get("semantic") {
@@ -340,6 +365,8 @@ impl Rules {
         if let Some(sources) = &user.trusted_sources {
             base.guard.trusted_sources = sources.clone();
         }
+        base.remember = user.capture_remember.unwrap_or(true);
+        base.warnings.extend(user.warnings.iter().cloned());
         let off = std::env::var("MEMCTRL_SEMANTIC").is_ok_and(|v| v.eq_ignore_ascii_case("off"));
         if let Some(settings) = user.semantic.as_ref().filter(|_| !off) {
             match crate::semantic::Engine::new(settings) {

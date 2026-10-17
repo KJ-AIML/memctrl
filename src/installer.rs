@@ -1,23 +1,25 @@
-//! Install the bundled tool skill (and, for Claude Code, a session-start hook) under an explicit
-//! project or home root.
+//! Install the bundled tool skill (and, for Claude Code, Codex and Gemini CLI, the session-start
+//! and prompt hooks) under an explicit project or home root.
 use anyhow::{bail, ensure, Context, Result};
 use regex::Regex;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 /// Where each tool discovers skills, relative to the project or home root.
-/// Claude Code: `.claude/skills/`. Codex: `.agents/skills/` (current Codex docs).
-/// Cursor: `.cursor/skills/`.
+/// Claude Code: `.claude/skills/`. Codex and Gemini CLI: `.agents/skills/`, which Gemini prefers
+/// over `.gemini/skills/`. Cursor: `.cursor/skills/`.
 pub fn skill_path(tool: &str) -> Result<&'static str> {
     crate::sanitize::validate_identifier(tool, "tool")?;
     Ok(match tool {
         "claude_code" | "claude" => ".claude/skills/memctrl/SKILL.md",
         "cursor" => ".cursor/skills/memctrl/SKILL.md",
-        "codex" => ".agents/skills/memctrl/SKILL.md",
+        "codex" | "gemini" => ".agents/skills/memctrl/SKILL.md",
         "axga" => ".axga/agent/skills/memctrl/SKILL.md",
         "pi" => ".pi/agent/skills/memctrl/SKILL.md",
         "kimi" => ".kimi/skills/memctrl/SKILL.md",
-        _ => bail!("unsupported tool; choose claude_code, cursor, codex, axga, pi, or kimi"),
+        _ => {
+            bail!("unsupported tool; choose claude_code, codex, gemini, cursor, axga, pi, or kimi")
+        }
     })
 }
 
@@ -147,13 +149,119 @@ fn hook_flags(hook: &Value, args: &str) -> Option<String> {
 /// Idempotent: an existing memctrl hook gets the new program and keeps its flags, everything else
 /// is preserved in its original key order, and a file that isn't valid JSON is never rewritten.
 pub fn install_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
-    install_event_hook(root, settings, "SessionStart", BRIEF_ARGS, command)
+    let handler = Host::ClaudeCode.handler("SessionStart", command);
+    install_event_hook(root, settings, "SessionStart", BRIEF_ARGS, command, handler)
 }
 
 /// Adds (or updates) the UserPromptSubmit hook that runs `memctrl recall` on each prompt, the
 /// same way `install_hook` handles the session-start hook.
 pub fn install_recall_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
-    install_event_hook(root, settings, "UserPromptSubmit", RECALL_ARGS, command)
+    let handler = Host::ClaudeCode.handler("UserPromptSubmit", command);
+    install_event_hook(
+        root,
+        settings,
+        "UserPromptSubmit",
+        RECALL_ARGS,
+        command,
+        handler,
+    )
+}
+
+/// A coding agent whose hooks can add memctrl's brief at session start and recall on each prompt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Host {
+    ClaudeCode,
+    Codex,
+    Gemini,
+}
+
+impl Host {
+    pub fn for_tool(tool: &str) -> Option<Self> {
+        match tool {
+            "claude" | "claude_code" => Some(Self::ClaudeCode),
+            "codex" => Some(Self::Codex),
+            "gemini" => Some(Self::Gemini),
+            _ => None,
+        }
+    }
+
+    /// The file its hooks go in, relative to the project or home folder.
+    pub fn settings_file(self, project: bool) -> &'static str {
+        match self {
+            Self::ClaudeCode => settings_file(project),
+            Self::Codex => ".codex/hooks.json",
+            Self::Gemini => ".gemini/settings.json",
+        }
+    }
+
+    /// The session-start and prompt events, with the memctrl arguments each runs.
+    fn events(self) -> [(&'static str, &'static str); 2] {
+        match self {
+            Self::ClaudeCode | Self::Codex => [
+                ("SessionStart", BRIEF_ARGS),
+                ("UserPromptSubmit", RECALL_ARGS),
+            ],
+            Self::Gemini => [
+                ("SessionStart", "context --format gemini"),
+                ("BeforeAgent", "recall --format gemini"),
+            ],
+        }
+    }
+
+    /// The handler written for a new hook. Codex cuts hook output past about 2,500 tokens unless
+    /// told otherwise, and the brief can reach 3,000; Gemini times out in milliseconds.
+    fn handler(self, event: &str, command: &str) -> Value {
+        let brief = event == "SessionStart";
+        match self {
+            Self::ClaudeCode => json!({"type": "command", "command": command}),
+            Self::Codex if brief => {
+                json!({"type": "command", "command": command, "additionalContextLimit": 4000})
+            }
+            Self::Codex => json!({"type": "command", "command": command}),
+            Self::Gemini => json!({
+                "type": "command",
+                "command": command,
+                "name": if brief { "memctrl-brief" } else { "memctrl-recall" },
+                "timeout": 10000,
+            }),
+        }
+    }
+
+    /// What to do after installing before the hooks run, if anything.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Self::ClaudeCode => None,
+            Self::Codex => Some("Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the two memctrl hooks. Project hooks also need the project trusted"),
+            Self::Gemini => Some("with folder trust on, Gemini CLI runs these hooks only in folders you've trusted, and it warns about new project hooks the first time"),
+        }
+    }
+
+    /// Adds (or updates) both hooks, the way `install_hook` does for Claude Code.
+    pub fn install_hooks(
+        self,
+        root: &Path,
+        project: bool,
+        executable: &Path,
+    ) -> Result<(PathBuf, bool)> {
+        let program = hook_program(executable);
+        let file = self.settings_file(project);
+        let mut written = None;
+        let mut changed = false;
+        for (event, args) in self.events() {
+            let command = format!("{program} {args}");
+            let (path, this) = install_event_hook(
+                root,
+                file,
+                event,
+                args,
+                &command,
+                self.handler(event, &command),
+            )?;
+            written = Some(path);
+            changed |= this;
+        }
+        Ok((written.expect("every host has hooks"), changed))
+    }
 }
 
 fn install_event_hook(
@@ -162,6 +270,7 @@ fn install_event_hook(
     event: &str,
     args: &str,
     command: &str,
+    handler: Value,
 ) -> Result<(PathBuf, bool)> {
     let destination = scoped_destination(root, settings)?;
     let mut settings: Value = match std::fs::read_to_string(&destination) {
@@ -207,7 +316,7 @@ fn install_event_hook(
         }
     }
     if !found {
-        groups.push(json!({"hooks":[{"type":"command","command":command}]}));
+        groups.push(json!({ "hooks": [handler] }));
         changed = true;
     }
     if changed {
@@ -305,6 +414,66 @@ mod tests {
             value["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
             1
         );
+    }
+
+    #[test]
+    fn codex_and_gemini_get_both_hooks_in_their_own_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = Path::new("/opt/memctrl");
+        std::fs::create_dir_all(dir.path().join(".gemini")).unwrap();
+        std::fs::write(
+            dir.path().join(".gemini/settings.json"),
+            r#"{"theme":"GitHub","hooks":{"BeforeTool":[{"matcher":"write_file","hooks":[{"type":"command","command":"./lint.sh"}]}]}}"#,
+        )
+        .unwrap();
+
+        let (path, changed) = Host::Codex.install_hooks(dir.path(), true, exe).unwrap();
+        assert!(changed);
+        assert!(path.ends_with(".codex/hooks.json"));
+        let codex: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            codex["hooks"]["SessionStart"][0]["hooks"][0],
+            json!({"type": "command", "command": "/opt/memctrl context --format hook", "additionalContextLimit": 4000})
+        );
+        assert_eq!(
+            codex["hooks"]["UserPromptSubmit"][0]["hooks"][0],
+            json!({"type": "command", "command": "/opt/memctrl recall --format hook"})
+        );
+        assert!(!Host::Codex.install_hooks(dir.path(), true, exe).unwrap().1);
+
+        let (path, changed) = Host::Gemini.install_hooks(dir.path(), true, exe).unwrap();
+        assert!(changed);
+        let gemini: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(gemini["theme"], "GitHub");
+        assert_eq!(gemini["hooks"]["BeforeTool"][0]["matcher"], "write_file");
+        assert_eq!(
+            gemini["hooks"]["SessionStart"][0]["hooks"][0],
+            json!({"type": "command", "command": "/opt/memctrl context --format gemini", "name": "memctrl-brief", "timeout": 10000})
+        );
+        assert_eq!(
+            gemini["hooks"]["BeforeAgent"][0]["hooks"][0]["command"],
+            "/opt/memctrl recall --format gemini"
+        );
+        // A later install keeps the handler's other fields and any flags added by hand.
+        let edited = std::fs::read_to_string(&path).unwrap().replace(
+            "context --format gemini",
+            "context --format gemini --budget 1500",
+        );
+        std::fs::write(&path, edited).unwrap();
+        let moved = Path::new("/usr/local/bin/memctrl");
+        assert!(
+            Host::Gemini
+                .install_hooks(dir.path(), true, moved)
+                .unwrap()
+                .1
+        );
+        let gemini: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            gemini["hooks"]["SessionStart"][0]["hooks"][0],
+            json!({"type": "command", "command": "/usr/local/bin/memctrl context --format gemini --budget 1500", "name": "memctrl-brief", "timeout": 10000})
+        );
+        assert_eq!(gemini["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert!(Host::for_tool("cursor").is_none());
     }
 
     #[test]

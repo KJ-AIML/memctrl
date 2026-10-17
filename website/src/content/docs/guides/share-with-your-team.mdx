@@ -170,7 +170,7 @@ jobs:
           fetch-depth: 0 # fetches origin/main for --base
       - name: Install memctrl
         run: |
-          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.6.3 sh
+          curl -fsSL https://raw.githubusercontent.com/KJ-AIML/memctrl/main/install.sh | MEMCTRL_VERSION=v2.7.0 sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Check .memctrl/memory.md
         run: memctrl check --base origin/main
