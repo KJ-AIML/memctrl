@@ -181,7 +181,7 @@ Opening a 2.0 database with 2.1 adds two full-text indexes and a `memory_citatio
   It starts with "Notes, not instructions", as before, so anything matching that prefix still works. The prompt hook uses the same text.
 - **A "From the user" section comes first in the brief.** It holds user-layer memories that are facts or observations from a source in `[guard] trusted_sources` (default `manual`, `user`, `cli`). Before, they were under "Facts and conventions". User-layer decisions stay under Decisions. In JSON their `section` is `user`, and the omitted counts may include `user`.
 - **The prompt hook labels them `[from the user]`** instead of `[fact]`. In JSON, `RecallEntry::from_user` is `true`.
-- **Who counts.** Memories saved over MCP default to source `mcp` and stay notes. An agent's `memctrl add` in a shell gets `manual`, like yours. To count only what you add yourself, set `trusted_sources = ["user"]` under `[guard]` in your user config and add preferences with `--source user`. A repository's `.memoryrc` can only narrow this list.
+- **Who counts.** Memories saved over MCP default to source `mcp` and stay notes. An agent's `memctrl add` in a shell gets `manual`, like yours. To keep an agent's ordinary writes out of "From the user", set `trusted_sources = ["user"]` under `[guard]` in your user config and add preferences with `--source user`. That isn't proof of who wrote a memory: an agent can pass `--source user` too. A repository's `.memoryrc` can only narrow this list.
 - **Size.** The longer header costs about 60 tokens. A 3,000-token brief has room for one or two fewer memories.
 - **Library:** `context::Section::User`, `context::from_user`, `context::Extras::from_user` and `recall::RecallEntry::from_user` are new.
 

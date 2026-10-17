@@ -62,7 +62,7 @@ The request could be done without undoing anything, so the shipped wording cover
 
 ## Who counts as the user
 
-memctrl doesn't record who typed a memory. "From the user" means the user layer and a trusted source. Over MCP an agent's memories default to source `mcp`, but an agent that runs `memctrl add --layer user` in its shell gets `manual`, the same as you. Every entry still passes the guard as the brief is built, and anything that looks like instructions stays out until you release it. A repository's `.memoryrc` can only narrow `trusted_sources`, so a cloned repo can't widen what counts. To count only what you add yourself, set `trusted_sources = ["user"]` under `[guard]` in your user config and add your preferences with `--source user`. In `strict` mode that also holds every other source for review.
+memctrl doesn't record who typed a memory. "From the user" means the user layer and a trusted source. Over MCP an agent's memories default to source `mcp`, but an agent that runs `memctrl add --layer user` in its shell gets `manual`, the same as you. Every entry still passes the guard as the brief is built, and anything that looks like instructions stays out until you release it. A repository's `.memoryrc` can only narrow `trusted_sources`, so a cloned repo can't widen what counts. To keep an agent's ordinary writes out of "From the user", set `trusted_sources = ["user"]` under `[guard]` in your user config and add your preferences with `--source user`. That isn't proof of who wrote a memory: an agent can pass `--source user` too. In `strict` mode that also holds every other source for review.
 
 ## Caveats
 
