@@ -73,7 +73,34 @@ Running `install` again is safe. It updates the memctrl hooks in place, keeps ev
 
 **Recall runs on every prompt.** `memctrl recall --format hook` reads your prompt from the JSON Claude Code passes on stdin and adds the memories it matches under "Project memory for this request". When nothing matches, it adds nothing and the prompt goes on unchanged. Slash commands and prompts under six characters are skipped. See [Recall](/memctrl/concepts/recall/) for how it decides.
 
-Neither hook changes your memories, and both stay quiet when they can't help: where no store exists they print nothing and create nothing, and when the database is committed to git they print a warning on stderr and add nothing. On the benchmark store of 70 memories, the brief took about 22 ms and recall about 12 ms ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+The brief never changes your memories, and recall changes them only when you ask it to remember something (below). Both stay quiet when they can't help: where no store exists they print nothing and create nothing, and when the database is committed to git they print a warning on stderr and add nothing. On the benchmark store of 70 memories, the brief took about 22 ms and recall about 12 ms ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+
+## Save a note with remember:
+
+Start a prompt with `remember:` and the prompt hook saves the rest as your own note:
+
+```text
+remember: we deploy on Tuesdays, never on Fridays
+```
+
+- **It's yours.** The note goes to the `user` layer with source `user`, so every later brief shows it under "From the user", which the agent is told to follow. It doesn't expire; `memctrl forget <id>` removes it.
+- **It ends at the first blank line**, so the same prompt can go on to ask for something else.
+- **Claude is told.** It gets "Saved a note from the user" with the note's id, and an instruction not to save it again.
+- **Thai works too:** `จำไว้:` or `จำไว้ว่า`.
+- **Only at the very start.** "Remember that bug from yesterday?" isn't a request, and `memctrl recall "remember: …"` typed by hand only searches.
+- **The usual checks apply.** Secrets are redacted, and a note that reads like an instruction to an agent ("ignore previous instructions…") is held for your review, as with `memctrl add`.
+
+Turn it off with `[capture] remember = false` in your [user config](/memctrl/reference/user-config/#capture).
+
+## What the agent saves is the agent's
+
+Claude Code sets `CLAUDECODE=1` for every command it runs. When memctrl sees it, `memctrl add` records the source as `claude-code` instead of `manual`, and refuses to record a source the guard trusts even when the agent asks for one:
+
+```json
+{"id":"4e016628-6dc9-43b3-a074-73c043e487f9","status":"stored","source":"claude-code","source_note":"recorded as claude-code, not user: an agent's writes count as the agent's, and only the user writes as themselves (by starting a prompt with `remember:`, or with `memctrl add` in their own terminal)"}
+```
+
+So what the agent saves shows in the brief as facts, and "From the user" holds only what you saved: with `remember:`, or with `memctrl add` in a terminal of your own. Commands typed with Claude Code's `!` prefix run in its shell, so expect them to count as the agent's too. More in [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
 
 ## Session records
 
@@ -88,6 +115,7 @@ brief 5f515c75-0c45-41ec-aa54-519d01f433b5
 - When a request matches a memory the brief already showed, recall points it out once more, marked "also in the session brief", since by then it's one line among many.
 - The record starts over whenever the brief runs again, such as after `/clear` or compaction, because the context it describes is gone.
 - Records older than three days are removed when a brief runs.
+- A note saved with `remember:` is added to the record too, so recall doesn't bring it up again in that session.
 - `memctrl recall` run by hand has no session, so it lists every match.
 - Records stay out of git. `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`, so a project set up by an older memctrl is covered too.
 
@@ -158,5 +186,6 @@ Your memories stay in `.memctrl/` until you delete them. Re-run `memctrl install
   <LinkCard title="Hooks reference" description="The hook commands, their input and output." href="/memctrl/reference/hooks/" />
   <LinkCard title="Session brief" description="What the brief holds and how it ranks memories." href="/memctrl/concepts/session-brief/" />
   <LinkCard title="Recall" description="How the prompt hook decides what a request needs." href="/memctrl/concepts/recall/" />
-  <LinkCard title="Codex and Cursor" description="Hosts without hooks get the brief through AGENTS.md." href="/memctrl/agents/codex-and-cursor/" />
+  <LinkCard title="Codex and Gemini CLI" description="The same hooks in Codex and Gemini CLI." href="/memctrl/agents/codex-and-gemini/" />
+  <LinkCard title="Cursor and AGENTS.md" description="Hosts without hooks get the brief through AGENTS.md." href="/memctrl/agents/codex-and-cursor/" />
 </CardGrid>

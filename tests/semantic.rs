@@ -1,6 +1,7 @@
 //! Semantic search end to end, against a local stand-in for an embedding server: a toy model
 //! whose vectors count topic words, so "which JWT library" is close to "we verify tokens with
 //! jose" without sharing a word. No network beyond loopback, no paid provider.
+mod common;
 use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -40,6 +41,8 @@ fn toy(text: &str) -> Vec<f64> {
 fn answer(stream: &mut TcpStream) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut length = 0;
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line)?;
     loop {
         let mut line = String::new();
         reader.read_line(&mut line)?;
@@ -52,6 +55,16 @@ fn answer(stream: &mut TcpStream) -> std::io::Result<()> {
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body)?;
+    // `semantic setup` asks which models the server has.
+    if request_line.starts_with("GET ") && request_line.contains("/models ") {
+        let reply = json!({"object": "list", "data": [{"id": "llama3.2:3b"}, {"id": "toy-embed"}]})
+            .to_string();
+        return write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            reply.len()
+        );
+    }
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let data: Vec<Value> = request["input"]
         .as_array()
@@ -100,7 +113,7 @@ fn config(dir: &TempDir, port: u16) -> PathBuf {
 }
 
 fn command(dir: &Path, home: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_memctrl"));
+    let mut command = common::memctrl();
     command
         .current_dir(dir)
         .env_remove("MEMCTRL_DB_PATH")
@@ -406,4 +419,70 @@ fn the_prompt_hook_eval_and_mcp_server_use_it() {
     let result: Value =
         serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(result["memory_ids"][0], jose.as_str(), "{result}");
+}
+
+/// `semantic setup` picks the embedding model the server lists, measures thresholds memctrl has
+/// none for, adds [semantic] to the user config without touching the rest, and indexes.
+#[test]
+fn setup_finds_the_model_adds_the_section_once_and_indexes() {
+    let (dir, project) = project();
+    let home = dir.path().join("config");
+    let file = home.join("memctrl/config.toml");
+    std::fs::create_dir_all(home.join("memctrl")).unwrap();
+    std::fs::write(&file, "[guard]\nmode = \"flag\"").unwrap();
+    let (port, _) = embedder();
+    let base = format!("http://127.0.0.1:{port}/v1");
+    ok(&project, &home, &["init"]);
+    add(&project, &home, "We verify tokens with jose");
+    add(&project, &home, "Releases ship on Tuesdays");
+
+    let preview = ok(
+        &project,
+        &home,
+        &["semantic", "setup", "--base-url", &base, "--dry-run"],
+    );
+    assert_eq!(preview["model"], "toy-embed", "the chat model isn't picked");
+    assert_eq!(preview["written"], false);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "[guard]\nmode = \"flag\""
+    );
+
+    let done = ok(&project, &home, &["semantic", "setup", "--base-url", &base]);
+    assert_eq!(done["thresholds"], "measured now on the built-in suite");
+    assert_eq!(done["indexed"]["indexed"], 2, "{done}");
+    let config = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        config.starts_with(&format!(
+            "[guard]\nmode = \"flag\"\n\n[semantic]\nmodel = \"toy-embed\"\nbase_url = \"{base}\"\n"
+        )),
+        "{config}"
+    );
+    assert!(config.contains("\nrecall_threshold = "), "{config}");
+    let status = ok(&project, &home, &["semantic", "status"]);
+    assert_eq!(
+        (status["enabled"].clone(), status["indexed"].clone()),
+        (json!(true), json!(2))
+    );
+
+    // It never replaces a section that's there.
+    let again = run(&project, &home, &["semantic", "setup", "--base-url", &base]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("already has [semantic]"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), config);
+
+    // Only servers on this machine, and one you name has to answer.
+    std::fs::write(&file, "").unwrap();
+    for (url, says) in [
+        (
+            "https://embeddings.example.com/v1",
+            "only uses servers on this machine",
+        ),
+        ("http://127.0.0.1:9/v1", "127.0.0.1:9"),
+    ] {
+        let out = run(&project, &home, &["semantic", "setup", "--base-url", url]);
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains(says), "{url}");
+    }
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
 }

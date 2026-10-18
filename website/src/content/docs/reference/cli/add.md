@@ -19,7 +19,7 @@ memctrl add [OPTIONS] <CONTENT>
 | Option | Description | Default | Environment |
 | --- | --- | --- | --- |
 | `--layer <LAYER>` | `project` (no default expiry), `user` (90 days) or `session` (7 days) | `session` |  |
-| `--source <SOURCE>` | Where the memory came from; the guard and the brief trust `manual`, `user` and `cli` by default | `manual` |  |
+| `--source <SOURCE>` | Where the memory came from (default: manual). Run by a coding agent, it records the agent instead (such as claude-code), and never a source the guard trusts |  |  |
 | `--confidence <CONFIDENCE>` | From 0 to 1; weighs the memory in the brief and in search | `1` |  |
 | `--claim-type <CLAIM_TYPE>` | `assertion`, `observation`, `decision`, `hypothesis` or `derived_lesson` | `assertion` |  |
 | `--lifecycle-state <LIFECYCLE_STATE>` | `accepted`, `candidate`, `superseded`, `rejected` or `archived` | `accepted` |  |
@@ -35,4 +35,4 @@ memctrl add [OPTIONS] <CONTENT>
 
 Every command also takes the [global options](/memctrl/reference/cli/#global-options) `--db` and `--rc`.
 
-<sub>Generated from `memctrl 2.6.3` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.7.0` by `website/scripts/gen-cli.mjs`.</sub>

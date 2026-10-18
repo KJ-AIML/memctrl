@@ -299,7 +299,7 @@ A vague question returns nothing and says why:
 
 | `status` | Meaning | Extra fields |
 | --- | --- | --- |
-| `stored` | Saved and active. | `citations`, `redacted` when they apply |
+| `stored` | Saved and active. | `citations`, `redacted`, `source` with `source_note`, and the CLI's `hint`, when they apply |
 | `exists` | The layer already holds this text, active or as a candidate; nothing was written. Text it holds as a refuted, rejected, superseded or archived memory is an error instead. | `lifecycle_state` of the existing memory |
 | `quarantined` | Saved as a candidate for review, because the guard flagged it. | `lifecycle_state` (`candidate`), `guard`; the CLI adds `note` |
 
@@ -311,6 +311,8 @@ A vague question returns nothing and says why:
 | `guard.flags` | array of strings | `bidi_control`, `tag_characters`, `hidden_characters`, `prompt_injection` or `untrusted_source`. |
 | `guard.reasons` | array of strings | One line of evidence per finding. |
 | `note` | string | CLI only: how to review a held memory, or how to add citations to a memory that already exists. |
+| `source`, `source_note` | string | The source recorded, when it isn't the one asked for: an agent asked for a source the guard trusts, so its own name was recorded. See [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user). |
+| `hint` | string | CLI only: the text names project files but cites none, with the `memctrl cite` command for them. |
 
 ```json
 {"id":"61bb4571-287c-4581-bd5f-18a68ca894f5","status":"stored","citations":1}

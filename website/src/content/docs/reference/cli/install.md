@@ -16,8 +16,8 @@ memctrl install [OPTIONS]
 | --- | --- | --- | --- |
 | `--tool <TOOL>` | Required: `claude`, `codex`, `cursor`, `axga`, `pi` or `kimi` |  |  |
 | `--project` | Install into this project instead of your home folder |  |  |
-| `--hook` | Claude Code only: add a SessionStart hook that injects `memctrl context` |  |  |
+| `--hook` | Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt |  |  |
 
 Every command also takes the [global options](/memctrl/reference/cli/#global-options) `--db` and `--rc`.
 
-<sub>Generated from `memctrl 2.6.3` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.7.0` by `website/scripts/gen-cli.mjs`.</sub>

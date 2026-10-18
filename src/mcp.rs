@@ -111,9 +111,14 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
         "memctrl_add" => {
             let content = string(args, "content")?;
             let layer = string(args, "layer")?;
-            let source = optional_string(args, "source")?.unwrap_or("mcp");
+            let requested = optional_string(args, "source")?;
             validate_identifier(layer, "layer")?;
-            validate_identifier(source, "source")?;
+            if let Some(source) = requested {
+                validate_identifier(source, "source")?;
+            }
+            // Only an agent calls MCP tools, so a write can't claim a source the guard trusts.
+            let (source, attribution) =
+                crate::origin::source(requested, Some(crate::origin::MCP), &rules.guard);
             let claim_type = match optional_string(args, "claim_type")? {
                 Some(text) => text.parse::<ClaimType>()?,
                 None => ClaimType::default(),
@@ -124,7 +129,7 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             let mut memory = NewMemory {
                 content: content.into(),
                 layer: layer.into(),
-                source: source.into(),
+                source: source.clone(),
                 claim_type,
                 tags,
                 expires_at: rules.expiry(layer),
@@ -163,6 +168,10 @@ pub fn dispatch(store: &mut MemoryStore, rules: &Rules, name: &str, args: &Value
             let redacted = crate::sanitize::redactions(content);
             if !redacted.is_empty() {
                 output["redacted"] = json!(redacted);
+            }
+            if let Some(note) = attribution {
+                output["source"] = json!(source);
+                output["source_note"] = json!(note);
             }
             output
         }
@@ -300,7 +309,7 @@ fn tools() -> Vec<Tool> {
         (
             "memctrl_add",
             "Store a memory",
-            json!({"content":{"type":"string"},"layer":{"type":"string"},"source":{"type":"string","default":"mcp"},"claim_type":{"type":"string","enum":["assertion","decision","observation","hypothesis"]},"tags":{"type":"array","items":{"type":"string"}},"cite":{"type":"array","items":{"type":"string"},"description":"Code the memory describes: path, path:LINE or path:START-END, relative to the project root"}}),
+            json!({"content":{"type":"string"},"layer":{"type":"string"},"source":{"type":"string","default":"mcp","description":"Where the memory came from. A source the guard trusts (by default manual, user or cli) is recorded as mcp: only the user writes as themselves"},"claim_type":{"type":"string","enum":["assertion","decision","observation","hypothesis"]},"tags":{"type":"array","items":{"type":"string"}},"cite":{"type":"array","items":{"type":"string"},"description":"Code the memory describes: path, path:LINE or path:START-END, relative to the project root"}}),
             vec!["content", "layer"],
         ),
         (

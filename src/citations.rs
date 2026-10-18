@@ -224,6 +224,46 @@ pub fn secret_file(path: &str) -> bool {
         )
 }
 
+/// Files in the project a memory's text names, as citations to suggest (`src/config.ts`,
+/// `Cargo.toml:12-20`). A word counts when it looks like a path (it has a `/`, or a name with an
+/// extension) and names a regular file inside `root` that memctrl may cite. At most five.
+pub fn named_files(root: &Path, text: &str) -> Vec<String> {
+    static PATH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = PATH.get_or_init(|| {
+        regex::Regex::new(r"[A-Za-z0-9_./-]+(?::\d+(?:-\d+)?)?").expect("static path regex")
+    });
+    let Ok(root) = root.canonicalize() else {
+        return Vec::new();
+    };
+    let mut found: Vec<String> = Vec::new();
+    for word in pattern.find_iter(text) {
+        // "See src/db.rs." ends a sentence, not the path.
+        let spec = word.as_str().trim_end_matches(['.', '/']);
+        let Ok(cite) = parse_spec(spec) else {
+            continue;
+        };
+        let path = cite.path.as_str();
+        let looks_like_path = path.contains('/')
+            || path.rsplit_once('.').is_some_and(|(stem, extension)| {
+                !stem.is_empty() && extension.starts_with(|c: char| c.is_ascii_alphabetic())
+            });
+        if !looks_like_path || secret_file(path) || found.iter().any(|f| f == spec) {
+            continue;
+        }
+        let inside = root
+            .join(path)
+            .canonicalize()
+            .is_ok_and(|real| real.is_file() && real.starts_with(&root));
+        if inside {
+            found.push(spec.to_string());
+            if found.len() == 5 {
+                break;
+            }
+        }
+    }
+    found
+}
+
 /// The project root: `MEMCTRL_PROJECT_ROOT`, else the configured root, else the nearest
 /// ancestor of the working directory containing `.git`, else the working directory.
 pub fn project_root(configured: Option<&Path>) -> Result<PathBuf> {
@@ -761,6 +801,49 @@ pub fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn named_files_are_real_citable_files_inside_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join(".github/workflows")).unwrap();
+        for file in [
+            "src/config.ts",
+            ".github/workflows/ci.yml",
+            "package.json",
+            ".env",
+            "deploy.pem",
+        ] {
+            std::fs::write(root.join(file), "x\n").unwrap();
+        }
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("notes.md"), "x\n").unwrap();
+        assert_eq!(
+            named_files(
+                root,
+                "Pool max is set in src/config.ts:1. CI: .github/workflows/ci.yml."
+            ),
+            ["src/config.ts:1", ".github/workflows/ci.yml"]
+        );
+        assert_eq!(
+            named_files(root, "แก้ที่src/config.tsแล้ว package.json ด้วย"),
+            ["src/config.ts", "package.json"]
+        );
+        for text in [
+            "Secrets are in .env and deploy.pem",
+            "node.js v20, see https://nodejs.org/en/about and e.g. src/missing.ts",
+            "../outside/notes.md and /etc/hosts",
+            "src/config.ts src/config.ts src/config.ts",
+        ] {
+            let found = named_files(root, text);
+            assert!(found.len() <= 1, "{text:?}: {found:?}");
+            assert!(
+                found.iter().all(|f| f == "src/config.ts"),
+                "{text:?}: {found:?}"
+            );
+        }
+    }
 
     fn citation(anchor: &Anchor) -> Citation {
         Citation {

@@ -21,11 +21,11 @@ Having the preference in the brief helps only partly. In the 2.6.1 round, agents
 
 **Instead:** put rules you want followed in every session in CLAUDE.md or AGENTS.md. Keep memctrl for the decisions, facts and lessons that are too many to read every time.
 
-## The prompt hook is Claude Code's
+## Recall needs a prompt hook
 
-Per-request recall runs as a Claude Code `UserPromptSubmit` hook. Codex, Cursor and other hosts get the brief through AGENTS.md, and MCP clients have no recall tool, so nothing adds the memories each request needs.
+Per-request recall runs as a prompt hook in Claude Code, Codex and Gemini CLI. Cursor's prompt hook can't add context, other hosts get the brief through AGENTS.md, and MCP clients have no recall tool, so for them nothing adds the memories each request needs.
 
-**Instead:** run `memctrl recall "<request>"` yourself before a task, or call it from your host's own prompt hook if it has one. See [Codex and Cursor](/memctrl/agents/codex-and-cursor/#recall-for-each-request).
+**Instead:** run `memctrl recall "<request>"` yourself before a task, or call it from your host's own prompt hook if it can add context. See [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/#recall-for-each-request).
 
 ## Freshness covers cited memories only
 
@@ -33,13 +33,15 @@ memctrl knows a memory went stale only when it cites code, and it compares the c
 
 **Instead:** cite the code a fact depends on with `--cite`, and check flagged memories with `memctrl stale`. See [Keep memories fresh](/memctrl/guides/keep-memories-fresh/).
 
-## memctrl doesn't record who typed a memory
+## Who wrote a memory is attribution, not proof
 
-Every memory has a source, and the brief's "From the user" section, whose preferences the agent is told to follow, trusts the sources `manual`, `user` and `cli` by default. An agent's writes over MCP get the source `mcp` by default and stay notes. But an agent that runs `memctrl add --layer user` in its shell gets `manual`, exactly like you.
+The brief's "From the user" section, which the agent is told to follow, trusts the sources `manual`, `user` and `cli` by default. memctrl records writes from the shells of Claude Code, Codex, Gemini CLI and Cursor's agent under the agent's name (each sets a variable such as `CLAUDECODE=1` for its commands) and MCP writes as `mcp`, and none of them can claim a trusted source. But:
 
-The source is whatever the writer passes: `--source` on the CLI and `source` over MCP accept any name, including `user`.
+- an agent that unsets its variable, or forges a `remember:` prompt into the hook from its shell, can still write as you;
+- other agents' shells aren't recognized, so their `memctrl add` records `manual`, like yours;
+- Codex doesn't document its variable, so a later Codex could stop setting it.
 
-**Instead:** set `trusted_sources = ["user"]` under `[guard]` in your user config and save your own preferences with `--source user`. That keeps out agents' writes with the default sources, though not an agent that passes `user` itself, so read the brief's "From the user" section now and then. A repository's `.memoryrc` can only narrow this list.
+**Instead:** set `trusted_sources = ["user"]` under `[guard]` in your user config and save your own notes with `remember:` or `--source user`. That keeps out every agent write that doesn't go out of its way, so read the brief's "From the user" section now and then. A repository's `.memoryrc` can only narrow this list.
 
 ## The guard is a tripwire
 

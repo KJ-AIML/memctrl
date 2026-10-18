@@ -1,38 +1,40 @@
 ---
-title: "Codex and Cursor"
-description: "Bring the session brief to Codex, Cursor and other agents through a skill file and a marked block in AGENTS.md."
+title: "Cursor and AGENTS.md"
+description: "Bring the session brief to Cursor and other agents without memctrl hooks, through a skill file and a marked block in AGENTS.md."
 ---
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-Codex and Cursor don't run memctrl's hooks, but they read `AGENTS.md`. memctrl writes the session brief into a marked block of that file and refreshes it in place, so the agent starts each session with the same memories Claude Code gets from its hook. A skill file tells the agent how to search and save memories.
+Cursor and most other agents can't take memctrl's hooks, but they read `AGENTS.md`. memctrl writes the session brief into a marked block of that file and refreshes it in place, so the agent starts each session with the same memories Claude Code gets from its hook. A skill file tells the agent how to search and save memories.
+
+Codex and Gemini CLI can run memctrl's hooks, which also bring recall for each prompt: see [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/). `AGENTS.md` works for them too, if you'd rather not use hooks.
 
 ## Install the skill
 
 Run this in a project where you've run `memctrl init`:
 
 ```bash
-memctrl install --tool codex --project     # Codex
 memctrl install --tool cursor --project    # Cursor
+memctrl install --tool codex --project     # Codex, without hooks
 ```
 
 ```json
-{"path":"/home/you/your-project/.agents/skills/memctrl/SKILL.md"}
+{"path":"/home/you/your-project/.cursor/skills/memctrl/SKILL.md"}
 ```
 
 `--project` writes the skill into the project folder (the one with the nearest `.memoryrc`). Without it, the skill goes under your home folder, where the tool finds it for any project.
 
 | `--tool` | With `--project` | Without `--project` |
 | --- | --- | --- |
-| `codex` | `.agents/skills/memctrl/SKILL.md` | `~/.agents/skills/memctrl/SKILL.md` |
 | `cursor` | `.cursor/skills/memctrl/SKILL.md` | `~/.cursor/skills/memctrl/SKILL.md` |
+| `codex`, `gemini` | `.agents/skills/memctrl/SKILL.md` | `~/.agents/skills/memctrl/SKILL.md` |
 | `axga` | `.axga/agent/skills/memctrl/SKILL.md` | `~/.axga/agent/skills/memctrl/SKILL.md` |
 | `pi` | `.pi/agent/skills/memctrl/SKILL.md` | `~/.pi/agent/skills/memctrl/SKILL.md` |
 | `kimi` | `.kimi/skills/memctrl/SKILL.md` | `~/.kimi/skills/memctrl/SKILL.md` |
 
 The skill is the same file for every tool. It explains the brief's sections, how to search with `memctrl query`, how to save memories with `memctrl add`, and that only a person can accept a held memory. If memctrl 2.0 left a Codex skill in `.codex/skills/`, where Codex never reads it, the output lists it under `legacy_skill` so you can delete it.
 
-`--hook` works only with `--tool claude`. For any other tool, `install` refuses it and points you to `context --write`.
+`--hook` works with `--tool claude`, `codex` and `gemini`. For any other tool, `install` refuses it and points you to `context --write`.
 
 ## Write the brief into AGENTS.md
 
@@ -90,7 +92,7 @@ Since `--write` changes a file in your repository, decide with your team whether
 
 ## Recall for each request
 
-memctrl's per-request recall is a Claude Code prompt hook. Codex, Cursor and the other tools here get the brief, but nothing adds the memories that match each request. Two ways to fill the gap:
+memctrl's per-request recall runs as a prompt hook in Claude Code, Codex and Gemini CLI. Cursor's prompt hook can only let a prompt through or stop it, not add to it, so Cursor and the other tools here get the brief but nothing adds the memories that match each request. Two ways to fill the gap:
 
 - **Run recall yourself** before a task that touches something the brief may not cover, and paste what it prints into your request:
 
@@ -98,7 +100,11 @@ memctrl's per-request recall is a Claude Code prompt hook. Codex, Cursor and the
   memctrl recall "rotate the JWT signing key"
   ```
 
-- **Call it from your host's own prompt hook**, if it has one. `memctrl recall "<request>"` prints Markdown, or nothing when nothing matches; `--format json` gives entries to process. The `hook` format is Claude Code's JSON.
+- **Call it from your host's own prompt hook**, if it has one that can add context. `memctrl recall "<request>"` prints Markdown, or nothing when nothing matches; `--format json` gives entries to process. `--format hook` is Claude Code's and Codex's JSON, and `--format gemini` Gemini CLI's.
+
+<Aside type="note" title="Cursor runs your Claude Code hooks">
+With **Include Third-Party Plugins, Skills, and Other Configs** on (the default), Cursor also runs the hooks in `.claude/settings.json`, so memctrl's Claude Code hooks run there too. Recall's output has nowhere to go in Cursor, and Cursor's staff report a bug that drops session-start context, so rely on `AGENTS.md` for the brief in Cursor.
+</Aside>
 
 The skill also asks the agent to run `memctrl context` and `memctrl recall` itself when no hooks are installed. Don't count on it: in the agent benchmark, Claude Code never searched memory on its own.
 

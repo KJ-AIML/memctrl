@@ -1,7 +1,8 @@
 name: Release
 
-# Pull requests build and smoke-test every release target, then collect and check the archives
-# the way a release does, without publishing anything. Pushing a `vX.Y.Z` tag builds the same
+# Pull requests build every release target and run the whole test suite against each binary
+# (Intel macOS under Rosetta), then collect and check the archives the way a release does,
+# without publishing anything. Pushing a `vX.Y.Z` tag builds the same
 # artifacts and creates a *draft* GitHub release with SHA256SUMS; a maintainer reviews the draft
 # and publishes it by hand.
 on:
@@ -15,6 +16,7 @@ on:
       - "Cargo.lock"
       - "install.sh"
       - "src/**"
+      - "tests/**"
   workflow_dispatch:
 
 permissions:
@@ -35,8 +37,8 @@ jobs:
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, run: true }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, run: true }
           - { target: aarch64-apple-darwin, os: macos-latest, run: true }
-          # Cross-compiled on Apple silicon; Rosetta is not guaranteed, so it is not executed.
-          - { target: x86_64-apple-darwin, os: macos-latest, run: false }
+          # Cross-compiled on Apple silicon and tested under Rosetta, installed if the image lacks it.
+          - { target: x86_64-apple-darwin, os: macos-latest, run: rosetta }
           - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true }
     runs-on: ${{ matrix.os }}
     steps:
@@ -52,16 +54,20 @@ jobs:
           key: ${{ matrix.target }}
       - name: Build
         run: cargo build --locked --release --bin memctrl --target ${{ matrix.target }}
-      - name: Smoke test
+      - name: Install Rosetta
+        if: matrix.run == 'rosetta'
+        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Test the release binary
         if: matrix.run
         shell: bash
         run: |
-          bin="target/${{ matrix.target }}/release/memctrl"
+          bin="$PWD/target/${{ matrix.target }}/release/memctrl"
           [ -f "$bin.exe" ] && bin="$bin.exe"
           "$bin" --version
-          db="$RUNNER_TEMP/smoke.db"
-          "$bin" --db "$db" add "Release smoke: we use SQLite" --layer project
-          "$bin" --db "$db" query "SQLite" | grep -q "Release smoke"
+          # Windows programs need a Windows path; Git Bash's $PWD isn't one.
+          if command -v cygpath >/dev/null; then bin=$(cygpath -w "$bin"); fi
+          # Every test that runs memctrl runs this binary, the one about to ship.
+          MEMCTRL_TEST_BIN="$bin" cargo test --locked --tests --no-fail-fast
       - name: Package
         shell: bash
         run: |

@@ -95,9 +95,12 @@ In Claude Code, recall knows what the session has already seen. The session-star
 
 Session records stay local: `.memctrl/.gitignore` lists `sessions/`, and the folder carries its own `.gitignore`.
 
-## Read-only
+## Read-only, unless you ask
 
-Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, and never stores the prompt; the session record holds memory ids only. A memory that keeps matching requests doesn't promote itself in the brief. The one exception comes with search by meaning: recall may store vectors for memories that had none, but never a vector of the request.
+Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, and never stores the prompt; the session record holds memory ids only. A memory that keeps matching requests doesn't promote itself in the brief. Two exceptions:
+
+- **A prompt that starts with `remember:`** asks the hook to save the rest as your note. That note, and nothing else from the prompt, is stored. See [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember).
+- **With search by meaning on**, recall may store vectors for memories that had none, but never a vector of the request.
 
 ## Quiet by design
 

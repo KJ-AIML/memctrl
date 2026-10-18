@@ -63,7 +63,7 @@ Store a memory.
 | --- | --- | --- | --- | --- |
 | `content` | string | yes | | The memory text, at most 64 KiB. |
 | `layer` | string | yes | | The layer to save it in, such as `project`. |
-| `source` | string | no | `mcp` | The source recorded with the memory. |
+| `source` | string | no | `mcp` | The source recorded with the memory. One the guard trusts (`manual`, `user`, `cli` by default) is recorded as `mcp` instead, with a `source_note`: only the user writes as themselves. |
 | `claim_type` | string: `assertion`, `decision`, `observation` or `hypothesis` | no | `assertion` | What kind of claim it is. |
 | `tags` | array of strings | no | `[]` | Tags, at most 64. |
 | `cite` | array of strings | no | `[]` | Code the memory describes: path, path:LINE or path:START-END, relative to the project root. At most 64. |
@@ -75,7 +75,7 @@ Returns `{"id":…,"status":"stored"}`, with `citations` when it cited code and 
 - **Reserved tags are refused.** Tags starting with `guard:` or `import:` are set only by memctrl; passing one fails the call.
 - **Retention comes from the layer**, through `[forget] after_days` in `.memoryrc`.
 - **Citations are checked first.** Every path is resolved and hashed before anything is written. Paths outside the project and secrets files (`.env`, keys and the like), even through a symlink, are refused.
-- **Agent writes stay notes.** With the default `trusted_sources`, a `user`-layer memory saved with source `mcp` is listed under Facts and conventions in the brief, not under "From the user".
+- **Agent writes stay notes.** Only an agent calls MCP tools, so a write can't claim a trusted source: a `user`-layer memory saved over MCP is listed under Facts and conventions in the brief, not under "From the user", unless your user config trusts `mcp`.
 
 ```json
 {"id":"adf74492-008a-41e6-a591-0f27f77fb9f8","status":"quarantined","lifecycle_state":"candidate","guard":{"flags":["prompt_injection"],"reasons":["tells the agent to ignore its instructions"]}}

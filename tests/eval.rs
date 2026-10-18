@@ -1,11 +1,11 @@
 //! The built-in retrieval suite is a regression gate: floors sit a little below the measured
 //! values, so a change that makes retrieval worse fails CI. Paraphrase cases are reported, not
 //! gated; lexical retrieval is not expected to answer queries with no shared words.
+mod common;
 use memctrl::eval::{self, Retriever, BUILTIN_SUITE};
 use memctrl::retriever::SearchOptions;
 use memctrl::rules::Rules;
 use serde_json::Value;
-use std::process::Command;
 use tempfile::TempDir;
 
 fn report() -> Value {
@@ -106,7 +106,7 @@ fn lexical_beats_the_legacy_scorer_where_it_matters() {
 fn cli_eval_never_creates_a_database_and_gates_on_request() {
     let dir = TempDir::new().unwrap();
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_memctrl"))
+        common::memctrl()
             .current_dir(dir.path())
             .env_remove("MEMCTRL_DB_PATH")
             .args(args)

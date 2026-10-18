@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 pub mod agent;
+pub mod capture;
 pub mod citations;
 pub mod context;
 pub mod decay;
@@ -13,6 +14,7 @@ pub mod llm;
 pub mod mcp;
 pub mod mirror;
 pub mod model;
+pub mod origin;
 pub mod project;
 pub mod recall;
 pub mod reflection;

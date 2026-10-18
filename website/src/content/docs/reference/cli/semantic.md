@@ -16,10 +16,24 @@ memctrl semantic [OPTIONS] <COMMAND>
 
 | Subcommand | What it does |
 | --- | --- |
+| [`setup`](#memctrl-semantic-setup) | Find an embedding model on this machine (Ollama, LM Studio) and turn search by meaning on: adds [semantic] to your user config and indexes this project's memories |
 | [`status`](#memctrl-semantic-status) | Settings, whether the model answers, and how many memories have vectors |
 | [`index`](#memctrl-semantic-index) | Embed every memory without a vector (searches embed a few on the spot) |
 | [`tune`](#memctrl-semantic-tune) | Measure similarity thresholds for your model on an eval suite (built in, or --file) |
 | [`clear`](#memctrl-semantic-clear) | Delete every stored vector; they're rebuilt as you search while [semantic] is on |
+
+### `memctrl semantic setup`
+
+Find an embedding model on this machine (Ollama, LM Studio) and turn search by meaning on: adds [semantic] to your user config and indexes this project's memories
+
+```text
+memctrl semantic setup [OPTIONS]
+```
+
+| Option | Description | Default | Environment |
+| --- | --- | --- | --- |
+| `--base-url <BASE_URL>` | An OpenAI-compatible server on this machine to use instead of looking for Ollama and LM Studio |  |  |
+| `--dry-run` | Show what would be written, without writing or indexing |  |  |
 
 ### `memctrl semantic status`
 
@@ -64,4 +78,4 @@ memctrl semantic clear [OPTIONS]
 
 Every command also takes the [global options](/memctrl/reference/cli/#global-options) `--db` and `--rc`.
 
-<sub>Generated from `memctrl 2.6.3` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.7.0` by `website/scripts/gen-cli.mjs`.</sub>
