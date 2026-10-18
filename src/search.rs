@@ -173,7 +173,7 @@ fn compounds(query: &str) -> Vec<(String, Vec<String>)> {
 
 /// Scripts usually written without spaces between words. Thai and Lao tone marks fall inside
 /// their blocks, so they stay attached to the run instead of splitting it.
-fn spaceless(c: char) -> bool {
+pub(crate) fn spaceless(c: char) -> bool {
     matches!(c as u32,
         0x0E00..=0x0EFF      // Thai, Lao
         | 0x1000..=0x109F    // Myanmar
