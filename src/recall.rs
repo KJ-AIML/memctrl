@@ -164,16 +164,20 @@ fn topical_units(parsed: &crate::search::ParsedQuery, groups: &HashMap<String, u
 
 /// Distinct topical concepts behind a hit's matched labels ("word", "a → b (alias)",
 /// "word (substring)", "run (k/n)", "a-b (identifier)"); generic matches don't count. A memory
-/// holding a whole multi-word identifier (`purge-tenant`, `src/db/ledger.ts`) gets one more for
-/// it: a whole identifier pins a memory down as well as two separate topics do.
+/// holding a whole name joined with `-` or `_` (`purge-tenant`, `PG_POOL_MAX`) gets one more for
+/// it: naming one command or setting pins a memory down as well as two separate topics do. A
+/// file name or path (`server.ts`, `src/db/ledger.ts`) doesn't: many memories mention the file a
+/// request edits without being about the request.
 fn matched_units(matched: &[String], groups: &HashMap<String, usize>) -> usize {
     // A word outside every chunk counts once however many labels name it ("ลบ", "ลบ → delete").
     let mut words: HashSet<Result<usize, &str>> = HashSet::new();
     let mut runs = 0;
     let mut identifiers = 0;
     for label in matched.iter().filter(|m| !m.ends_with("(generic)")) {
-        if label.ends_with(" (identifier)") {
-            identifiers += 1;
+        if let Some(name) = label.strip_suffix(" (identifier)") {
+            if !name.contains(['.', '/']) {
+                identifiers += 1;
+            }
             continue;
         }
         if let Some(counts) = label
@@ -837,6 +841,10 @@ mod tests {
         assert_eq!(matched_units(&whole, &groups), 2);
         // Both words apart ("reset the ledger") are one concept, as before.
         assert_eq!(matched_units(&labels(&["reset", "ledger"]), &groups), 1);
+        // A file name names where to work, not what about.
+        let file = concepts("fix the typo in server.ts");
+        let named = labels(&["server", "ts", "server.ts (identifier)"]);
+        assert_eq!(matched_units(&named, &file), 1);
         // A Thai word found inside a run counts once, however many labels name it.
         assert_eq!(
             matched_units(&labels(&["ลบ", "ลบ → delete (alias)"]), &HashMap::new()),

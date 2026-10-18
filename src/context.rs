@@ -455,8 +455,9 @@ pub fn build_with(
     .into_iter()
     .map(|s| (s, memories.len()))
     .collect();
+    let pinned = ranked.iter().filter(|e| e.pinned).count();
     let reserved = approx_tokens(&header(
-        (memories.len(), memories.len()),
+        (memories.len(), pinned),
         memories.len(),
         layers,
         budget,

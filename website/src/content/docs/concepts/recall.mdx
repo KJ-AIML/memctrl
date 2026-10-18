@@ -57,7 +57,7 @@ A request is longer than a question, and phrased as something to do, so recall u
 
 3. **Ignore words that don't name a topic.** Request verbs such as *add*, *fix*, *make*, *change*, *update* and *write*, and their Thai counterparts (ทำ, ต่อ, ดู, แก้, เพิ่ม ...), don't count, and neither do generic words such as *project* or *summary*. A word that no memory contains is dropped, so it doesn't count against a match: "a partner asks whether we enforce rate limits" is about rate limits.
 
-4. **Require two shared topics.** A memory must share two topics with its piece of the request, or one when the piece names only one. The words of one path or identifier, such as `src/db/ledger.ts` or `BODY_LIMIT_BYTES`, count once, and once more for a memory that holds the identifier whole: naming `reset-ledger` pins a memory down as well as two separate topics do.
+4. **Require two shared topics.** A memory must share two topics with its piece of the request, or one when the piece names only one. The words of one path or identifier, such as `src/db/ledger.ts` or `BODY_LIMIT_BYTES`, count once. A name joined with `-` or `_`, such as `reset-ledger` or `PG_POOL_MAX`, counts once more for a memory that holds it whole: naming one command or setting pins a memory down as well as two separate topics do. A file name or path doesn't, because many memories mention the file a request edits without being about the request.
 
 5. **Rank and trim.** Each match ranks by its score relative to the best match for its piece, weighted by how much of the piece it covers. Recall adds the best 5 (`--limit`) from the `project` and `user` layers (`--layer`, repeatable).
 
