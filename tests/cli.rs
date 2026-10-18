@@ -158,6 +158,25 @@ fn reading_records_no_spans() {
     assert_eq!(spans(), before + 1);
 }
 
+/// Pins put a memory ahead of everything an agent saved, so only a person sets or clears them:
+/// an agent's shell has no terminal.
+#[test]
+fn only_a_person_pins() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let id = success(&dir, &["add", "Never deploy on Fridays"])["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for verb in ["pin", "unpin"] {
+        let out = invoke(&dir, &[verb, &id[..8]]);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("only a person can"), "{stderr}");
+    }
+    assert!(success(&dir, &["show", &id])["memory"]["pinned_at"].is_null());
+}
+
 #[test]
 fn invalid_input_is_nonzero_and_sanitized() {
     let dir = TempDir::new().unwrap();

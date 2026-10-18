@@ -124,6 +124,9 @@ pub struct Memory {
     pub claim_type: ClaimType,
     pub lifecycle_state: LifecycleState,
     pub verification_state: VerificationState,
+    /// When a person pinned it (`memctrl pin`): pinned memories come first in the session brief.
+    #[serde(default)]
+    pub pinned_at: Option<String>,
 }
 impl Memory {
     pub fn eligible(&self) -> bool {

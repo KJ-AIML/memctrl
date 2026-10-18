@@ -14,6 +14,9 @@ pub const DEFAULT_LAYERS: [&str; 2] = ["project", "user"];
 pub const BEGIN_MARKER: &str = "<!-- memctrl:context:begin -->";
 pub const END_MARKER: &str = "<!-- memctrl:context:end -->";
 const MAX_ENTRY_CHARS: usize = 400;
+/// Memories a person pinned come first, in at most this share of the budget, so warnings and
+/// the person's preferences keep room however much is pinned.
+const PINNED_SHARE: f64 = 0.5;
 /// Room kept for memories to check before trusting, so a crowded store never hides its warnings:
 /// up to this many entries, using at most `CHECK_FIRST_SHARE` of the budget.
 const CHECK_FIRST_RESERVE: usize = 5;
@@ -82,6 +85,9 @@ pub struct BriefEntry {
     /// held).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
+    /// A person pinned it (`memctrl pin`): it comes first.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -162,6 +168,9 @@ pub(crate) fn one_line(content: &str) -> String {
 fn render_entry(entry: &BriefEntry) -> String {
     let short: String = entry.id.chars().take(8).collect();
     let mut notes = vec![format!("`{short}`")];
+    if entry.pinned {
+        notes.push("pinned".into());
+    }
     match entry.verification_state {
         VerificationState::Supported => notes.push("verified".into()),
         VerificationState::Disputed => notes.push("disputed".into()),
@@ -206,7 +215,7 @@ memory says failed, name that memory and ask; change nothing until the user conf
 Check facts against the code.";
 
 fn header(
-    shown: usize,
+    (shown, pinned): (usize, usize),
     eligible: usize,
     layers: &[String],
     tokens: usize,
@@ -214,8 +223,12 @@ fn header(
     extras: &Extras,
 ) -> String {
     let pending = extras.pending_review;
+    let order = match pinned {
+        0 => "highest trust first".to_string(),
+        n => format!("{n} pinned by the user first, then highest trust"),
+    };
     let mut text = format!(
-        "{TITLE}\n\n{shown} of {eligible} memories from {} · ≈{tokens} tokens · highest trust first.\n{FENCE}\n",
+        "{TITLE}\n\n{shown} of {eligible} memories from {} · ≈{tokens} tokens · {order}.\n{FENCE}\n",
         layers.join(", ")
     );
     if omitted.is_empty() {
@@ -244,7 +257,7 @@ fn header(
             })
             .collect();
         text.push_str(&format!(
-            "Not shown for space (search with `memctrl query`): {}.\n",
+            "Not shown for space (newer first at equal trust; search with `memctrl query`): {}.\n",
             parts.join(", ")
         ));
     }
@@ -388,11 +401,17 @@ pub fn build_with(
                 ),
                 stale: note,
                 caution,
+                pinned: m.pinned_at.is_some(),
             }
         })
         .collect();
-    // Highest score first; newest first among equals (list order is created_at DESC); id last.
-    ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
+    // Pinned first, then highest score; newest first among equals (list order is created_at
+    // DESC; the sort is stable).
+    ranked.sort_by(|a, b| {
+        b.pinned
+            .cmp(&a.pinned)
+            .then_with(|| b.score.total_cmp(&a.score))
+    });
     // Reserve room for the header (with worst-case counts) and footer before filling.
     let worst: BTreeMap<Section, usize> = [
         Section::User,
@@ -406,7 +425,7 @@ pub fn build_with(
     .map(|s| (s, memories.len()))
     .collect();
     let reserved = approx_tokens(&header(
-        memories.len(),
+        (memories.len(), memories.len()),
         memories.len(),
         layers,
         budget,
@@ -426,6 +445,7 @@ pub fn build_with(
         body,
         by_section: BTreeMap::new(),
     };
+    fill.pass(&ranked, usize::MAX, share(PINNED_SHARE), |e, _, _| e.pinned);
     fill.pass(
         &ranked,
         CHECK_FIRST_RESERVE,
@@ -469,7 +489,7 @@ pub fn build_with(
         markdown = format!(
             "{}{text}{FOOTER}",
             header(
-                chosen.len(),
+                (chosen.len(), chosen.iter().filter(|e| e.pinned).count()),
                 memories.len(),
                 layers,
                 tokens,
@@ -656,6 +676,62 @@ mod tests {
         let tiny = session_brief(&store, &layers, 230, &|_| None).unwrap();
         assert!(tiny.entries.len() < 4);
         assert!(tiny.approx_tokens <= 230, "{}", tiny.markdown);
+    }
+
+    #[test]
+    fn pinned_memories_come_first_even_in_a_crowded_brief() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        let pinned = store
+            .insert_memory(memory(
+                "Never run reset-ledger against a real clinic",
+                ClaimType::Observation,
+                VerificationState::Unverified,
+            ))
+            .unwrap();
+        for i in 0..40 {
+            store
+                .insert_memory(memory(
+                    &format!("Fact number {i} about the billing service retries"),
+                    ClaimType::Assertion,
+                    VerificationState::Supported,
+                ))
+                .unwrap();
+        }
+        let layers = vec!["project".to_string()];
+        let before = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert!(before.entries.iter().all(|e| e.id != pinned));
+        assert!(
+            before
+                .markdown
+                .contains("Not shown for space (newer first at equal trust"),
+            "{}",
+            before.markdown
+        );
+
+        assert!(store.set_pinned(&pinned, true).unwrap());
+        assert!(!store.set_pinned(&pinned, true).unwrap(), "already pinned");
+        let brief = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert_eq!(brief.entries[0].id, pinned);
+        assert!(brief.entries[0].pinned);
+        assert!(brief.entries[1..].iter().all(|e| !e.pinned));
+        let md = &brief.markdown;
+        assert!(
+            md.contains("· 1 pinned by the user first, then highest trust."),
+            "{md}"
+        );
+        assert!(
+            md.contains("Never run reset-ledger against a real clinic · `"),
+            "{md}"
+        );
+        assert!(md.contains(" · pinned"), "{md}");
+        assert!(brief.approx_tokens <= 400, "{md}");
+        let audit = store.audit(5).unwrap();
+        assert_eq!(audit[0]["event"], "pin");
+
+        assert!(store.set_pinned(&pinned, false).unwrap());
+        let after = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert!(after.entries.iter().all(|e| e.id != pinned));
+        assert_eq!(store.audit(5).unwrap()[0]["event"], "unpin");
     }
 
     #[test]

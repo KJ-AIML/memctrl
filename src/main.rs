@@ -355,6 +355,10 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Pin a memory: the session brief shows it first. Only a person, in a terminal.
+    Pin { memory_id: String },
+    /// Unpin a memory. Only a person, in a terminal.
+    Unpin { memory_id: String },
     /// Show relationship lineage and evidence.
     History { memory_id: String },
     /// Mark a memory as disputed.
@@ -1503,6 +1507,26 @@ async fn execute(
             };
             review::accept_with(store, &id, release, &rules.guard)?
         }
+        Command::Pin { memory_id } | Command::Unpin { memory_id } => {
+            let pin = matches!(cli.command, Command::Pin { .. });
+            let verb = if pin { "pin" } else { "unpin" };
+            let id = require_memory(store, memory_id)?;
+            let short = &id[..8.min(id.len())];
+            // Pins outrank everything an agent saved, so only a person sets or clears them.
+            ensure!(
+                at_terminal(),
+                "only a person can {verb} a memory: run `memctrl {verb} {short}` yourself in a terminal"
+            );
+            let memory = store.get_memory(&id, true)?.context("memory not found")?;
+            ensure!(
+                !pin || memory.eligible(),
+                "{short} is not in use ({}, {}), so the brief would never show it",
+                memory.lifecycle_state,
+                memory.verification_state
+            );
+            let changed = store.set_pinned(&id, pin)?;
+            json!({"id": id, "pinned": pin, "changed": changed})
+        }
         Command::Reject { memory_id, reason } => {
             let mut args = json!({"id":memory_id,"action":"reject"});
             if let Some(reason) = reason {
@@ -2241,6 +2265,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::History { .. } => "history",
         Command::Accept { .. } => "accept",
         Command::Reject { .. } => "reject",
+        Command::Pin { .. } => "pin",
+        Command::Unpin { .. } => "unpin",
         Command::Dispute { .. } => "dispute",
         Command::Refute { .. } => "refute",
         Command::Supersede { .. } => "supersede",

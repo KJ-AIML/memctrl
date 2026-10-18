@@ -169,7 +169,7 @@ const REVISION_TABLES: [&str; 4] = [
     "memory_relations",
     "memory_evidence",
 ];
-const SEMANTIC_COLUMNS: [(&str, &str); 9] = [
+const SEMANTIC_COLUMNS: [(&str, &str); 10] = [
     ("updated_at", "TEXT"),
     ("last_accessed_at", "TEXT"),
     ("access_count", "INTEGER DEFAULT 0"),
@@ -179,6 +179,8 @@ const SEMANTIC_COLUMNS: [(&str, &str); 9] = [
     ("observed_at", "TEXT"),
     ("valid_from", "TEXT"),
     ("valid_until", "TEXT"),
+    // 2.8: set by `memctrl pin`; older versions ignore it.
+    ("pinned_at", "TEXT"),
 ];
 /// A query as the log keeps it: sanitized and cut to `MAX_LOGGED_QUERY` characters.
 pub fn logged_query(query: &str) -> String {
@@ -229,6 +231,7 @@ fn memory_row(row: &Row<'_>) -> rusqlite::Result<Memory> {
         claim_type: semantic(row, "claim_type")?,
         lifecycle_state: semantic(row, "lifecycle_state")?,
         verification_state: semantic(row, "verification_state")?,
+        pinned_at: row.get("pinned_at")?,
     })
 }
 fn json_column(row: &Row<'_>, name: &str) -> rusqlite::Result<Value> {
@@ -1084,6 +1087,21 @@ impl MemoryStore {
             .query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<Vec<String>>>()?;
         Ok(ids)
+    }
+    /// Pins or unpins a memory, recording the change in the audit log. Returns false when it
+    /// already was. Pins only order the session brief, so search caches stay valid.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> Result<bool> {
+        self.atomic(|| {
+            let changed = self.conn.execute(
+                "UPDATE memories SET pinned_at=?1 WHERE id=?2 AND (pinned_at IS NULL)=?3",
+                params![pinned.then(now), id, pinned],
+            )? > 0;
+            if changed {
+                let event = if pinned { "pin" } else { "unpin" };
+                self.log_event(event, "by a person at a terminal", &[id.to_string()])?;
+            }
+            Ok(changed)
+        })
     }
     /// Appends an audit record (shown by `memctrl audit`).
     pub fn log_event(&self, event: &str, action: &str, memory_ids: &[String]) -> Result<()> {
