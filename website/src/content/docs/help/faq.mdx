@@ -42,11 +42,11 @@ There is no fixed limit. The brief holds what fits its budget, about 70 one-line
 
 ### Which languages does it support?
 
-Any language. Search uses SQLite's full-text index with English stemming, and searches Thai, Chinese, Japanese and Korean, which are written without spaces, with trigrams. Vague questions such as "summarize the project" return nothing in those languages too. See [Other languages](/memctrl/guides/other-languages/).
+Any language. Search uses SQLite's full-text index with English stemming, and searches Thai, Chinese, Japanese and Korean, which are written without spaces, with trigrams. Built-in aliases link the Thai and English words developers use for common technical terms, so a Thai question can find an English memory. Vague questions such as "summarize the project" return nothing in those languages too. See [Other languages](/memctrl/guides/other-languages/).
 
 ### Can agents write memories?
 
-Yes. The skill asks agents to save what a future session needs, with `memctrl add` in a shell or `memctrl_add` over MCP. Every write passes the write guard: hidden Unicode or instruction-like text makes the memory a candidate that only you can release, at a terminal. An agent can't accept a held memory, over MCP or in its shell. See [Guard and trust](/memctrl/concepts/guard-and-trust/).
+Yes. The skill asks agents to save what a future session needs, with `memctrl add` in a shell or `memctrl_add` over MCP. Every write passes the write guard: hidden Unicode or instruction-like text makes the memory a candidate that only you can release, at a terminal. An agent can't accept a held memory, over MCP or in its shell, and a decision it saves stays a note until you confirm it with `memctrl accept <id>`. See [Guard and trust](/memctrl/concepts/guard-and-trust/).
 
 Agents rarely search memory on their own, though: in 112 benchmark sessions, Claude Code never ran `memctrl query`. That's why the brief and recall arrive through hooks.
 

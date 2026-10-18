@@ -5,6 +5,20 @@ description: "What changed in each release, newest first."
 
 What each memctrl 2.x release added and fixed, newest first, condensed from the release notes. Before you move between versions, read [Upgrading](/memctrl/releases/upgrading/): it lists what you need to do for each step.
 
+## 2.8.0
+
+**Thai and English, under stress.** A stress test on a real project whose team writes in Thai and English found eight problems; all eight are fixed.
+
+- **Thai and English find each other.** Built-in aliases hold the Thai words for 37 technical terms (ดีพลอย, ฐานข้อมูล, โปรดักชัน …), picked out of Thai text without spaces, in queries and memories alike. [Thai and English for the same thing](/memctrl/guides/other-languages/#thai-and-english-for-the-same-thing)
+- **A named identifier counts.** `reset-ledger` in a question is covered only by a memory that holds it whole, so the memory about the command comes first, in Thai questions too. [Matching beyond exact words](/memctrl/concepts/search/#matching-beyond-exact-words)
+- **`memctrl pin`** puts a memory first in every brief. Only a person pins. [Pinned memories](/memctrl/concepts/session-brief/#pinned-memories)
+- **A decision an agent saved is a note until you confirm it** with `memctrl accept <id>` in your terminal. [Decisions an agent saved](/memctrl/concepts/session-brief/#decisions-an-agent-saved)
+- **The guard reads Thai,** plus Chinese, Japanese, Spanish, French and German overrides, harness tags, `SYSTEM:` lines and forged `[from the user]` labels: 37 of 73 red-team attempts caught (was 26), the same 4 of 50 ordinary notes held.
+- **Fixes:** `lag` no longer matches inside "flagged", vague Thai requests (ทำต่อเลย) add nothing, CI run ids aren't redacted as phone numbers, ZWSP between Thai and English is allowed, and the hooks and read-only commands no longer write timing spans.
+- Thai team suite: answer first 92.7% → 95.1%; Thai held-out through the prompt hook 66.7% → 91.7%; a new bilingual suite 52.9% → 100% in the top 5. Other suites unchanged.
+
+[Release on GitHub](https://github.com/KJ-AIML/memctrl/releases/tag/v2.8.0) · [Upgrade notes](/memctrl/releases/upgrading/#270--280)
+
 ## 2.7.0
 
 **Fixing what an honest review found.** The code-fixable weak points of memctrl, fixed.

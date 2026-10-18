@@ -347,7 +347,7 @@ enum Command {
     Candidates(Listing),
     /// Inspect a memory, relations and evidence.
     Show { memory_id: String },
-    /// Accept a candidate into active knowledge.
+    /// Accept a candidate into active knowledge, or confirm a decision an agent saved.
     Accept { memory_id: String },
     /// Reject a memory.
     Reject {

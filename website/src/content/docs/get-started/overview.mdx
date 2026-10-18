@@ -53,7 +53,7 @@ Save new durable facts with `memctrl add "<fact>" --layer project` (add `--claim
 
 - **Not a model or a service.** It needs no model, API key, embeddings or network. Nothing leaves your machine unless you turn on [search by meaning](/memctrl/concepts/search-by-meaning/) with an embedding server or pass `--llm` to use an [LLM provider](/memctrl/guides/llm-providers/).
 - **Not a vector database.** Search matches words, and explains the match. Search by meaning is optional and is added to word matches, not used instead of them.
-- **Not a place for instructions.** The brief tells the agent its entries are notes, with two exceptions: the user's own preferences, and recorded decisions the request would go against. Rules you want followed every time belong in CLAUDE.md or AGENTS.md (see [Limits](/memctrl/help/limits/)).
+- **Not a place for instructions.** The brief tells the agent its entries are notes, with two exceptions: the user's own preferences, and recorded decisions the request would go against (a decision an agent saved counts once you confirm it). Rules you want followed every time belong in CLAUDE.md or AGENTS.md (see [Limits](/memctrl/help/limits/)).
 - **Not a filter.** The write guard is a tripwire. It catches some injection attempts and misses others; what protects you is that only a person releases what it holds.
 
 ## memctrl or CLAUDE.md

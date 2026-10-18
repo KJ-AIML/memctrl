@@ -55,7 +55,7 @@ The store is an ordinary SQLite database in WAL mode, with `synchronous=NORMAL` 
 
 | Table | What it holds |
 | --- | --- |
-| `memories` | One row per memory: `id`, `layer`, `content`, `source`, `confidence`, `tags` (a JSON array), `created_at`, `updated_at`, `last_accessed_at`, `access_count`, `expires_at`, `observed_at`, `valid_from`, `valid_until`, `claim_type`, `lifecycle_state` and `verification_state`. |
+| `memories` | One row per memory: `id`, `layer`, `content`, `source`, `confidence`, `tags` (a JSON array), `created_at`, `updated_at`, `last_accessed_at`, `access_count`, `expires_at`, `observed_at`, `valid_from`, `valid_until`, `claim_type`, `lifecycle_state`, `verification_state`, and since 2.8 `pinned_at` (set by `memctrl pin`) and `confirmed_at` (when a person confirmed a decision an agent saved). |
 | `memory_fts` | Full-text index (FTS5) of `content` and `tags`, with Porter stemming and diacritics removed. |
 | `memory_fts_tri` | Full-text index (FTS5) of `content` as character trigrams, for scripts written without spaces and for substrings. |
 | `memory_citations` | Each citation: `path`, `line_start`, `line_end`, the `file_hash`, `span_hash`, `head_hash` and `head_offset` used to detect changes, the `commit_sha` checked out when it was taken, and timestamps. |
@@ -67,7 +67,7 @@ The store is an ordinary SQLite database in WAL mode, with `synchronous=NORMAL` 
 | `rust_revision` | A counter that changes with every write, which binds cache entries to the store's state. |
 | `tree_nodes` | The memory tree, when you build it (`memctrl tree --rebuild`). |
 | `triggers_log` | The audit log: trigger consolidations and proposals, refutations, rejections with a reason, citation refreshes and releases of held memories. |
-| `otel_spans` | Timings of each operation, for `memctrl spans` and `memctrl otel-export`. |
+| `otel_spans` | Timings of commands that change the store, such as `add`, `import`, `accept`, `query` and `maintenance`, for `memctrl spans` and `memctrl otel-export`. The hooks (`context`, `recall`) and commands that only show something (`stats`, `list`, `doctor`, `timeline` ...) record none. |
 | `agent_checkpoints` | JSON state saved with `memctrl agent put`. |
 | `maintenance_state` | When maintenance tasks last ran, such as the one-time compaction and tree builds. |
 | `schema_version` | The schema version, 4. |

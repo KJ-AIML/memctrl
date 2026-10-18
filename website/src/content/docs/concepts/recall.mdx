@@ -55,9 +55,9 @@ A request is longer than a question, and phrased as something to do, so recall u
 
 2. **Search a sentence at a time.** The request is cut into its lines and sentences, and a piece too short to search joins its neighbor. At most 12 pieces from the first 4,000 characters are searched, so a pasted log can't slow the hook down.
 
-3. **Ignore words that don't name a topic.** Request verbs such as *add*, *fix*, *make*, *change*, *update* and *write* don't count, and neither do generic words such as *project* or *summary*. A word that no memory contains is dropped, so it doesn't count against a match: "a partner asks whether we enforce rate limits" is about rate limits.
+3. **Ignore words that don't name a topic.** Request verbs such as *add*, *fix*, *make*, *change*, *update* and *write*, and their Thai counterparts (ทำ, ต่อ, ดู, แก้, เพิ่ม ...), don't count, and neither do generic words such as *project* or *summary*. A word that no memory contains is dropped, so it doesn't count against a match: "a partner asks whether we enforce rate limits" is about rate limits.
 
-4. **Require two shared topics.** A memory must share two topics with its piece of the request, or one when the piece names only one. The words of one path or identifier, such as `src/db/ledger.ts` or `BODY_LIMIT_BYTES`, count once.
+4. **Require two shared topics.** A memory must share two topics with its piece of the request, or one when the piece names only one. The words of one path or identifier, such as `src/db/ledger.ts` or `BODY_LIMIT_BYTES`, count once, and once more for a memory that holds the identifier whole: naming `reset-ledger` pins a memory down as well as two separate topics do.
 
 5. **Rank and trim.** Each match ranks by its score relative to the best match for its piece, weighted by how much of the piece it covers. Recall adds the best 5 (`--limit`) from the `project` and `user` layers (`--layer`, repeatable).
 
@@ -72,12 +72,13 @@ Each memory carries a label that tells the agent what kind of statement it is, m
 | Label | Memory |
 | --- | --- |
 | `[from the user]` | A user-layer fact or observation from a trusted source, not disputed, stale or released after the guard held it. The header asks the agent to follow these. |
-| `[decision]` | A decision, from any layer |
+| `[decision]` | A decision, from any layer, that you saved or confirmed |
+| `[note]` | A decision an agent saved that no person confirmed ([why](/memctrl/concepts/guard-and-trust/#decisions-an-agent-saved)) |
 | `[fact]` | An assertion or observation |
 | `[lesson]` | A derived lesson |
 | `[unconfirmed]` | A hypothesis |
 
-After the content and short id, an entry can carry notes: `disputed`, `stale: src/db.rs changed`, `looked like instructions; a person released it`, and `also in the session brief`.
+After the content and short id, an entry can carry notes: `disputed`, `stale: src/db.rs changed`, `looked like instructions; a person released it`, `decision saved by an agent, not confirmed`, and `also in the session brief`.
 
 ## Once per session
 
@@ -97,7 +98,7 @@ Session records stay local: `.memctrl/.gitignore` lists `sessions/`, and the fol
 
 ## Read-only, unless you ask
 
-Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, and never stores the prompt; the session record holds memory ids only. A memory that keeps matching requests doesn't promote itself in the brief. Two exceptions:
+Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, records no timing, and never stores the prompt; the session record holds memory ids only. A memory that keeps matching requests doesn't promote itself in the brief. Two exceptions:
 
 - **A prompt that starts with `remember:`** asks the hook to save the rest as your note. That note, and nothing else from the prompt, is stored. See [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember).
 - **With search by meaning on**, recall may store vectors for memories that had none, but never a vector of the request.
@@ -111,6 +112,7 @@ Prompts like these add nothing:
 ```bash
 memctrl recall "thanks, looks good"
 memctrl recall "summarize the project for me"
+memctrl recall "ทำต่อเลย"
 memctrl recall "/compact"
 ```
 
