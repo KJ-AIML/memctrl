@@ -21,7 +21,6 @@ fn patterns() -> &'static Vec<(Regex, &'static str)> {
         (r"(?i)\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}\b","EMAIL"),
         (r"\b\d{3}-\d{2}-\d{4}\b","SSN"),
         (r"\b\d{3}-\d{3}-\d{4}\b","PHONE"),
-        (r"\b\d{10,12}\b","PHONE_INTL"),
     ].into_iter().map(|(p,label)|(Regex::new(p).expect("static redaction regex"),label)).collect())
 }
 /// A secret-looking key followed by `=` or `:` and a value: `password=…`, `DB_PASSWORD=…`,
@@ -270,6 +269,38 @@ fn redact_personal(text: &str) -> String {
     });
     redact_national_ids(national_id, &text)
 }
+/// A bare run of 10 to 12 digits is a phone number when it starts with 0 (0812345678) or a
+/// phone word comes just before it ("call 5551234567", "โทร 0812345678"), and never right after
+/// a word naming an id ("run 39057490023", "order ref 1234567890", "#1234567890"): without
+/// context it is as likely a CI run, an order or a timestamp.
+fn redact_bare_phones(text: &str) -> String {
+    static BARE: OnceLock<[Regex; 3]> = OnceLock::new();
+    let [bare, phone_word, id_word] = BARE.get_or_init(|| {
+        [
+            Regex::new(r"\b\d{10,12}\b"),
+            Regex::new(
+                r"(?i)(?:\b(?:phone|tel|telephone|call|mobile|cell|fax|whatsapp|sms|contact)(?:s|ed|ing)?\b|โทร|เบอร์|มือถือ|ติดต่อ)[^\n\d]{0,20}$",
+            ),
+            Regex::new(
+                r"(?i)(?:\b(?:run|id|ref|order|pr|issue|build|job|ticket|invoice|pipeline|workflow|commit)s?|#)[\s:=#.-]*$",
+            ),
+        ]
+        .map(|r| r.expect("static phone regex"))
+    });
+    bare.replace_all(text, |c: &regex::Captures<'_>| {
+        let found = c.get(0).expect("whole match");
+        let before = &text[..found.start()];
+        let window = &before[before.char_indices().rev().nth(39).map_or(0, |(at, _)| at)..];
+        let phone = !id_word.is_match(window)
+            && (found.as_str().starts_with('0') || phone_word.is_match(window));
+        if phone {
+            "[REDACTED_PHONE_INTL]".to_string()
+        } else {
+            found.as_str().to_string()
+        }
+    })
+    .into_owned()
+}
 /// All fixed patterns at once: one scan finds which ones can match, so the rest are skipped.
 /// Every read re-sanitizes stored text, which made a pass per pattern the cost of a brief.
 fn pattern_set() -> &'static regex::RegexSet {
@@ -319,6 +350,8 @@ fn redact_raw(input: &str) -> String {
                 .replace_all(&text, format!("[REDACTED_{label}]"))
                 .into_owned()
         });
+    // Last, so tokens made of digit groups (xoxb-000000000001-...) are redacted whole first.
+    let redacted = redact_bare_phones(&redacted);
     uuids
         .iter()
         .enumerate()
@@ -400,9 +433,12 @@ fn sanitize_tree(input: &Value, content: bool) -> Value {
                             ),
                             _ => sanitize_tree(value, content),
                         },
-                        _ => match sensitive_label(key) {
-                            Some(label) => Value::String(format!("[REDACTED_{label}]")),
-                            None => sanitize_tree(value, content),
+                        _ => match (sensitive_label(key), value) {
+                            (Some(label), _) => Value::String(format!("[REDACTED_{label}]")),
+                            (None, Value::Number(number)) if content => {
+                                sanitize_number(number, &key_words(key))
+                            }
+                            (None, _) => sanitize_tree(value, content),
                         },
                     };
                     (redact_raw(key), safe)
@@ -413,17 +449,40 @@ fn sanitize_tree(input: &Value, content: bool) -> Value {
             Value::Array(items.iter().map(|v| sanitize_tree(v, content)).collect())
         }
         Value::String(text) => Value::String(sanitize_text(text)),
-        Value::Number(number) if content => {
-            let text = number.to_string();
-            let safe = redact_raw(&text);
-            if safe == text {
-                input.clone()
-            } else {
-                Value::String(safe)
-            }
-        }
+        Value::Number(number) if content => sanitize_number(number, ""),
         other => other.clone(),
     }
+}
+/// A number in JSON content, read with its key as context ("phone": 5551234567).
+fn sanitize_number(number: &serde_json::Number, key: &str) -> Value {
+    let text = number.to_string();
+    let safe = redact_raw(&text);
+    if safe != text {
+        return Value::String(safe);
+    }
+    let in_context = format!("{key}: {text}");
+    if redact_bare_phones(&in_context) == in_context {
+        Value::Number(number.clone())
+    } else {
+        Value::String("[REDACTED_PHONE_INTL]".to_string())
+    }
+}
+/// A JSON key as words: `run_id`, `run-id` and `runId` read as "run id".
+fn key_words(key: &str) -> String {
+    let mut words = String::new();
+    let mut previous: Option<char> = None;
+    for c in key.chars() {
+        if matches!(c, '_' | '-' | '.') {
+            words.push(' ');
+        } else {
+            if c.is_uppercase() && previous.is_some_and(char::is_lowercase) {
+                words.push(' ');
+            }
+            words.push(c);
+        }
+        previous = Some(c);
+    }
+    words
 }
 pub fn sanitize_revision(input: &str) -> String {
     if matches!(input.len(), 40 | 64) && input.chars().all(|c| c.is_ascii_hexdigit()) {
