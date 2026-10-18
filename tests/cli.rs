@@ -123,6 +123,41 @@ fn lifecycle_and_command_arguments() {
     serde_json::from_slice::<Value>(&std::fs::read(dir.path().join("spans.json")).unwrap())
         .unwrap();
 }
+/// Reading never grows the store: the hooks and commands that only show something record no
+/// timing span, while commands that change memories do.
+#[test]
+fn reading_records_no_spans() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    success(
+        &dir,
+        &["add", "Deploys need an approval from the on-call lead"],
+    );
+    let spans = || {
+        success(&dir, &["otel-stats"])["total_spans"]
+            .as_u64()
+            .unwrap()
+    };
+    let before = spans();
+    for args in [
+        vec!["context"],
+        vec!["recall", "how do deploys get approved here"],
+        vec!["stats"],
+        vec!["timeline"],
+        vec!["heatmap"],
+        vec!["list"],
+        vec!["doctor"],
+        vec!["tree"],
+        vec!["spans"],
+    ] {
+        let out = invoke(&dir, &args);
+        assert!(out.status.success(), "{args:?}");
+    }
+    assert_eq!(spans(), before);
+    success(&dir, &["add", "Releases go out on Thursdays"]);
+    assert_eq!(spans(), before + 1);
+}
+
 #[test]
 fn invalid_input_is_nonzero_and_sanitized() {
     let dir = TempDir::new().unwrap();

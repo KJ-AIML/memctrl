@@ -2145,22 +2145,7 @@ async fn run(cli: Cli) -> Result<()> {
     // Boxed: the future of a function this large would otherwise sit on the main thread's stack.
     let result = Box::pin(execute(&cli, &mut store, &rules, &project, &db)).await?;
     let operation = command_name(&cli.command);
-    if !matches!(
-        &cli.command,
-        Command::Init { .. }
-            | Command::Install { .. }
-            | Command::Spans { .. }
-            | Command::OtelStats
-            | Command::OtelExport { .. }
-            | Command::Agent {
-                command: AgentCommand::Node { persist: false, .. }
-            }
-            | Command::Review {
-                command: ReviewCommand::Heli { persist: false, .. }
-            }
-            | Command::Decay { dry_run: true, .. }
-            | Command::Import { dry_run: true, .. }
-    ) {
+    if records_span(&cli.command) {
         // Best effort: a command whose result is ready never fails or waits on telemetry.
         let elapsed = started.elapsed().as_secs_f64() * 1000.0;
         store.best_effort(|s| telemetry::record(s, operation, elapsed, json!({"interface":"cli"})));
@@ -2191,6 +2176,48 @@ async fn run(cli: Cli) -> Result<()> {
     };
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
     Ok(())
+}
+/// Commands that change the store record how long they took. The hooks and commands that only
+/// show something leave the store as they found it, so reading never grows it.
+fn records_span(command: &Command) -> bool {
+    !matches!(
+        command,
+        Command::Init { .. }
+            | Command::Install { .. }
+            | Command::Context { .. }
+            | Command::Recall { .. }
+            | Command::Stale { .. }
+            | Command::Export { .. }
+            | Command::Check { .. }
+            | Command::Eval { .. }
+            | Command::List(_)
+            | Command::Candidates(_)
+            | Command::Show { .. }
+            | Command::History { .. }
+            | Command::Tree { rebuild: false, .. }
+            | Command::Audit { .. }
+            | Command::Doctor { .. }
+            | Command::Provenance { .. }
+            | Command::Heatmap
+            | Command::Timeline { .. }
+            | Command::Spans { .. }
+            | Command::OtelStats
+            | Command::OtelExport { .. }
+            | Command::Stats
+            | Command::Semantic {
+                command: SemanticCommand::Status
+            }
+            | Command::Agent {
+                command: AgentCommand::Get { .. }
+                    | AgentCommand::List { .. }
+                    | AgentCommand::Node { persist: false, .. }
+            }
+            | Command::Review {
+                command: ReviewCommand::Heli { persist: false, .. }
+            }
+            | Command::Decay { dry_run: true, .. }
+            | Command::Import { dry_run: true, .. }
+    )
 }
 fn command_name(command: &Command) -> &'static str {
     match command {
