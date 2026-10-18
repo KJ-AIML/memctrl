@@ -14,6 +14,9 @@ pub const DEFAULT_LAYERS: [&str; 2] = ["project", "user"];
 pub const BEGIN_MARKER: &str = "<!-- memctrl:context:begin -->";
 pub const END_MARKER: &str = "<!-- memctrl:context:end -->";
 const MAX_ENTRY_CHARS: usize = 400;
+/// Memories a person pinned come first, in at most this share of the budget, so warnings and
+/// the person's preferences keep room however much is pinned.
+const PINNED_SHARE: f64 = 0.5;
 /// Room kept for memories to check before trusting, so a crowded store never hides its warnings:
 /// up to this many entries, using at most `CHECK_FIRST_SHARE` of the budget.
 const CHECK_FIRST_RESERVE: usize = 5;
@@ -82,6 +85,12 @@ pub struct BriefEntry {
     /// held).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caution: Option<String>,
+    /// A person pinned it (`memctrl pin`): it comes first.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
+    /// A decision an agent saved that no person confirmed: shown among the facts, as a note.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub saved_by_agent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -112,23 +121,28 @@ pub fn score(memory: &Memory) -> f64 {
         VerificationState::Disputed => 0.5,
         VerificationState::Refuted => 0.0,
     };
-    let claim = match memory.claim_type {
+    let layer = if memory.layer == "project" { 1.2 } else { 1.0 };
+    let reinforcement = 1.0 + 0.05 * (memory.access_count as f64 + 1.0).log2().min(6.0);
+    memory.confidence * verification * claim_weight(memory.claim_type) * layer * reinforcement
+}
+
+fn claim_weight(claim: ClaimType) -> f64 {
+    match claim {
         ClaimType::Decision => 1.3,
         ClaimType::DerivedLesson => 1.1,
         ClaimType::Assertion => 1.0,
         ClaimType::Observation => 0.9,
         ClaimType::Hypothesis => 0.6,
-    };
-    let layer = if memory.layer == "project" { 1.2 } else { 1.0 };
-    let reinforcement = 1.0 + 0.05 * (memory.access_count as f64 + 1.0).log2().min(6.0);
-    memory.confidence * verification * claim * layer * reinforcement
+    }
 }
 
-fn section(memory: &Memory, check_first: bool, from_user: bool) -> Section {
+fn section(memory: &Memory, check_first: bool, from_user: bool, agents: bool) -> Section {
     if check_first || memory.verification_state == VerificationState::Disputed {
         return Section::CheckFirst;
     }
     match memory.claim_type {
+        // A decision an agent saved is a note until a person confirms it.
+        ClaimType::Decision if agents => Section::Facts,
         ClaimType::Decision => Section::Decisions,
         ClaimType::DerivedLesson => Section::Lessons,
         ClaimType::Hypothesis => Section::Hypotheses,
@@ -162,6 +176,9 @@ pub(crate) fn one_line(content: &str) -> String {
 fn render_entry(entry: &BriefEntry) -> String {
     let short: String = entry.id.chars().take(8).collect();
     let mut notes = vec![format!("`{short}`")];
+    if entry.pinned {
+        notes.push("pinned".into());
+    }
     match entry.verification_state {
         VerificationState::Supported => notes.push("verified".into()),
         VerificationState::Disputed => notes.push("disputed".into()),
@@ -172,6 +189,9 @@ fn render_entry(entry: &BriefEntry) -> String {
     }
     if let Some(caution) = &entry.caution {
         notes.push(caution.clone());
+    }
+    if entry.saved_by_agent {
+        notes.push("decision saved by an agent, not confirmed".into());
     }
     format!("- {} · {}", entry.content, notes.join(" · "))
 }
@@ -189,6 +209,8 @@ pub struct Extras {
     pub released: HashSet<String>,
     /// Memories shown as the person's own words (see `from_user`).
     pub from_user: HashSet<String>,
+    /// Decisions an agent saved that no person confirmed (see `review::unconfirmed_decision`).
+    pub agent_decisions: HashSet<String>,
 }
 
 /// Memory is replayed into every session, so the brief says what it is before the entries. It
@@ -206,7 +228,7 @@ memory says failed, name that memory and ask; change nothing until the user conf
 Check facts against the code.";
 
 fn header(
-    shown: usize,
+    (shown, pinned): (usize, usize),
     eligible: usize,
     layers: &[String],
     tokens: usize,
@@ -214,8 +236,12 @@ fn header(
     extras: &Extras,
 ) -> String {
     let pending = extras.pending_review;
+    let order = match pinned {
+        0 => "highest trust first".to_string(),
+        n => format!("{n} pinned by the user first, then highest trust"),
+    };
     let mut text = format!(
-        "{TITLE}\n\n{shown} of {eligible} memories from {} · ≈{tokens} tokens · highest trust first.\n{FENCE}\n",
+        "{TITLE}\n\n{shown} of {eligible} memories from {} · ≈{tokens} tokens · {order}.\n{FENCE}\n",
         layers.join(", ")
     );
     if omitted.is_empty() {
@@ -244,7 +270,7 @@ fn header(
             })
             .collect();
         text.push_str(&format!(
-            "Not shown for space (search with `memctrl query`): {}.\n",
+            "Not shown for space (newer first at equal trust; search with `memctrl query`): {}.\n",
             parts.join(", ")
         ));
     }
@@ -257,6 +283,16 @@ fn header(
                 "memories wait"
             },
             if pending == 1 { "it" } else { "them" }
+        ));
+    }
+    let agents = extras.agent_decisions.len();
+    if agents > 0 {
+        text.push_str(&format!(
+            "{agents} {} saved by an agent {} shown as {} until the user confirms {} (`memctrl accept <id>`).\n",
+            if agents == 1 { "decision" } else { "decisions" },
+            if agents == 1 { "is" } else { "are" },
+            if agents == 1 { "a note" } else { "notes" },
+            if agents == 1 { "it" } else { "them" }
         ));
     }
     if extras.withheld > 0 {
@@ -368,8 +404,14 @@ pub fn build_with(
                 .released
                 .contains(&m.id)
                 .then(|| "looked like instructions; a person released it".to_string());
+            let agents = extras.agent_decisions.contains(&m.id);
             let factor = if note.is_some() || caution.is_some() {
                 0.5
+            } else {
+                1.0
+            } * if agents {
+                // Ranked as the note it is shown as.
+                claim_weight(ClaimType::Assertion) / claim_weight(ClaimType::Decision)
             } else {
                 1.0
             };
@@ -385,14 +427,22 @@ pub fn build_with(
                     m,
                     note.is_some() || caution.is_some(),
                     extras.from_user.contains(&m.id),
+                    agents,
                 ),
                 stale: note,
                 caution,
+                pinned: m.pinned_at.is_some(),
+                saved_by_agent: agents,
             }
         })
         .collect();
-    // Highest score first; newest first among equals (list order is created_at DESC); id last.
-    ranked.sort_by(|a, b| b.score.total_cmp(&a.score));
+    // Pinned first, then highest score; newest first among equals (list order is created_at
+    // DESC; the sort is stable).
+    ranked.sort_by(|a, b| {
+        b.pinned
+            .cmp(&a.pinned)
+            .then_with(|| b.score.total_cmp(&a.score))
+    });
     // Reserve room for the header (with worst-case counts) and footer before filling.
     let worst: BTreeMap<Section, usize> = [
         Section::User,
@@ -405,8 +455,9 @@ pub fn build_with(
     .into_iter()
     .map(|s| (s, memories.len()))
     .collect();
+    let pinned = ranked.iter().filter(|e| e.pinned).count();
     let reserved = approx_tokens(&header(
-        memories.len(),
+        (memories.len(), pinned),
         memories.len(),
         layers,
         budget,
@@ -426,6 +477,7 @@ pub fn build_with(
         body,
         by_section: BTreeMap::new(),
     };
+    fill.pass(&ranked, usize::MAX, share(PINNED_SHARE), |e, _, _| e.pinned);
     fill.pass(
         &ranked,
         CHECK_FIRST_RESERVE,
@@ -469,7 +521,7 @@ pub fn build_with(
         markdown = format!(
             "{}{text}{FOOTER}",
             header(
-                chosen.len(),
+                (chosen.len(), chosen.iter().filter(|e| e.pinned).count()),
                 memories.len(),
                 layers,
                 tokens,
@@ -552,6 +604,9 @@ pub fn session_brief_with(
         }
         if from_user(m, policy) {
             extras.from_user.insert(m.id.clone());
+        }
+        if crate::review::unconfirmed_decision(m, policy) {
+            extras.agent_decisions.insert(m.id.clone());
         }
         true
     });
@@ -659,6 +714,62 @@ mod tests {
     }
 
     #[test]
+    fn pinned_memories_come_first_even_in_a_crowded_brief() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        let pinned = store
+            .insert_memory(memory(
+                "Never run reset-ledger against a real clinic",
+                ClaimType::Observation,
+                VerificationState::Unverified,
+            ))
+            .unwrap();
+        for i in 0..40 {
+            store
+                .insert_memory(memory(
+                    &format!("Fact number {i} about the billing service retries"),
+                    ClaimType::Assertion,
+                    VerificationState::Supported,
+                ))
+                .unwrap();
+        }
+        let layers = vec!["project".to_string()];
+        let before = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert!(before.entries.iter().all(|e| e.id != pinned));
+        assert!(
+            before
+                .markdown
+                .contains("Not shown for space (newer first at equal trust"),
+            "{}",
+            before.markdown
+        );
+
+        assert!(store.set_pinned(&pinned, true).unwrap());
+        assert!(!store.set_pinned(&pinned, true).unwrap(), "already pinned");
+        let brief = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert_eq!(brief.entries[0].id, pinned);
+        assert!(brief.entries[0].pinned);
+        assert!(brief.entries[1..].iter().all(|e| !e.pinned));
+        let md = &brief.markdown;
+        assert!(
+            md.contains("· 1 pinned by the user first, then highest trust."),
+            "{md}"
+        );
+        assert!(
+            md.contains("Never run reset-ledger against a real clinic · `"),
+            "{md}"
+        );
+        assert!(md.contains(" · pinned"), "{md}");
+        assert!(brief.approx_tokens <= 400, "{md}");
+        let audit = store.audit(5).unwrap();
+        assert_eq!(audit[0]["event"], "pin");
+
+        assert!(store.set_pinned(&pinned, false).unwrap());
+        let after = session_brief(&store, &layers, 400, &|_| None).unwrap();
+        assert!(after.entries.iter().all(|e| e.id != pinned));
+        assert_eq!(store.audit(5).unwrap()[0]["event"], "unpin");
+    }
+
+    #[test]
     fn the_users_own_notes_lead_the_brief_and_agent_notes_stay_facts() {
         let store = MemoryStore::open(":memory:").unwrap();
         let add = |content: &str, layer: &str, source: &str, claim| {
@@ -721,6 +832,48 @@ mod tests {
         };
         let brief = session_brief_with(&store, &layers, 2000, &|_| None, &strict).unwrap();
         assert!(!brief.markdown.contains("## From the user"));
+    }
+
+    #[test]
+    fn a_decision_an_agent_saved_is_a_note_until_a_person_confirms_it() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        let add = |content: &str, source: &str| {
+            store
+                .insert_memory(NewMemory {
+                    source: source.into(),
+                    ..memory(content, ClaimType::Decision, VerificationState::Unverified)
+                })
+                .unwrap()
+        };
+        let team = add("We chose SQLx over Diesel", "manual");
+        let agent = add("Retry webhooks at most 3 times", "claude-code");
+        let layers = vec!["project".to_string()];
+        let brief = session_brief(&store, &layers, 2000, &|_| None).unwrap();
+        let entry = |brief: &Brief, id: &str| brief.entries.iter().find(|e| e.id == id).cloned();
+        assert_eq!(entry(&brief, &team).unwrap().section, Section::Decisions);
+        let note = entry(&brief, &agent).unwrap();
+        assert_eq!(note.section, Section::Facts);
+        assert!(note.saved_by_agent);
+        let md = &brief.markdown;
+        assert!(
+            md.contains("· decision saved by an agent, not confirmed"),
+            "{md}"
+        );
+        assert!(
+            md.contains("1 decision saved by an agent is shown as a note until the user confirms it (`memctrl accept <id>`)."),
+            "{md}"
+        );
+
+        store.confirm_decision(&agent).unwrap();
+        let brief = session_brief(&store, &layers, 2000, &|_| None).unwrap();
+        let confirmed = entry(&brief, &agent).unwrap();
+        assert_eq!(confirmed.section, Section::Decisions);
+        assert!(!confirmed.saved_by_agent);
+        assert!(
+            !brief.markdown.contains("saved by an agent"),
+            "{}",
+            brief.markdown
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: "Every memctrl command and option, generated from memctrl 2.7.0."
+description: "Every memctrl command and option, generated from memctrl 2.8.0."
 sidebar:
   label: Overview
   order: 0
@@ -33,7 +33,9 @@ memctrl is one binary. Every command prints JSON on stdout, except the Markdown 
 | Command | What it does |
 | --- | --- |
 | [`memctrl candidates`](/memctrl/reference/cli/candidates/) | List candidate memories awaiting review |
-| [`memctrl accept`](/memctrl/reference/cli/accept/) | Accept a candidate into active knowledge |
+| [`memctrl accept`](/memctrl/reference/cli/accept/) | Accept a candidate into active knowledge, or confirm a decision an agent saved |
+| [`memctrl pin`](/memctrl/reference/cli/pin/) | Pin a memory: the session brief shows it first. Only a person, in a terminal |
+| [`memctrl unpin`](/memctrl/reference/cli/unpin/) | Unpin a memory. Only a person, in a terminal |
 | [`memctrl reject`](/memctrl/reference/cli/reject/) | Reject a memory |
 | [`memctrl dispute`](/memctrl/reference/cli/dispute/) | Mark a memory as disputed |
 | [`memctrl refute`](/memctrl/reference/cli/refute/) | Refute a memory; refuted claims cannot be accepted |
@@ -110,4 +112,4 @@ Every command takes these two options. Without them, memctrl walks up from the c
 | `-h, --help` | Print help | |
 | `-V, --version` | Print version | |
 
-<sub>Generated from `memctrl 2.7.0` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.8.0` by `website/scripts/gen-cli.mjs`.</sub>

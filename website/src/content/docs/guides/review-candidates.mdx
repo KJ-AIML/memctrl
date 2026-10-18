@@ -93,6 +93,21 @@ Type 4986a6a7 to accept it, or anything else to cancel: yes
 
 Over MCP, `memctrl_review` can't accept a held memory either. Candidates without `guard:` or `import:` tags, such as proposed lessons, are accepted without a prompt, from anywhere.
 
+## Confirm a decision an agent saved
+
+A decision an agent saved is accepted but shown as a note, marked `decision saved by an agent, not confirmed`, until a person confirms it ([why](/memctrl/concepts/session-brief/#decisions-an-agent-saved)). The brief's header counts them. Confirm one the same way, with `accept` in your terminal:
+
+```text
+$ memctrl accept ce3bde30
+memctrl: ce3bde30 is a decision an agent saved. Confirmed, it becomes one of the team's: agents ask before going against it.
+  decision · project layer · source claude-code · created 2026-10-18T11:25:00.507816Z
+  │ Retry webhooks at most 3 times
+Type ce3bde30 to confirm it, or anything else to cancel: ce3bde30
+{"id":"ce3bde30-2d28-4a41-925f-d4dc25edc6a0","action":"accept","status":"updated","confirmed":"decision saved by an agent"}
+```
+
+The confirmation goes to the audit log as `confirm`. Without a terminal, `accept` answers "is a decision an agent saved; only a person can confirm it". If the decision is wrong, [reject or supersede it](/memctrl/guides/correct-and-retire/) instead.
+
 <Aside type="caution">
 The guard is a tripwire, not a filter: paraphrases, other languages and encodings get past it. Accept a held memory only when you know where its text came from and it says what you expect.
 </Aside>

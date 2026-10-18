@@ -39,18 +39,57 @@ trusted_sources = ["manual", "user", "cli"]
 
 /// Synonym groups developers use interchangeably. A query word in a group also matches the
 /// group's other members. Disable with `[retrieval] builtin_aliases = false`.
+///
+/// The Thai members are the loanwords and plain words Thai developers write for these technical
+/// terms, so a question in one language finds a note written in the other. Words with two common
+/// meanings (ล็อก is log or lock, พูล is pull or pool) are left out, and so is everyday business
+/// vocabulary (ลูกค้า, ราคา): it appears in most notes of a team, so it pins little down, and a
+/// project adds the words it needs with `[retrieval] aliases`.
 pub const BUILTIN_ALIASES: &[&[&str]] = &[
-    &["db", "database"],
+    &["db", "database", "ฐานข้อมูล", "ดาต้าเบส"],
     &["auth", "authentication"],
-    &["prod", "production"],
+    &["prod", "production", "โปรดักชัน", "โปรดักชั่น"],
     &["k8s", "kubernetes"],
-    &["repo", "repository"],
-    &["config", "configuration"],
+    &["repo", "repository", "รีโป"],
+    &["config", "configuration", "คอนฟิก", "คอนฟิค"],
     &["env", "environment"],
     &["deps", "dependencies"],
     &["js", "javascript"],
     &["ts", "typescript"],
     &["pg", "postgres", "postgresql"],
+    &["deploy", "ดีพลอย"],
+    &["commit", "คอมมิต", "คอมมิท"],
+    &["merge", "เมิร์จ"],
+    &["branch", "แบรนช์"],
+    &["push", "พุช"],
+    &["test", "tests", "เทสต์", "เทส"],
+    &["build", "บิลด์"],
+    &["server", "เซิร์ฟเวอร์", "เซิฟเวอร์"],
+    &["login", "ล็อกอิน", "ล็อคอิน"],
+    &["password", "passwords", "รหัสผ่าน", "พาสเวิร์ด"],
+    &["upload", "อัปโหลด", "อัพโหลด"],
+    &["download", "ดาวน์โหลด"],
+    &["folder", "directory", "โฟลเดอร์"],
+    &["website", "เว็บไซต์"],
+    &["email", "อีเมล", "อีเมล์"],
+    &["session", "sessions", "เซสชัน", "เซสชั่น"],
+    &["token", "tokens", "โทเคน", "โทเค็น"],
+    &["cache", "แคช"],
+    &["queue", "คิว"],
+    &["script", "สคริปต์"],
+    &["version", "เวอร์ชัน", "เวอร์ชั่น"],
+    &["release", "รีลีส"],
+    &["bug", "บั๊ก"],
+    &["feature", "ฟีเจอร์"],
+    &["import", "อิมพอร์ต", "นำเข้า"],
+    &["export", "เอ็กซ์พอร์ต", "ส่งออก"],
+    &["delete", "ลบ"],
+    &["backup", "แบ็กอัป", "แบ็คอัพ"],
+    &["docker", "ด็อกเกอร์"],
+    &["admin", "แอดมิน"],
+    &["app", "แอป", "แอพ"],
+    &["error", "errors", "เออร์เรอร์"],
+    &["permission", "permissions", "สิทธิ์"],
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

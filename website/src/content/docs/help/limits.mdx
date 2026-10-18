@@ -9,7 +9,7 @@ memctrl is deliberately small: a local store, word search that explains itself, 
 
 ## Search matches words, not meaning
 
-Without a model, `memctrl query` and the prompt hook find memories by the words they share with the question. A paraphrase that shares no words with the memory won't find it: of 6 such paraphrases measured ("which ORM did we pick"), 3 are found.
+Without a model, `memctrl query` and the prompt hook find memories by the words they share with the question. A paraphrase that shares no words with the memory won't find it: of 6 such paraphrases measured ("which ORM did we pick"), 3 are found. Across languages the same holds: a Thai question finds an English memory only through words the aliases link, such as ดีพลอย and deploy, and memctrl has no Thai dictionary, so it reads Thai text by the words it knows and by character trigrams.
 
 **Instead:** ask with the names, paths, commands and error text the memory uses; add your team's synonyms as aliases under `[retrieval]` in `.memoryrc`; or turn on [search by meaning](/memctrl/concepts/search-by-meaning/) with an embedding model you run. Even with a model, requests worded unlike their memory are hard for the prompt hook: on 8 such tasks it added none of the needed memories, with or without meaning ([reworded tasks](/memctrl/benchmarks/reworded-tasks/)).
 
@@ -45,7 +45,7 @@ The brief's "From the user" section, which the agent is told to follow, trusts t
 
 ## The guard is a tripwire
 
-The write guard holds memories with hidden Unicode or instruction-like text for review. On a red-team corpus it catches 26 of 73 injection attempts and holds 4 of 50 ordinary notes; paraphrases, other languages and encodings still get past it. It never blocks, and what protects you is that only a person releases what it holds.
+The write guard holds memories with hidden Unicode or instruction-like text for review. On a red-team corpus it catches 37 of 73 injection attempts and holds 4 of 50 ordinary notes; paraphrases, languages it has no patterns for (it reads English, Thai, Chinese, Japanese, Spanish, French and German) and encodings still get past it. It never blocks, and what protects you is that only a person releases what it holds.
 
 **Instead:** read what agents and teammates add. Review candidates yourself before accepting them, and read `.memctrl/memory.md` diffs in pull requests as you would code. See [Review candidates](/memctrl/guides/review-candidates/) and the [security model](/memctrl/security/model/).
 

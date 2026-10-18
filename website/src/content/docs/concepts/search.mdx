@@ -29,7 +29,7 @@ memctrl query "kube deploys"
 
 - **Rare words outweigh common ones.** Each word is scored with BM25 over an FTS5 index of the memory text and its tags (tags count half).
 - **Word forms match.** Porter stemming matches `testing` to `tests` and `deploying` to `deploys`. Common English words such as *the*, *how* or *what* are dropped.
-- **Coverage counts.** A memory that matches more of the query's terms scores higher.
+- **Coverage counts.** A memory that matches more of the query's terms scores higher. An identifier written in the query, such as `reset-ledger` or `src/db/ledger.ts`, counts as one more term, which a memory covers only when it holds the identifier whole, its words side by side.
 - **Trust counts.** The score is multiplied by the memory's confidence and by its layer: `project` ×1.5, `user` ×1.2, other layers ×1.0.
 - **Weak matches are dropped.** A result must score at least 35% of the best result. With three or more terms in the query, a memory must also match at least 30% of them.
 
@@ -41,17 +41,21 @@ Only [eligible memories](/memctrl/concepts/memories/#which-memories-reach-an-age
 | --- | --- | --- |
 | A stem | `testing` finds "Integration tests need Docker running" | `testing` |
 | An alias | `prod db` finds "The production database runs Postgres 16" | `prod → production (alias)` |
-| Part of a word | `kube` finds "Kubernetes" | `kube (substring)` |
+| An alias in Thai text | `ดีพลอยขึ้นโปรดักชัน` finds "Deploys to production need an approval from the on-call lead" | `ดีพลอย → deploy (alias)` |
+| A whole identifier | `reset-ledger` finds "Never run reset-ledger on a live account" | `reset-ledger (identifier)`, besides `reset` and `ledger` |
+| The start of a word | `kube` finds "Kubernetes", and `connections` finds "maxConnections" | `kube (substring)` |
 | A word written against Thai or Chinese | `postgresql` finds "订单服务使用PostgreSQL存储订单" | `postgresql (glued)` |
 | Thai, Chinese, Japanese or Korean text | matched by character trigrams | `<text> (k/n)` |
 
-A word with no whole-word or alias match retries as a substring (three characters or more), at a lower weight. A word written straight against Thai or Chinese text is found (`Redis` in `ใช้Redisเป็นคิว`), but not inside another word: `Redis` doesn't find `Redisson`. How Thai and CJK text is searched is covered in [Other languages](/memctrl/guides/other-languages/).
+A word with no whole-word or alias match retries as a substring (three characters or more), at a lower weight, and counts only where it starts a word in the memory, camelCase humps included: `lag` doesn't find "flagged". A word written straight against Thai or Chinese text is found (`Redis` in `ใช้Redisเป็นคิว`), but not inside another word: `Redis` doesn't find `Redisson`. How Thai and CJK text is searched is covered in [Other languages](/memctrl/guides/other-languages/).
 
 ### Aliases
 
 Synonym groups let a word find the others in its group. These ship built in:
 
 `db`/`database` · `auth`/`authentication` · `prod`/`production` · `k8s`/`kubernetes` · `repo`/`repository` · `config`/`configuration` · `env`/`environment` · `deps`/`dependencies` · `js`/`javascript` · `ts`/`typescript` · `pg`/`postgres`/`postgresql`
+
+Since 2.8, the built-in groups also hold the Thai words developers use for 37 technical terms, loanwords and plain Thai alike: ดีพลอย for deploy, ฐานข้อมูล and ดาต้าเบส for database, โปรดักชัน for production, ลบ for delete, รหัสผ่าน for password, and so on. A Thai question finds an English memory through them, and an English question a Thai one; [Other languages](/memctrl/guides/other-languages/#thai-and-english-for-the-same-thing) has the list. Business words such as ลูกค้า (customer) stay out, because they mean too many things.
 
 Add the names your team uses interchangeably in `.memoryrc`:
 
@@ -101,7 +105,8 @@ builtin_generic = true                # false switches off the built-in list
 | --- | --- |
 | `word` | A whole word, after stemming |
 | `a → b (alias)` | The query word `a` matched through its alias `b` |
-| `word (substring)` | Part of a longer word |
+| `a-b (identifier)` | The query's identifier `a-b`, held whole by the memory |
+| `word (substring)` | The start of a longer word |
 | `word (glued)` | A whole word written against Thai or CJK text |
 | `ณ (standalone)` | A lone Thai-script letter standing apart, not inside a word |
 | `word (generic)` | A topic-free word: it ranks, but can't qualify a memory alone |
@@ -134,7 +139,7 @@ With search by meaning on, `semantic`, `vector_hits:N`, `semantic_unavailable: <
 
 A search reads from a snapshot and never takes the write lock, so it answers while another process is writing. Afterwards, as best-effort bookkeeping that is skipped rather than waited for when the store is busy, it:
 
-- counts an access for each memory it returned, which nudges that memory up in the brief;
+- counts an access for each memory it returned, which nudges that memory up in the brief, except a memory found only through the start of longer words (`(substring)` labels);
 - records provenance (method `lexical_bm25`) with memory ids and `why`, not memory text;
 - caches the result ids for five minutes, bound to the store's revision, the query, layer, limit and retrieval settings.
 
@@ -160,5 +165,7 @@ The same author wrote that suite and the retriever, so treat these as regression
 | Thai team: right answer first, on answerable queries | 0.93 |
 | Held-out vague questions, never used for tuning | 0.92 |
 | English mirror: vague and off-topic questions answered with nothing | 0.92 |
+
+A suite of Thai and English notes asked about in the other language, by identifier and vaguely ships beside them (`bilingual.json`, 16 memories, 23 questions). The retriever's author wrote it for 2.8, so it is a regression floor too: every answer is in the top 5 (2.7.0: 53%), 94% come first, and every question that should get nothing does (2.7.0: 67%).
 
 Paraphrases that share no words with the memory, such as "which ORM did we pick", are the known limit of word search: 3 of 6 are found. Aliases close the gaps that matter to your team, and [search by meaning](/memctrl/concepts/search-by-meaning/) closes more. To measure search on your own memories, see [Measure retrieval](/memctrl/guides/measure-retrieval/).

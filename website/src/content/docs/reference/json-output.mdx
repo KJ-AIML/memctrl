@@ -49,6 +49,8 @@ Each entry:
 | `section` | string | Where the Markdown lists it. See the next table. |
 | `stale` | string | Only for a memory whose cited code changed or vanished: the first such citation and its status, such as `src/db.rs changed`, with `(+N more)` when there are others. |
 | `caution` | string | Only for a memory a person released after the guard held it: `looked like instructions; a person released it`. |
+| `pinned` | boolean | Only present, as `true`, for a memory a person pinned (`memctrl pin`). Pinned entries come first. |
+| `saved_by_agent` | boolean | Only present, as `true`, for a decision an agent saved that no person confirmed. Its `section` is `facts`. |
 
 | `section` | Heading in the Markdown | What goes there |
 | --- | --- | --- |
@@ -146,8 +148,9 @@ Each entry:
 | `caution` | string | Only when a person released it after the guard held it, as in the brief. |
 | `in_brief` | boolean | Only present, as `true`, when the session brief already showed it. |
 | `from_user` | boolean | Only present, as `true`, for the person's own preference or note. |
+| `saved_by_agent` | boolean | Only present, as `true`, for a decision an agent saved that no person confirmed. |
 
-`from_user` is `true` for a `user`-layer assertion or observation from a source in `trusted_sources` that isn't disputed, stale or released after a guard hold. In the Markdown each entry gets a label: `[from the user]` when `from_user` is set, otherwise `[decision]`, `[lesson]` for `derived_lesson`, `[unconfirmed]` for `hypothesis`, and `[fact]` for assertions and observations. Notes after the id say `disputed`, `stale: …`, the caution, or `also in the session brief`.
+`from_user` is `true` for a `user`-layer assertion or observation from a source in `trusted_sources` that isn't disputed, stale or released after a guard hold. In the Markdown each entry gets a label: `[from the user]` when `from_user` is set, `[note]` when `saved_by_agent` is, otherwise `[decision]`, `[lesson]` for `derived_lesson`, `[unconfirmed]` for `hypothesis`, and `[fact]` for assertions and observations. Notes after the id say `disputed`, `stale: …`, the caution, `decision saved by an agent, not confirmed`, or `also in the session brief`.
 
 `memctrl recall --format json "Can we drop SQLx and move to Diesel for the billing service? Keep the pull request small."`, the Markdown's header shortened:
 
@@ -219,8 +222,9 @@ With `--format json`, recall doesn't read stdin, so it keeps no session record. 
 | Label in `matched` | Meaning |
 | --- | --- |
 | `word` | The word matched, or a word with the same stem. |
-| `word → alias (alias)` | The query word matched through its synonym, such as `production → prod (alias)`. |
-| `word (substring)` | Part of a word matched after the whole word found nothing, such as `postg (substring)`. |
+| `word → alias (alias)` | The query word matched through its synonym, such as `production → prod (alias)` or `ดีพลอย → deploy (alias)`. |
+| `a-b (identifier)` | The memory holds the query's identifier whole, its words side by side, such as `reset-ledger (identifier)`. Listed besides the words themselves. |
+| `word (substring)` | The start of a longer word matched after the whole word found nothing, such as `postg (substring)`. Only where a word starts, camelCase humps included. |
 | `word (glued)` | A whole word found written against Thai or CJK text. |
 | `letter (standalone)` | A single Thai-script letter found standing on its own. |
 | `word (generic)` | A topic-free word: it helps ranking but can't make a memory match by itself. |
@@ -331,6 +335,22 @@ A vague question returns nothing and says why:
 ```
 
 `memctrl add --llm`, which can save several memories at once, answers `{"memory_ids":[…],"status":"stored","quarantined":<count>}`.
+
+## Review responses
+
+[`memctrl accept`](/memctrl/reference/cli/accept/) answers `{"id":…,"action":"accept","status":"updated"}`, with `released` (the guard and import tags) when a person released a held memory, `cleared` when a disputed memory became unverified again, `confirmed` (`"decision saved by an agent"`) when a person confirmed an agent's decision, and `unconfirmed` (how to confirm it) when an agent's candidate decision was accepted over MCP and stays a note:
+
+```json
+{"id":"ce3bde30-2d28-4a41-925f-d4dc25edc6a0","action":"accept","status":"updated","confirmed":"decision saved by an agent"}
+```
+
+[`memctrl pin`](/memctrl/reference/cli/pin/) and [`memctrl unpin`](/memctrl/reference/cli/unpin/) answer with the memory, whether it is now pinned, and whether that changed anything:
+
+```json
+{"id":"8401747a-502a-4562-8e39-ed56569deae2","pinned":true,"changed":true}
+```
+
+`memctrl show` includes `pinned_at` and `confirmed_at` in the memory, `null` when unset.
 
 ## Errors and warnings
 

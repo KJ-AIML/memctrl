@@ -123,6 +123,104 @@ fn lifecycle_and_command_arguments() {
     serde_json::from_slice::<Value>(&std::fs::read(dir.path().join("spans.json")).unwrap())
         .unwrap();
 }
+/// Reading never grows the store: the hooks and commands that only show something record no
+/// timing span, while commands that change memories do.
+#[test]
+fn reading_records_no_spans() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    success(
+        &dir,
+        &["add", "Deploys need an approval from the on-call lead"],
+    );
+    let spans = || {
+        success(&dir, &["otel-stats"])["total_spans"]
+            .as_u64()
+            .unwrap()
+    };
+    let before = spans();
+    for args in [
+        vec!["context"],
+        vec!["recall", "how do deploys get approved here"],
+        vec!["stats"],
+        vec!["timeline"],
+        vec!["heatmap"],
+        vec!["list"],
+        vec!["doctor"],
+        vec!["tree"],
+        vec!["spans"],
+    ] {
+        let out = invoke(&dir, &args);
+        assert!(out.status.success(), "{args:?}");
+    }
+    assert_eq!(spans(), before);
+    success(&dir, &["add", "Releases go out on Thursdays"]);
+    assert_eq!(spans(), before + 1);
+}
+
+/// Pins put a memory ahead of everything an agent saved, so only a person sets or clears them:
+/// an agent's shell has no terminal.
+#[test]
+fn only_a_person_pins() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let id = success(&dir, &["add", "Never deploy on Fridays"])["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for verb in ["pin", "unpin"] {
+        let out = invoke(&dir, &[verb, &id[..8]]);
+        assert!(!out.status.success());
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains("only a person can"), "{stderr}");
+    }
+    assert!(success(&dir, &["show", &id])["memory"]["pinned_at"].is_null());
+}
+
+/// A decision an agent saves is a note in the brief until a person confirms it at a terminal.
+#[test]
+fn only_a_person_confirms_an_agents_decision() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let out = common::memctrl()
+        .current_dir(dir.path())
+        .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
+        .env("CLAUDECODE", "1")
+        .args([
+            "add",
+            "Retry webhooks at most 3 times",
+            "--claim-type",
+            "decision",
+            "--layer",
+            "project",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = serde_json::from_slice::<Value>(&out.stdout).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let brief = String::from_utf8(invoke(&dir, &["context"]).stdout).unwrap();
+    assert!(
+        brief.contains("decision saved by an agent, not confirmed"),
+        "{brief}"
+    );
+    let refused = invoke(&dir, &["accept", &id[..8]]);
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("is a decision an agent saved; only a person can confirm it"),
+        "{stderr}"
+    );
+    assert!(success(&dir, &["show", &id])["memory"]["confirmed_at"].is_null());
+}
+
 #[test]
 fn invalid_input_is_nonzero_and_sanitized() {
     let dir = TempDir::new().unwrap();

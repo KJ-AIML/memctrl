@@ -55,7 +55,7 @@ Look up anything else with `memctrl query "<specific terms>"`; names, paths and 
 Save new durable facts with `memctrl add "<fact>" --layer project` (add `--claim-type decision` for decisions and `--cite path:line` for the code they describe).
 ```
 
-Each entry ends with the memory's short id, which every command accepts, and notes such as `verified`, `disputed` or `stale: <file> changed`.
+Each entry ends with the memory's short id, which every command accepts, and notes such as `pinned`, `verified`, `disputed`, `stale: <file> changed` or `decision saved by an agent, not confirmed`.
 
 ## Which memories it chooses
 
@@ -69,7 +69,17 @@ The brief reads eligible memories from the `project` and `user` layers (change t
 | Reinforcement | up to ×1.3, growing with how often search has returned the memory | Memories people keep looking up |
 | Stale or released | ×0.5 | Cited code changed, or the guard held it and a person released it |
 
-Ties go to the newest memory. Within each section, entries appear highest priority first.
+A decision an agent saved and no person confirmed counts as an assertion (×1.0), since it is shown as one ([below](#decisions-an-agent-saved)). Ties go to the newest memory, so in a store where every memory has the same trust, the newest win. Within each section, entries appear highest priority first.
+
+### Pinned memories
+
+To keep a memory in every brief whatever its priority, pin it in your terminal:
+
+```bash
+memctrl pin 8401747a
+```
+
+Pinned memories come before every other memory, in their usual sections, marked `pinned`, and the header says "1 pinned by the user first, then highest trust". `memctrl unpin <id>` takes the pin away. Only a person pins: like releasing a held memory, both commands need a terminal, so an agent's shell can't run them, and each one is written to the audit log (`memctrl audit`). Only memories in use can be pinned. Pins order the brief and nothing else: search ignores them, and exports don't carry them.
 
 ## The token budget
 
@@ -85,10 +95,11 @@ A store full of decisions could push the warnings out. To prevent that, the brie
 
 <Steps>
 
-1. Up to 5 memories to check before trusting, using at most 30% of the budget.
-2. Up to 3 memories from the user layer, using at most 15%.
-3. Every remaining memory in priority order, with no section taking more than 40% of the budget.
-4. Whatever still fits, in priority order, once every section has had its turn.
+1. Pinned memories, using at most 50% of the budget.
+2. Up to 5 memories to check before trusting, using at most 30% of the budget.
+3. Up to 3 memories from the user layer, using at most 15%.
+4. Every remaining memory in priority order, with no section taking more than 40% of the budget.
+5. Whatever still fits, in priority order, once every section has had its turn.
 
 </Steps>
 
@@ -99,13 +110,23 @@ Entries are grouped into sections, always in this order. A section with no entri
 | Section | What goes there | `section` in JSON |
 | --- | --- | --- |
 | From the user | User-layer facts and observations from a trusted source | `user` |
-| Decisions | Decisions, from any layer | `decisions` |
-| Facts and conventions | Assertions and observations | `facts` |
+| Decisions | Decisions, from any layer, that you saved or confirmed | `decisions` |
+| Facts and conventions | Assertions and observations, and decisions an agent saved that no person confirmed | `facts` |
 | Lessons | Derived lessons | `lessons` |
 | Open hypotheses | Hypotheses | `hypotheses` |
 | Check before trusting | Disputed memories, memories whose cited code changed or disappeared, and memories a person released after the guard held them | `check_first` |
 
 A memory under "Check before trusting" leaves its usual section, so a stale decision is never presented as settled.
+
+### Decisions an agent saved
+
+The header asks agents to stop and ask before going against a recorded decision. Any agent can save one, with `memctrl add --claim-type decision` in its shell or over MCP, so a mistaken or planted decision could block the next session. A decision from a source the guard doesn't trust (`claude-code`, `codex`, `cursor`, `mcp`, `import`, ...) is therefore shown under "Facts and conventions", marked `decision saved by an agent, not confirmed`, until a person confirms it, and the header says how many there are. Confirm one in your terminal:
+
+```bash
+memctrl accept ce3bde30
+```
+
+memctrl shows the decision and asks you to type its id back, then records the confirmation (`confirmed_at`) and writes it to the audit log. From then on it appears under Decisions. Decisions you saved yourself (source `manual`, `user` or `cli`) count from the start.
 
 ## The header
 
@@ -129,7 +150,8 @@ Below the rules, the header adds a line for each of these:
 | Line | When |
 | --- | --- |
 | ``Look up anything else with `memctrl query "<specific terms>"`…`` | Everything eligible fit |
-| ``Not shown for space (search with `memctrl query`): 1 note from the user, 1 fact or convention, 1 open hypothesis.`` | Something didn't fit; memories to check are counted as "N to check before trusting (run `memctrl stale`)" |
+| ``Not shown for space (newer first at equal trust; search with `memctrl query`): 1 note from the user, 1 fact or convention, 1 open hypothesis.`` | Something didn't fit; memories to check are counted as "N to check before trusting (run `memctrl stale`)" |
+| ``1 decision saved by an agent is shown as a note until the user confirms it (`memctrl accept <id>`).`` | An agent saved decisions no person confirmed |
 | ``1 memory waits for review; only the user can accept it (`memctrl candidates`).`` | Candidates wait for review |
 | ``1 saved memory looks like instructions and is left out until the user reviews it (`memctrl doctor`).`` | The guard withheld an accepted memory |
 
@@ -143,7 +165,7 @@ It leaves out:
 
 - user-layer decisions, which stay under Decisions;
 - anything disputed, stale or released by a person after the guard held it, which goes under "Check before trusting";
-- what an agent saved: over MCP (source `mcp`) or in Claude Code's shell (source `claude-code`), which stays facts;
+- what an agent saved: over MCP (source `mcp`) or in an agent's shell (source `claude-code`, `codex` ...), which stays facts;
 - plain-text imports (source `import`), which stay facts too.
 
 You add to it by starting a prompt with `remember:` in Claude Code, or with `memctrl add --layer user` in your own terminal. This is attribution, not proof; see [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).

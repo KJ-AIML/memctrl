@@ -310,16 +310,20 @@ fn sanitizer_redacts_each_secret_type_and_leaves_prose_alone() {
     }
 }
 
-/// Follow-up 1: numbers inside JSON *content* are user data and get redacted; numeric fields in
-/// structured output (timestamps, counts) are schema values and stay numbers.
+/// Follow-up 1: numbers inside JSON *content* are user data and get redacted, read with their
+/// key as context; numeric fields in structured output (timestamps, counts) are schema values
+/// and stay numbers.
 #[test]
 fn numbers_in_json_content_are_redacted_but_structured_numbers_survive() -> anyhow::Result<()> {
     let safe = sanitize_text(
-        r#"{"phone": 5551234567, "count": 3, "items": [5551234567], "note": "fine"}"#,
+        r#"{"phone": 5551234567, "mobileNumber": 5551234567, "count": 3, "items": ["0812345678"], "run_id": 39057490023, "note": "fine"}"#,
     );
     assert!(!safe.contains("5551234567"), "{safe}");
+    assert!(!safe.contains("812345678"), "{safe}");
     assert!(
-        safe.contains("\"count\":3") && safe.contains("fine"),
+        safe.contains("\"count\":3")
+            && safe.contains("\"run_id\":39057490023")
+            && safe.contains("fine"),
         "{safe}"
     );
     let store = MemoryStore::open(":memory:")?;
@@ -334,6 +338,38 @@ fn numbers_in_json_content_are_redacted_but_structured_numbers_survive() -> anyh
     let output = json!({"timestamp": 1728646000.25, "duration_ms": 12.5, "count": 2});
     assert_eq!(sanitize_value(&output), output);
     Ok(())
+}
+
+/// 2.8.0: a bare run of 10 to 12 digits is a phone number only with context. 2.7.0 redacted CI
+/// run ids, order numbers and timestamps, so notes lost the number they were about.
+#[test]
+fn bare_numbers_are_phone_numbers_only_in_context() {
+    for kept in [
+        "Actions run 39057490023 on PR 91 passed",
+        "order ref 1234567890 was refunded",
+        "issue #1234567890 tracks the flake",
+        "build-0123456789 failed on arm64",
+        "the cache entry expires at 1734567890",
+        "job 0123456789 timed out",
+    ] {
+        assert_eq!(sanitize_text(kept), kept);
+    }
+    for phone in [
+        "call 5551234567 tomorrow",
+        "Phone: 5551234567",
+        "on-call phone is 0812345678",
+        "0812345678 answers after six",
+        "โทร 0812345678 ได้ตลอด",
+        "เบอร์ติดต่อ: 0812345678",
+        "ติดต่อคุณเอที่ 0812345678",
+    ] {
+        let out = sanitize_text(phone);
+        assert!(out.contains("[REDACTED_PHONE_INTL]"), "{phone} -> {out}");
+        assert!(
+            !out.contains("5551234567") && !out.contains("0812345678"),
+            "{out}"
+        );
+    }
 }
 
 /// Follow-up 2: a secret value is redacted whole, even when it contains `,` `;` or `}`.

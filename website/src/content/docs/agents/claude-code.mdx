@@ -100,7 +100,7 @@ Claude Code sets `CLAUDECODE=1` for every command it runs. When memctrl sees it,
 {"id":"4e016628-6dc9-43b3-a074-73c043e487f9","status":"stored","source":"claude-code","source_note":"recorded as claude-code, not user: an agent's writes count as the agent's, and only the user writes as themselves (by starting a prompt with `remember:`, or with `memctrl add` in their own terminal)"}
 ```
 
-So what the agent saves shows in the brief as facts, and "From the user" holds only what you saved: with `remember:`, or with `memctrl add` in a terminal of your own. Commands typed with Claude Code's `!` prefix run in its shell, so expect them to count as the agent's too. More in [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
+So what the agent saves shows in the brief as facts, and "From the user" holds only what you saved: with `remember:`, or with `memctrl add` in a terminal of your own. A decision the agent saves shows as a note too, until you confirm it with `memctrl accept <id>` in your terminal ([decisions an agent saved](/memctrl/concepts/session-brief/#decisions-an-agent-saved)). Commands typed with Claude Code's `!` prefix run in its shell, so expect them to count as the agent's too. More in [who counts as the user](/memctrl/concepts/guard-and-trust/#who-counts-as-the-user).
 
 ## Session records
 

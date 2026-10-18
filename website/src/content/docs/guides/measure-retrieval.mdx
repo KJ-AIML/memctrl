@@ -171,7 +171,7 @@ Retrieval scores say whether the right memory comes back, not whether the agent 
 
 The memctrl repository ships the suites behind its published numbers:
 
-- [`tests/fixtures/eval/`](https://github.com/KJ-AIML/memctrl/tree/main/tests/fixtures/eval): suites written by an independent reviewer, a Thai team (56 memories, 104 questions in 12 kinds), a held-out set of questions never used for tuning, and an English mirror of the vague questions. CI keeps floors on them.
+- [`tests/fixtures/eval/`](https://github.com/KJ-AIML/memctrl/tree/main/tests/fixtures/eval): suites written by an independent reviewer, a Thai team (56 memories, 104 questions in 12 kinds), a held-out set of questions never used for tuning, and an English mirror of the vague questions; plus `bilingual.json` (16 memories, 23 questions), written for 2.8 by memctrl's author: Thai and English notes asked about in the other language, by identifier, and vaguely. CI keeps floors on them.
 - [`bench/retrieval/suites/`](https://github.com/KJ-AIML/memctrl/tree/main/bench/retrieval/suites): those suites plus `builtin.json` and `realdev.json`, 77 memories and 60 questions from a real project.
 
 Download one and run it with `--file` to see how a suite with many kinds of questions is put together. [Benchmarks](/memctrl/benchmarks/overview/) has the results for each.

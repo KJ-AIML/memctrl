@@ -262,6 +262,64 @@ fn aliases_expand_queries_and_explain_themselves() {
 }
 
 #[test]
+fn thai_and_english_names_for_one_thing_find_each_other() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    let deploy = add(
+        &store,
+        "project",
+        "Deploys to production need an approval from the on-call lead",
+    );
+    let backup = add(&store, "project", "ห้ามลบฐานข้อมูลบนโปรดักชันโดยไม่มีแบ็กอัป");
+
+    // Thai loanwords inside a run find the English note...
+    let found = retriever::retrieve(&mut store, "ดีพลอยขึ้นโปรดักชันต้องขออนุมัติใครไหม", None, 5).unwrap();
+    assert_eq!(found.memory_ids.first(), Some(&deploy), "{:?}", found.why);
+    assert!(found.why[0]
+        .matched
+        .contains(&"ดีพลอย → deploy (alias)".to_string()));
+
+    // ...and English words find the Thai one.
+    let found = retriever::retrieve(&mut store, "delete production database", None, 5).unwrap();
+    assert_eq!(found.memory_ids.first(), Some(&backup), "{:?}", found.why);
+    assert_eq!(found.why[0].coverage, 1.0);
+    assert!(found.why[0]
+        .matched
+        .contains(&"database → ฐานข้อมูล (alias)".to_string()));
+}
+
+#[test]
+fn a_named_identifier_outranks_a_scrap_of_thai() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    let guard = add(
+        &store,
+        "project",
+        "ห้ามรัน reset-ledger กับบัญชีจริง จนกว่าจะส่งออกข้อมูลก่อน",
+    );
+    add(
+        &store,
+        "project",
+        "ปิดบัญชีลูกค้า: ส่งออกข้อมูลคืนลูกค้า แล้วล้างข้อมูล ledger ของบัญชีทั้งหมดภายใน 30 วัน",
+    );
+    for query in ["ล้างข้อมูลบัญชีด้วย reset-ledger ได้ไหม", "ล้างบัญชีด้วย reset-ledger"]
+    {
+        let found = retriever::retrieve(&mut store, query, None, 5).unwrap();
+        assert_eq!(
+            found.memory_ids.first(),
+            Some(&guard),
+            "{query}: {:?}",
+            found.why
+        );
+        assert!(found.why[0]
+            .matched
+            .contains(&"reset-ledger (identifier)".to_string()));
+        // The other note holds one word of it, not the whole identifier.
+        assert!(found.why[1..]
+            .iter()
+            .all(|why| !why.matched.iter().any(|m| m.ends_with("(identifier)"))));
+    }
+}
+
+#[test]
 fn invalid_alias_configuration_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     let rc = dir.path().join(".memoryrc");
@@ -286,6 +344,35 @@ fn prefixes_and_glued_words_fall_back_to_substrings() {
     assert!(result.why[0]
         .matched
         .contains(&"kube (substring)".to_string()));
+}
+
+#[test]
+fn a_fragment_inside_a_word_is_not_a_match() {
+    let mut store = MemoryStore::open(":memory:").unwrap();
+    add(
+        &store,
+        "project",
+        "Retry storms get flagged by the rate limiter",
+    );
+    let pool = add(
+        &store,
+        "project",
+        "Raise maxConnections to 50 before the load test",
+    );
+    for query in ["lag", "Kafka consumer lag"] {
+        let found = retriever::retrieve(&mut store, query, None, 5).unwrap();
+        assert!(found.facts.is_empty(), "{query}: {:?}", found.why);
+    }
+    // Where a word starts, camelCase humps included, still counts...
+    let found = retriever::retrieve(&mut store, "connections", None, 5).unwrap();
+    assert_eq!(found.memory_ids, vec![pool.clone()]);
+    assert_eq!(found.why[0].matched, ["connections (substring)"]);
+    // ...but a find through part of a word isn't a use, so it can't lift the note in the brief.
+    let memory = store.get_memory(&pool, true).unwrap().unwrap();
+    assert_eq!(memory.access_count, 0);
+    retriever::retrieve(&mut store, "maxconnections load test", None, 5).unwrap();
+    let memory = store.get_memory(&pool, true).unwrap().unwrap();
+    assert_eq!(memory.access_count, 1);
 }
 
 #[test]

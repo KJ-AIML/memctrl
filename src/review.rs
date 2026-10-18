@@ -3,7 +3,7 @@
 //! could also accept it, review would protect nothing, so only a person at a terminal can
 //! release them: MCP refuses, and the CLI shows the text and asks for the id typed back.
 use crate::guard::{self, Policy};
-use crate::model::{LifecycleState, Memory};
+use crate::model::{ClaimType, LifecycleState, Memory};
 use crate::store::MemoryStore;
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Value};
@@ -60,6 +60,15 @@ pub fn withheld(memory: &Memory, policy: &Policy) -> Vec<String> {
         .collect()
 }
 
+/// A decision an agent saved (its source isn't one the guard trusts) that no person has
+/// confirmed. The brief and recall show it as a note, so it can't make an agent stop and ask the
+/// way the team's decisions do.
+pub fn unconfirmed_decision(memory: &Memory, policy: &Policy) -> bool {
+    memory.claim_type == ClaimType::Decision
+        && memory.confirmed_at.is_none()
+        && !policy.trusted_sources.contains(&memory.source)
+}
+
 /// Rejects tags a caller may not set: they would mark a memory as held, or fake a release.
 pub fn check_tags(tags: &[String]) -> Result<()> {
     if let Some(tag) = tags
@@ -82,6 +91,8 @@ pub fn accept(store: &MemoryStore, id: &str, release: Release) -> Result<Value> 
 
 /// Accepts a memory. One that is held for review, or that the brief withholds because the guard
 /// flags it now, needs `Release::Confirmed`; releasing a withheld memory tags it `guard:released`.
+/// A confirmed accept of a decision an agent saved also makes it the team's; unconfirmed, such a
+/// decision can still leave the candidates but stays a note.
 pub fn accept_with(
     store: &MemoryStore,
     id: &str,
@@ -102,6 +113,15 @@ pub fn accept_with(
             short(id)
         );
     }
+    let decision = unconfirmed_decision(&memory, policy);
+    if decision && release == Release::Refuse && memory.lifecycle_state == LifecycleState::Accepted
+    {
+        bail!(
+            "{} is a decision an agent saved; only a person can confirm it: tell the user to run `memctrl accept {}` in a terminal",
+            short(id),
+            short(id)
+        );
+    }
     let cleared = store.accept_memory(id)?;
     if !flagged.is_empty() {
         store.add_tag(id, RELEASED_TAG)?;
@@ -113,6 +133,15 @@ pub fn accept_with(
     }
     if cleared {
         output["cleared"] = json!("disputed");
+    }
+    if decision && release == Release::Confirmed {
+        store.confirm_decision(id)?;
+        output["confirmed"] = json!("decision saved by an agent");
+    } else if decision {
+        output["unconfirmed"] = json!(format!(
+            "a decision an agent saved stays a note until the user confirms it with `memctrl accept {}` in a terminal",
+            short(id)
+        ));
     }
     Ok(output)
 }
@@ -136,6 +165,32 @@ pub fn confirm_because(
         "memctrl: {id} is held for review ({})",
         reasons.join(", ")
     )?;
+    ask(memory, "accept", input, output)
+}
+
+/// Asks the person at the terminal to confirm a decision an agent saved, which makes it one of
+/// the team's decisions.
+pub fn confirm_decision(
+    memory: &Memory,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<bool> {
+    writeln!(
+        output,
+        "memctrl: {} is a decision an agent saved. Confirmed, it becomes one of the team's: agents ask before going against it.",
+        short(&memory.id)
+    )?;
+    ask(memory, "confirm", input, output)
+}
+
+/// Shows the memory, its text with invisible characters spelled out, and reads its id back.
+fn ask(
+    memory: &Memory,
+    verb: &str,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<bool> {
+    let id = short(&memory.id);
     writeln!(
         output,
         "  {} · {} layer · source {} · created {}",
@@ -146,7 +201,7 @@ pub fn confirm_because(
     }
     write!(
         output,
-        "Type {id} to accept it, or anything else to cancel: "
+        "Type {id} to {verb} it, or anything else to cancel: "
     )?;
     output.flush()?;
     let mut answer = String::new();
@@ -221,6 +276,70 @@ mod tests {
         assert!(check_tags(&["guard:x".into()]).is_err());
         assert!(check_tags(&["import:new".into()]).is_err());
         assert!(check_tags(&["db".into()]).is_ok());
+    }
+
+    #[test]
+    fn a_decision_an_agent_saved_needs_a_person_to_confirm_it() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        let decision = |source: &str, lifecycle| {
+            store
+                .insert_memory(NewMemory {
+                    content: "Retry webhooks at most 3 times".into(),
+                    claim_type: ClaimType::Decision,
+                    source: source.into(),
+                    lifecycle_state: lifecycle,
+                    ..Default::default()
+                })
+                .unwrap()
+        };
+        let policy = Policy::default();
+        let get = |id: &str| store.get_memory(id, true).unwrap().unwrap();
+
+        let saved = decision("claude-code", LifecycleState::Accepted);
+        assert!(unconfirmed_decision(&get(&saved), &policy));
+        let error = accept(&store, &saved, Release::Refuse)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("only a person can confirm it"), "{error}");
+        let out = accept(&store, &saved, Release::Confirmed).unwrap();
+        assert_eq!(out["confirmed"], "decision saved by an agent");
+        assert!(get(&saved).confirmed_at.is_some());
+        assert!(!unconfirmed_decision(&get(&saved), &policy));
+        assert_eq!(store.audit(1).unwrap()[0]["event"], "confirm");
+
+        // An agent may move its own proposal out of the candidates, but it stays a note.
+        let proposed = decision("mcp", LifecycleState::Candidate);
+        let out = accept(&store, &proposed, Release::Refuse).unwrap();
+        assert!(out["unconfirmed"]
+            .as_str()
+            .unwrap()
+            .contains("memctrl accept"));
+        assert!(unconfirmed_decision(&get(&proposed), &policy));
+
+        // The person's own decisions, and anything that isn't a decision, need nothing.
+        assert!(!unconfirmed_decision(
+            &get(&decision("manual", LifecycleState::Accepted)),
+            &policy
+        ));
+        let fact = store
+            .insert_memory(NewMemory {
+                content: "CI runs on Node 22".into(),
+                source: "claude-code".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(!unconfirmed_decision(&get(&fact), &policy));
+
+        let mut shown = Vec::new();
+        assert!(confirm_decision(
+            &get(&proposed),
+            &mut Cursor::new(format!("{}\n", &proposed[..8])),
+            &mut shown
+        )
+        .unwrap());
+        let shown = String::from_utf8(shown).unwrap();
+        assert!(shown.contains("is a decision an agent saved"), "{shown}");
+        assert!(shown.contains("to confirm it"), "{shown}");
     }
 
     #[test]

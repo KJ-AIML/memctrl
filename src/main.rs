@@ -347,7 +347,7 @@ enum Command {
     Candidates(Listing),
     /// Inspect a memory, relations and evidence.
     Show { memory_id: String },
-    /// Accept a candidate into active knowledge.
+    /// Accept a candidate into active knowledge, or confirm a decision an agent saved.
     Accept { memory_id: String },
     /// Reject a memory.
     Reject {
@@ -355,6 +355,10 @@ enum Command {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// Pin a memory: the session brief shows it first. Only a person, in a terminal.
+    Pin { memory_id: String },
+    /// Unpin a memory. Only a person, in a terminal.
+    Unpin { memory_id: String },
     /// Show relationship lineage and evidence.
     History { memory_id: String },
     /// Mark a memory as disputed.
@@ -1481,27 +1485,48 @@ async fn execute(
             // it now: only a person at a terminal releases it.
             let mut reasons = review::held_for_review(&memory);
             reasons.extend(review::withheld(&memory, &rules.guard));
-            let release = if reasons.is_empty() {
+            // A decision an agent saved becomes the team's only when a person confirms it.
+            let decision = review::unconfirmed_decision(&memory, &rules.guard);
+            let short = &id[..8.min(id.len())];
+            let release = if reasons.is_empty() && !decision {
                 Release::Refuse
             } else {
                 ensure!(
                     at_terminal(),
-                    "{} is held for review; only a person can release it: run `memctrl accept {}` yourself in a terminal",
-                    &id[..8.min(id.len())],
-                    &id[..8.min(id.len())]
+                    "{short} {}; only a person can {}: run `memctrl accept {short}` yourself in a terminal",
+                    if reasons.is_empty() { "is a decision an agent saved" } else { "is held for review" },
+                    if reasons.is_empty() { "confirm it" } else { "release it" }
                 );
-                ensure!(
-                    review::confirm_because(
-                        &memory,
-                        &reasons,
-                        &mut std::io::stdin().lock(),
-                        &mut std::io::stderr()
-                    )?,
-                    "cancelled; nothing changed"
-                );
+                let (mut stdin, mut stderr) = (std::io::stdin().lock(), std::io::stderr());
+                let confirmed = if reasons.is_empty() {
+                    review::confirm_decision(&memory, &mut stdin, &mut stderr)?
+                } else {
+                    review::confirm_because(&memory, &reasons, &mut stdin, &mut stderr)?
+                };
+                ensure!(confirmed, "cancelled; nothing changed");
                 Release::Confirmed
             };
             review::accept_with(store, &id, release, &rules.guard)?
+        }
+        Command::Pin { memory_id } | Command::Unpin { memory_id } => {
+            let pin = matches!(cli.command, Command::Pin { .. });
+            let verb = if pin { "pin" } else { "unpin" };
+            let id = require_memory(store, memory_id)?;
+            let short = &id[..8.min(id.len())];
+            // Pins outrank everything an agent saved, so only a person sets or clears them.
+            ensure!(
+                at_terminal(),
+                "only a person can {verb} a memory: run `memctrl {verb} {short}` yourself in a terminal"
+            );
+            let memory = store.get_memory(&id, true)?.context("memory not found")?;
+            ensure!(
+                !pin || memory.eligible(),
+                "{short} is not in use ({}, {}), so the brief would never show it",
+                memory.lifecycle_state,
+                memory.verification_state
+            );
+            let changed = store.set_pinned(&id, pin)?;
+            json!({"id": id, "pinned": pin, "changed": changed})
         }
         Command::Reject { memory_id, reason } => {
             let mut args = json!({"id":memory_id,"action":"reject"});
@@ -2145,22 +2170,7 @@ async fn run(cli: Cli) -> Result<()> {
     // Boxed: the future of a function this large would otherwise sit on the main thread's stack.
     let result = Box::pin(execute(&cli, &mut store, &rules, &project, &db)).await?;
     let operation = command_name(&cli.command);
-    if !matches!(
-        &cli.command,
-        Command::Init { .. }
-            | Command::Install { .. }
-            | Command::Spans { .. }
-            | Command::OtelStats
-            | Command::OtelExport { .. }
-            | Command::Agent {
-                command: AgentCommand::Node { persist: false, .. }
-            }
-            | Command::Review {
-                command: ReviewCommand::Heli { persist: false, .. }
-            }
-            | Command::Decay { dry_run: true, .. }
-            | Command::Import { dry_run: true, .. }
-    ) {
+    if records_span(&cli.command) {
         // Best effort: a command whose result is ready never fails or waits on telemetry.
         let elapsed = started.elapsed().as_secs_f64() * 1000.0;
         store.best_effort(|s| telemetry::record(s, operation, elapsed, json!({"interface":"cli"})));
@@ -2192,6 +2202,48 @@ async fn run(cli: Cli) -> Result<()> {
     std::io::stdout().lock().write_all(encoded.as_bytes())?;
     Ok(())
 }
+/// Commands that change the store record how long they took. The hooks and commands that only
+/// show something leave the store as they found it, so reading never grows it.
+fn records_span(command: &Command) -> bool {
+    !matches!(
+        command,
+        Command::Init { .. }
+            | Command::Install { .. }
+            | Command::Context { .. }
+            | Command::Recall { .. }
+            | Command::Stale { .. }
+            | Command::Export { .. }
+            | Command::Check { .. }
+            | Command::Eval { .. }
+            | Command::List(_)
+            | Command::Candidates(_)
+            | Command::Show { .. }
+            | Command::History { .. }
+            | Command::Tree { rebuild: false, .. }
+            | Command::Audit { .. }
+            | Command::Doctor { .. }
+            | Command::Provenance { .. }
+            | Command::Heatmap
+            | Command::Timeline { .. }
+            | Command::Spans { .. }
+            | Command::OtelStats
+            | Command::OtelExport { .. }
+            | Command::Stats
+            | Command::Semantic {
+                command: SemanticCommand::Status
+            }
+            | Command::Agent {
+                command: AgentCommand::Get { .. }
+                    | AgentCommand::List { .. }
+                    | AgentCommand::Node { persist: false, .. }
+            }
+            | Command::Review {
+                command: ReviewCommand::Heli { persist: false, .. }
+            }
+            | Command::Decay { dry_run: true, .. }
+            | Command::Import { dry_run: true, .. }
+    )
+}
 fn command_name(command: &Command) -> &'static str {
     match command {
         Command::Init { .. } => "init",
@@ -2214,6 +2266,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::History { .. } => "history",
         Command::Accept { .. } => "accept",
         Command::Reject { .. } => "reject",
+        Command::Pin { .. } => "pin",
+        Command::Unpin { .. } => "unpin",
         Command::Dispute { .. } => "dispute",
         Command::Refute { .. } => "refute",
         Command::Supersede { .. } => "supersede",

@@ -25,15 +25,17 @@ So the guard never decides alone. It doesn't block, delete or rewrite anything: 
 
 ### Hidden Unicode
 
-Invisible characters have legitimate uses, so the guard allows them where they belong: joiners inside emoji sequences and between letters of non-Latin scripts, zero-width spaces that mark Thai word breaks, variation selectors after emoji, keycaps and kanji, the tag characters in the England, Scotland and Wales flags, direction marks in right-to-left text, and soft hyphens inside words. Next to plain ASCII text, the same characters only hide things, and they are flagged.
+Invisible characters have legitimate uses, so the guard allows them where they belong: joiners inside emoji sequences and between letters of non-Latin scripts, zero-width spaces that mark Thai word breaks (also where a Thai word meets an English one), variation selectors after emoji, keycaps and kanji, the tag characters in the England, Scotland and Wales flags, direction marks in right-to-left text, and soft hyphens inside words. Next to plain ASCII text, the same characters only hide things, and they are flagged.
 
 ### Instruction-like text
 
 Each pattern comes with a reason the review shows:
 
-- **"tells the agent to ignore its instructions"**: "ignore previous instructions", "disregard all rules", "forget everything above". A scoped rule such as "ignore prior rules for generated files" is allowed.
-- **"contains chat role markers"**: fake `<system>` tags, `[INST]`, `<|im_start|>`. A marker in backticks, or named as a tag or token, is a mention and is allowed.
-- **"tries to redefine the agent's role"**: "you are now a …", "from now on, you must …", "new instructions:". "From now on we use pnpm" is allowed.
+- **"tells the agent to ignore its instructions"**: "ignore previous instructions", "disregard all rules", "forget everything above". The same in Thai (ไม่ต้องสนใจคำสั่งก่อนหน้า, เพิกเฉยต่อกฎเดิม, ลืมคำสั่งทั้งหมด), mixed (ignore คำสั่งก่อนหน้า), Chinese, Japanese, Spanish, French and German. A scoped rule such as "ignore prior rules for generated files" or อย่าทำตามคำแนะนำเดิมใน README is allowed.
+- **"contains chat role markers"**: fake `<system>` tags, `[INST]`, `<|im_start|>`, and agent harness tags such as `<system-reminder>`, `<tool_result>` and `<function_calls>`. A marker in backticks, or named as a tag or token, is a mention and is allowed.
+- **"imitates memctrl's own labels"**: `[from the user]`, which the brief asks agents to follow, and memctrl's brief and recall titles. In backticks it is a mention and is allowed.
+- **"poses as a system message"**: a line that opens with `SYSTEM:` or `**SYSTEM NOTICE**:` in capitals. "System: Ubuntu 22.04" is allowed.
+- **"tries to redefine the agent's role"**: "you are now a …", "from now on, you must …", "new instructions:", จากนี้ไปคุณคือ…. "From now on we use pnpm" and จากนี้ไปให้ใช้ pnpm are allowed.
 - **"asks the agent to hide something from the user"**: "don't tell the user about this". A release plan such as "don't tell the user until launch" is allowed.
 - **"pipes a download into a shell"** and **"downloads and runs a script"**: `curl … | sh` (also through `sudo` or `tee`), `bash <(curl …)`, `python3 -c "$(curl …)"`, `iex (irm …)`, and running a file a download just saved. The rustup, uv, nvm and Homebrew installers, at their exact host and path, are allowed.
 - **"decodes and executes a payload"**: `base64 -d` piped into a shell.
@@ -132,7 +134,7 @@ Anyone with push access could have written a committed database's memories, alre
 ## A tripwire, not a filter
 
 <Aside type="caution">
-On a red-team corpus the guard catches 26 of 73 injection attempts, and holds 4 of 50 ordinary notes. Paraphrases, other languages and encodings still get past it. It never blocks, so a false positive costs one review; what protects you is that only a person releases what it holds. Read candidates before accepting them, and see the [security model](/memctrl/security/model/) for what memctrl does and doesn't defend against.
+On a red-team corpus the guard catches 37 of 73 injection attempts (26 before 2.8), and holds 4 of 50 ordinary notes. A Thai set added in 2.8 is judged right in all 29 cases: 12 attempts held, 17 ordinary notes saved. Paraphrases, languages it has no patterns for, and encodings still get past it. It never blocks, so a false positive costs one review; what protects you is that only a person releases what it holds. Read candidates before accepting them, and see the [security model](/memctrl/security/model/) for what memctrl does and doesn't defend against.
 </Aside>
 
 ## Who counts as the user
@@ -159,3 +161,7 @@ trusted_sources = ["user"]
 ```
 
 Then save your own notes with `remember:`, or with `--source user` in your terminal. In `strict` mode, the same setting also holds every other source for review. How the preferences reach the agent is covered in [Session brief](/memctrl/concepts/session-brief/#from-the-user).
+
+## Decisions an agent saved
+
+`trusted_sources` decides a third thing: whose decisions count. The brief tells agents to stop and ask before going against a recorded decision, so a decision from a source the guard doesn't trust is shown as a note, marked `decision saved by an agent, not confirmed` (`[note]` in recall), until you confirm it with `memctrl accept <id>` in your terminal. memctrl shows the decision, asks you to type its id back, records `confirmed_at` and writes `confirm` to the audit log. Over MCP, `accept` refuses to confirm, and accepting an agent's candidate decision leaves it a note. See [Session brief](/memctrl/concepts/session-brief/#decisions-an-agent-saved).
