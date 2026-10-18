@@ -1,0 +1,236 @@
+{
+ "name": "bilingual-clinic",
+ "memories": [
+  {
+   "key": "deploy-approval",
+   "content": "Deploys to production need an approval from the on-call lead",
+   "claim_type": "decision"
+  },
+  {
+   "key": "db-backup",
+   "content": "ห้ามลบฐานข้อมูลบนโปรดักชันโดยไม่มีแบ็กอัป",
+   "claim_type": "decision"
+  },
+  {
+   "key": "token-ttl",
+   "content": "โทเคนของ API หมดอายุทุก 24 ชั่วโมง ต้องรีเฟรชก่อน",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "reset-guard",
+   "content": "ห้ามรัน reset-slots กับคลินิกจริง จนกว่าจะส่งออกตารางนัดก่อน",
+   "claim_type": "decision"
+  },
+  {
+   "key": "closing",
+   "content": "ปิดบัญชีคลินิก: ส่งออกตารางนัดคืนคลินิก แล้วล้างข้อมูล slots ของคลินิกทั้งหมดภายใน 30 วัน",
+   "claim_type": "decision"
+  },
+  {
+   "key": "flagged",
+   "content": "Retry storms get flagged by the rate limiter",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "maxconn",
+   "content": "Raise maxConnections to 50 before the load test",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "cache-ttl",
+   "content": "แคชของหน้าตารางนัดเก็บไว้ 5 นาทีใน Redis",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "sms-queue",
+   "content": "Reminder SMS jobs go through the BullMQ queue, never sent inline",
+   "claim_type": "decision"
+  },
+  {
+   "key": "otp-login",
+   "content": "ล็อกอินด้วยเบอร์โทรต้องมี OTP ทุกครั้ง",
+   "claim_type": "decision"
+  },
+  {
+   "key": "docker-pg",
+   "content": "Local dev runs Postgres in Docker on port 5433",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "admin-edit",
+   "content": "สิทธิ์แอดมินคลินิกแก้ตารางนัดของหมอคนอื่นได้",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "release-day",
+   "content": "รีลีสทุกวันพฤหัส ก่อนบ่ายสาม (freeze at 15:00)",
+   "claim_type": "decision"
+  },
+  {
+   "key": "flags-file",
+   "content": "Feature flags live in config/flags.yaml, not in env vars",
+   "claim_type": "decision"
+  },
+  {
+   "key": "e2e-ci",
+   "content": "เทสต์ e2e รันด้วย Playwright บน CI เท่านั้น",
+   "claim_type": "assertion"
+  },
+  {
+   "key": "double-booking",
+   "content": "Known bug: double booking when two receptionists save the same slot within a second",
+   "claim_type": "assertion"
+  }
+ ],
+ "cases": [
+  {
+   "query": "ดีพลอยขึ้นโปรดักชันต้องขออนุมัติใคร",
+   "expect": [
+    "deploy-approval"
+   ],
+   "kind": "th_to_en"
+  },
+  {
+   "query": "งานส่ง SMS เข้าคิวไหน",
+   "expect": [
+    "sms-queue"
+   ],
+   "kind": "th_to_en"
+  },
+  {
+   "query": "ด็อกเกอร์รัน Postgres พอร์ตอะไร",
+   "expect": [
+    "docker-pg"
+   ],
+   "kind": "th_to_en"
+  },
+  {
+   "query": "คอนฟิกฟีเจอร์แฟล็กอยู่ไฟล์ไหน",
+   "expect": [
+    "flags-file"
+   ],
+   "kind": "th_to_en"
+  },
+  {
+   "query": "บั๊กจองซ้ำเกิดตอนไหน",
+   "expect": [
+    "double-booking"
+   ],
+   "kind": "th_to_en"
+  },
+  {
+   "query": "delete production database",
+   "expect": [
+    "db-backup"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "API tokens expire",
+   "expect": [
+    "token-ttl"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "how long is the cache kept",
+   "expect": [
+    "cache-ttl"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "login OTP",
+   "expect": [
+    "otp-login"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "admin permission",
+   "expect": [
+    "admin-edit"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "e2e tests on CI",
+   "expect": [
+    "e2e-ci"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "which day do we release",
+   "expect": [
+    "release-day"
+   ],
+   "kind": "en_to_th"
+  },
+  {
+   "query": "ล้างข้อมูลคลินิกด้วย reset-slots ได้ไหม",
+   "expect": [
+    "reset-guard"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "reset-slots",
+   "expect": [
+    "reset-guard"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "maxConnections",
+   "expect": [
+    "maxconn"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "config/flags.yaml",
+   "expect": [
+    "flags-file"
+   ],
+   "kind": "identifier"
+  },
+  {
+   "query": "connections",
+   "expect": [
+    "maxconn"
+   ],
+   "kind": "prefix"
+  },
+  {
+   "query": "lag",
+   "expect": [],
+   "kind": "absent"
+  },
+  {
+   "query": "Kafka consumer lag",
+   "expect": [],
+   "kind": "absent"
+  },
+  {
+   "query": "สแกนคิวอาร์โค้ดตอนเช็กอิน",
+   "expect": [],
+   "kind": "absent"
+  },
+  {
+   "query": "ทำต่อเลย",
+   "expect": [],
+   "kind": "vague"
+  },
+  {
+   "query": "ดูให้หน่อย",
+   "expect": [],
+   "kind": "vague"
+  },
+  {
+   "query": "สรุปโปรเจกต์ให้หน่อย",
+   "expect": [],
+   "kind": "vague"
+  }
+ ]
+}

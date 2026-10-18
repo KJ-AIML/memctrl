@@ -141,10 +141,14 @@ fn cli_eval_never_creates_a_database_and_gates_on_request() {
 }
 
 fn fixture(name: &str) -> Value {
+    fixture_with(name, &[Retriever::Lexical])
+}
+
+fn fixture_with(name: &str, retrievers: &[Retriever]) -> Value {
     let text = std::fs::read_to_string(format!("tests/fixtures/eval/{name}")).unwrap();
     let suite = eval::parse_suite(&text).unwrap();
     let options = SearchOptions::from_rules(&Rules::default());
-    eval::run(&suite, &[Retriever::Lexical], 5, &options).unwrap()
+    eval::run(&suite, retrievers, 5, &options).unwrap()
 }
 
 /// A reviewer's Thai team suite (not written by the retriever's author). In 2.1.0, 41% of its
@@ -196,4 +200,35 @@ fn english_vague_questions_are_mostly_empty() {
         metric(&report, "lexical", &["negative_accuracy"]) >= 0.90,
         "{report}"
     );
+}
+
+/// Thai, English and mixed notes from one team, asked about in the other language, by
+/// identifier, and vaguely (2.7.0: 53% found, a third of the empty questions returned notes).
+#[test]
+fn notes_are_found_across_thai_and_english() {
+    let report = fixture_with("bilingual.json", &[Retriever::Lexical, Retriever::Recall]);
+    assert!(
+        metric(&report, "lexical", &["hit_at_k"]) >= 0.94,
+        "{report}"
+    );
+    assert!(
+        metric(&report, "lexical", &["hit_at_1"]) >= 0.88,
+        "{report}"
+    );
+    for kind in ["th_to_en", "en_to_th", "identifier"] {
+        assert_eq!(
+            metric(&report, "lexical", &["by_kind", kind, "hit_at_k"]),
+            1.0,
+            "{kind}: {report}"
+        );
+    }
+    // What the prompt hook adds: it needs two matched topics, so fewer finds, never noise.
+    assert!(metric(&report, "recall", &["hit_at_k"]) >= 0.76, "{report}");
+    for retriever in ["lexical", "recall"] {
+        assert_eq!(
+            metric(&report, retriever, &["negative_accuracy"]),
+            1.0,
+            "{retriever}: {report}"
+        );
+    }
 }

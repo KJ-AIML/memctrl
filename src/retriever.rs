@@ -490,8 +490,21 @@ pub fn retrieve_with(
     };
     snapshot.finish()?;
     store.side_write(|| {
-        for id in &result.memory_ids {
-            store.record_access(id)?;
+        for (index, id) in result.memory_ids.iter().enumerate() {
+            // Access counts lift a memory in the brief. One found only through the start of
+            // longer words (`conn` in `connections`) isn't counted, so a loose match can't climb
+            // there. A short Thai or Chinese word is matched as a substring too, and counts.
+            let fragments_only = result.why.get(index).is_some_and(|why| {
+                !why.matched.is_empty()
+                    && why.matched.iter().all(|m| {
+                        m.ends_with("(generic)")
+                            || m.strip_suffix(" (substring)")
+                                .is_some_and(|word| !crate::search::spaceless_text(word))
+                    })
+            });
+            if !fragments_only {
+                store.record_access(id)?;
+            }
         }
         store.save_provenance(query, &result, searched, method)?;
         // Publish only if nothing changed since the snapshot; access columns don't bump the
@@ -549,7 +562,7 @@ pub fn publish_selection(
 }
 
 /// Part of every cache key: bump when scoring changes so upgrades never serve old results.
-const RETRIEVAL_VERSION: &str = "lexical-v2";
+const RETRIEVAL_VERSION: &str = "lexical-v3";
 /// Part of every cache key: what an entry holds (ids only). 2.1 entries held full results and
 /// never match these keys, in either direction.
 const CACHE_FORMAT: &str = "ids-v1";

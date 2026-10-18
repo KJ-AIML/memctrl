@@ -120,7 +120,9 @@ fn pieces(prompt: &str, units: &dyn Fn(&str) -> usize) -> Vec<String> {
 
 /// Words that say what to do rather than what about. In a request they rank but can't make a
 /// memory match on their own, like the generic words `query` already ignores.
-const REQUEST_WORDS: &str = "add adds added adding make makes made fix fixes fixed fixing change \
+const REQUEST_WORDS: &str = "ทำ ต่อ ดู แก้ แก้ไข เพิ่ม สร้าง เขียน เปลี่ยน อัปเดต อัพเดท อัปเดท ลอง \
+เช็ค เช็ก ตรวจ รัน เอา ใส่ ปรับ จัดการ \
+add adds added adding make makes made fix fixes fixed fixing change \
 changes changed update updates updated write writes wrote written create creates created remove \
 removes removed file files code new help try look looks show give get gets keep work works \
 working sure way ask asked final message decide decided question questions own let run runs \
@@ -141,11 +143,12 @@ fn concepts(piece: &str) -> HashMap<String, usize> {
 /// Distinct topical concepts in a parsed piece. A spaceless run counts one per four trigrams,
 /// as search's coverage gate counts it.
 fn topical_units(parsed: &crate::search::ParsedQuery, groups: &HashMap<String, usize>) -> usize {
-    let words: HashSet<usize> = parsed
+    // A word outside every chunk (an alias key found inside a Thai run) is a concept of its own.
+    let words: HashSet<Result<usize, &str>> = parsed
         .terms
         .iter()
         .filter(|t| !t.generic)
-        .map(|t| groups.get(&t.word).copied().unwrap_or(usize::MAX))
+        .map(|t| groups.get(&t.word).copied().ok_or(t.word.as_str()))
         .collect();
     let runs: usize = parsed
         .runs
@@ -157,11 +160,19 @@ fn topical_units(parsed: &crate::search::ParsedQuery, groups: &HashMap<String, u
 }
 
 /// Distinct topical concepts behind a hit's matched labels ("word", "a → b (alias)",
-/// "word (substring)", "run (k/n)"); generic matches don't count.
+/// "word (substring)", "run (k/n)", "a-b (identifier)"); generic matches don't count. A memory
+/// holding a whole multi-word identifier (`purge-tenant`, `src/db/ledger.ts`) gets one more for
+/// it: a whole identifier pins a memory down as well as two separate topics do.
 fn matched_units(matched: &[String], groups: &HashMap<String, usize>) -> usize {
-    let mut words = HashSet::new();
+    // A word outside every chunk counts once however many labels name it ("ลบ", "ลบ → delete").
+    let mut words: HashSet<Result<usize, &str>> = HashSet::new();
     let mut runs = 0;
+    let mut identifiers = 0;
     for label in matched.iter().filter(|m| !m.ends_with("(generic)")) {
+        if label.ends_with(" (identifier)") {
+            identifiers += 1;
+            continue;
+        }
         if let Some(counts) = label
             .rsplit_once('(')
             .and_then(|(_, rest)| rest.strip_suffix(')'))
@@ -173,14 +184,9 @@ fn matched_units(matched: &[String], groups: &HashMap<String, usize>) -> usize {
             }
         }
         let word = label.split_whitespace().next().unwrap_or(label);
-        words.insert(
-            groups
-                .get(word)
-                .copied()
-                .unwrap_or(usize::MAX - words.len()),
-        );
+        words.insert(groups.get(word).copied().ok_or(word));
     }
-    words.len() + runs
+    words.len() + runs + identifiers
 }
 
 fn label(entry: &RecallEntry) -> &'static str {
@@ -304,7 +310,7 @@ pub fn recall(
                 None => {
                     let single = crate::search::ParsedQuery {
                         terms: vec![term.clone()],
-                        runs: Vec::new(),
+                        ..Default::default()
                     };
                     let found = !crate::search::search(store, &single, None, 1)?.0.is_empty();
                     known.insert(term.word.clone(), found);
@@ -363,8 +369,10 @@ pub fn recall(
     }
     snapshot.finish()?;
     let mut ranked: Vec<(f64, crate::search::Hit)> = best.into_values().collect();
+    // In a small store, scores can round to zero; coverage still tells matches apart.
     ranked.sort_by(|a, b| {
         b.0.total_cmp(&a.0)
+            .then_with(|| b.1.why.coverage.total_cmp(&a.1.why.coverage))
             .then_with(|| a.1.memory.id.cmp(&b.1.memory.id))
     });
     let hits = ranked.into_iter().map(|(_, hit)| hit);
@@ -694,6 +702,93 @@ mod tests {
         assert!(found.entries.iter().all(|e| e.id != planted));
         assert_eq!(found.withheld, 1);
         assert!(found.markdown.contains("stale: Makefile changed"));
+    }
+
+    #[test]
+    fn thai_requests_that_name_no_topic_stay_quiet() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::open(dir.path().join("m.db")).unwrap();
+        let migration = add(
+            &store,
+            "ทำต่อจากเดิมไม่ได้ ต้องรัน migration ใหม่ทุกครั้ง",
+            "project",
+            ClaimType::Assertion,
+        );
+        add(
+            &store,
+            "ดูให้ดีก่อน merge: ต้องมีรีวิวสองคน",
+            "project",
+            ClaimType::Assertion,
+        );
+        add(
+            &store,
+            "แก้ต่อจาก PR เก่าไม่ได้ ให้เปิด PR ใหม่",
+            "project",
+            ClaimType::Assertion,
+        );
+        let options = SearchOptions::from_rules(&crate::rules::Rules::default());
+        let policy = Policy::default();
+        let run = |prompt: &str| {
+            recall(
+                &store,
+                prompt,
+                &layers(),
+                5,
+                &options,
+                &policy,
+                &none,
+                &Seen::default(),
+            )
+            .unwrap()
+        };
+        // "Keep going", "take a look", "carry on fixing": what to do, not what about.
+        for vague in ["ทำต่อเลย", "ดูให้หน่อย", "แก้ต่อเลย", "ทำต่อด้วยนะ"]
+        {
+            assert!(run(vague).markdown.is_empty(), "{vague}");
+        }
+        assert_eq!(run("รัน migration ใหม่ต้องทำยังไง").entries[0].id, migration);
+    }
+
+    #[test]
+    fn a_whole_identifier_counts_as_much_as_two_topics() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::open(dir.path().join("m.db")).unwrap();
+        let guard = add(
+            &store,
+            "ห้ามรัน reset-ledger กับบัญชีจริง จนกว่าจะส่งออกข้อมูลก่อน",
+            "project",
+            ClaimType::Decision,
+        );
+        add(
+            &store,
+            "ปิดบัญชีลูกค้า: ส่งออกข้อมูลคืนลูกค้า แล้วล้างข้อมูล ledger ของบัญชีทั้งหมดภายใน 30 วัน",
+            "project",
+            ClaimType::Decision,
+        );
+        let found = recall(
+            &store,
+            "ล้างข้อมูลบัญชีด้วย reset-ledger ได้ไหม",
+            &layers(),
+            5,
+            &SearchOptions::from_rules(&crate::rules::Rules::default()),
+            &Policy::default(),
+            &none,
+            &Seen::default(),
+        )
+        .unwrap();
+        assert_eq!(found.entries[0].id, guard, "{}", found.markdown);
+
+        let groups = concepts("ใช้ reset-ledger ไหม");
+        let labels = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let whole = labels(&["reset", "ledger", "reset-ledger (identifier)"]);
+        assert_eq!(matched_units(&whole, &groups), 2);
+        // Both words apart ("reset the ledger") are one concept, as before.
+        assert_eq!(matched_units(&labels(&["reset", "ledger"]), &groups), 1);
+        // A Thai word found inside a run counts once, however many labels name it.
+        assert_eq!(
+            matched_units(&labels(&["ลบ", "ลบ → delete (alias)"]), &HashMap::new()),
+            1
+        );
     }
 
     #[test]
