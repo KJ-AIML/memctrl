@@ -98,6 +98,20 @@ fn embedder() -> (u16, Arc<AtomicUsize>) {
     (port, requests)
 }
 
+/// A loopback port where no embedding server can answer. The listener stays open for the whole
+/// test run and hangs up on every connection. A port merely closed again could be handed to
+/// another test's embedder, running in parallel, which would then answer for it.
+fn hangs_up() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            drop(stream);
+        }
+    });
+    port
+}
+
 /// A user config folder whose `[semantic]` points at `port`.
 fn config(dir: &TempDir, port: u16) -> PathBuf {
     let home = dir.path().join("config");
@@ -220,12 +234,7 @@ fn queries_find_memories_by_meaning_and_still_answer_vague_ones_with_nothing() {
 #[test]
 fn only_your_config_turns_it_on_and_an_unreachable_model_falls_back_to_lexical() {
     let (dir, project) = project();
-    // A port with nothing listening.
-    let port = TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = hangs_up();
     let home = config(&dir, port);
     ok(&project, &home, &["init"]);
     let release = add(&project, &home, "Releases go out from main every Tuesday");
@@ -473,12 +482,13 @@ fn setup_finds_the_model_adds_the_section_once_and_indexes() {
 
     // Only servers on this machine, and one you name has to answer.
     std::fs::write(&file, "").unwrap();
+    let silent = format!("http://127.0.0.1:{}/v1", hangs_up());
     for (url, says) in [
         (
             "https://embeddings.example.com/v1",
             "only uses servers on this machine",
         ),
-        ("http://127.0.0.1:9/v1", "127.0.0.1:9"),
+        (silent.as_str(), silent.as_str()),
     ] {
         let out = run(&project, &home, &["semantic", "setup", "--base-url", url]);
         assert!(!out.status.success());
