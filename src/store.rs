@@ -169,7 +169,7 @@ const REVISION_TABLES: [&str; 4] = [
     "memory_relations",
     "memory_evidence",
 ];
-const SEMANTIC_COLUMNS: [(&str, &str); 10] = [
+const SEMANTIC_COLUMNS: [(&str, &str); 11] = [
     ("updated_at", "TEXT"),
     ("last_accessed_at", "TEXT"),
     ("access_count", "INTEGER DEFAULT 0"),
@@ -179,8 +179,10 @@ const SEMANTIC_COLUMNS: [(&str, &str); 10] = [
     ("observed_at", "TEXT"),
     ("valid_from", "TEXT"),
     ("valid_until", "TEXT"),
-    // 2.8: set by `memctrl pin`; older versions ignore it.
+    // 2.8: set by `memctrl pin` and by a person accepting an agent's decision; older versions
+    // ignore them.
     ("pinned_at", "TEXT"),
+    ("confirmed_at", "TEXT"),
 ];
 /// A query as the log keeps it: sanitized and cut to `MAX_LOGGED_QUERY` characters.
 pub fn logged_query(query: &str) -> String {
@@ -232,6 +234,7 @@ fn memory_row(row: &Row<'_>) -> rusqlite::Result<Memory> {
         lifecycle_state: semantic(row, "lifecycle_state")?,
         verification_state: semantic(row, "verification_state")?,
         pinned_at: row.get("pinned_at")?,
+        confirmed_at: row.get("confirmed_at")?,
     })
 }
 fn json_column(row: &Row<'_>, name: &str) -> rusqlite::Result<Value> {
@@ -1099,6 +1102,24 @@ impl MemoryStore {
             if changed {
                 let event = if pinned { "pin" } else { "unpin" };
                 self.log_event(event, "by a person at a terminal", &[id.to_string()])?;
+            }
+            Ok(changed)
+        })
+    }
+    /// Records that a person confirmed a decision an agent saved, in the audit log too. Returns
+    /// false when it already was.
+    pub fn confirm_decision(&self, id: &str) -> Result<bool> {
+        self.atomic(|| {
+            let changed = self.conn.execute(
+                "UPDATE memories SET confirmed_at=?1 WHERE id=?2 AND confirmed_at IS NULL",
+                params![now(), id],
+            )? > 0;
+            if changed {
+                self.log_event(
+                    "confirm",
+                    "decision saved by an agent, by a person at a terminal",
+                    &[id.to_string()],
+                )?;
             }
             Ok(changed)
         })

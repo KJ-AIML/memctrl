@@ -88,6 +88,9 @@ pub struct BriefEntry {
     /// A person pinned it (`memctrl pin`): it comes first.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// A decision an agent saved that no person confirmed: shown among the facts, as a note.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub saved_by_agent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,23 +121,28 @@ pub fn score(memory: &Memory) -> f64 {
         VerificationState::Disputed => 0.5,
         VerificationState::Refuted => 0.0,
     };
-    let claim = match memory.claim_type {
+    let layer = if memory.layer == "project" { 1.2 } else { 1.0 };
+    let reinforcement = 1.0 + 0.05 * (memory.access_count as f64 + 1.0).log2().min(6.0);
+    memory.confidence * verification * claim_weight(memory.claim_type) * layer * reinforcement
+}
+
+fn claim_weight(claim: ClaimType) -> f64 {
+    match claim {
         ClaimType::Decision => 1.3,
         ClaimType::DerivedLesson => 1.1,
         ClaimType::Assertion => 1.0,
         ClaimType::Observation => 0.9,
         ClaimType::Hypothesis => 0.6,
-    };
-    let layer = if memory.layer == "project" { 1.2 } else { 1.0 };
-    let reinforcement = 1.0 + 0.05 * (memory.access_count as f64 + 1.0).log2().min(6.0);
-    memory.confidence * verification * claim * layer * reinforcement
+    }
 }
 
-fn section(memory: &Memory, check_first: bool, from_user: bool) -> Section {
+fn section(memory: &Memory, check_first: bool, from_user: bool, agents: bool) -> Section {
     if check_first || memory.verification_state == VerificationState::Disputed {
         return Section::CheckFirst;
     }
     match memory.claim_type {
+        // A decision an agent saved is a note until a person confirms it.
+        ClaimType::Decision if agents => Section::Facts,
         ClaimType::Decision => Section::Decisions,
         ClaimType::DerivedLesson => Section::Lessons,
         ClaimType::Hypothesis => Section::Hypotheses,
@@ -182,6 +190,9 @@ fn render_entry(entry: &BriefEntry) -> String {
     if let Some(caution) = &entry.caution {
         notes.push(caution.clone());
     }
+    if entry.saved_by_agent {
+        notes.push("decision saved by an agent, not confirmed".into());
+    }
     format!("- {} · {}", entry.content, notes.join(" · "))
 }
 
@@ -198,6 +209,8 @@ pub struct Extras {
     pub released: HashSet<String>,
     /// Memories shown as the person's own words (see `from_user`).
     pub from_user: HashSet<String>,
+    /// Decisions an agent saved that no person confirmed (see `review::unconfirmed_decision`).
+    pub agent_decisions: HashSet<String>,
 }
 
 /// Memory is replayed into every session, so the brief says what it is before the entries. It
@@ -270,6 +283,16 @@ fn header(
                 "memories wait"
             },
             if pending == 1 { "it" } else { "them" }
+        ));
+    }
+    let agents = extras.agent_decisions.len();
+    if agents > 0 {
+        text.push_str(&format!(
+            "{agents} {} saved by an agent {} shown as {} until the user confirms {} (`memctrl accept <id>`).\n",
+            if agents == 1 { "decision" } else { "decisions" },
+            if agents == 1 { "is" } else { "are" },
+            if agents == 1 { "a note" } else { "notes" },
+            if agents == 1 { "it" } else { "them" }
         ));
     }
     if extras.withheld > 0 {
@@ -381,8 +404,14 @@ pub fn build_with(
                 .released
                 .contains(&m.id)
                 .then(|| "looked like instructions; a person released it".to_string());
+            let agents = extras.agent_decisions.contains(&m.id);
             let factor = if note.is_some() || caution.is_some() {
                 0.5
+            } else {
+                1.0
+            } * if agents {
+                // Ranked as the note it is shown as.
+                claim_weight(ClaimType::Assertion) / claim_weight(ClaimType::Decision)
             } else {
                 1.0
             };
@@ -398,10 +427,12 @@ pub fn build_with(
                     m,
                     note.is_some() || caution.is_some(),
                     extras.from_user.contains(&m.id),
+                    agents,
                 ),
                 stale: note,
                 caution,
                 pinned: m.pinned_at.is_some(),
+                saved_by_agent: agents,
             }
         })
         .collect();
@@ -572,6 +603,9 @@ pub fn session_brief_with(
         }
         if from_user(m, policy) {
             extras.from_user.insert(m.id.clone());
+        }
+        if crate::review::unconfirmed_decision(m, policy) {
+            extras.agent_decisions.insert(m.id.clone());
         }
         true
     });
@@ -797,6 +831,48 @@ mod tests {
         };
         let brief = session_brief_with(&store, &layers, 2000, &|_| None, &strict).unwrap();
         assert!(!brief.markdown.contains("## From the user"));
+    }
+
+    #[test]
+    fn a_decision_an_agent_saved_is_a_note_until_a_person_confirms_it() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        let add = |content: &str, source: &str| {
+            store
+                .insert_memory(NewMemory {
+                    source: source.into(),
+                    ..memory(content, ClaimType::Decision, VerificationState::Unverified)
+                })
+                .unwrap()
+        };
+        let team = add("We chose SQLx over Diesel", "manual");
+        let agent = add("Retry webhooks at most 3 times", "claude-code");
+        let layers = vec!["project".to_string()];
+        let brief = session_brief(&store, &layers, 2000, &|_| None).unwrap();
+        let entry = |brief: &Brief, id: &str| brief.entries.iter().find(|e| e.id == id).cloned();
+        assert_eq!(entry(&brief, &team).unwrap().section, Section::Decisions);
+        let note = entry(&brief, &agent).unwrap();
+        assert_eq!(note.section, Section::Facts);
+        assert!(note.saved_by_agent);
+        let md = &brief.markdown;
+        assert!(
+            md.contains("· decision saved by an agent, not confirmed"),
+            "{md}"
+        );
+        assert!(
+            md.contains("1 decision saved by an agent is shown as a note until the user confirms it (`memctrl accept <id>`)."),
+            "{md}"
+        );
+
+        store.confirm_decision(&agent).unwrap();
+        let brief = session_brief(&store, &layers, 2000, &|_| None).unwrap();
+        let confirmed = entry(&brief, &agent).unwrap();
+        assert_eq!(confirmed.section, Section::Decisions);
+        assert!(!confirmed.saved_by_agent);
+        assert!(
+            !brief.markdown.contains("saved by an agent"),
+            "{}",
+            brief.markdown
+        );
     }
 
     #[test]

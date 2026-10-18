@@ -42,6 +42,9 @@ pub struct RecallEntry {
     /// follows it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub from_user: bool,
+    /// A decision an agent saved that no person confirmed: labelled as a note.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub saved_by_agent: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -193,6 +196,9 @@ fn label(entry: &RecallEntry) -> &'static str {
     if entry.from_user {
         return "from the user";
     }
+    if entry.saved_by_agent {
+        return "note";
+    }
     match entry.claim_type {
         ClaimType::Decision => "decision",
         ClaimType::DerivedLesson => "lesson",
@@ -217,6 +223,9 @@ fn render(entries: &[RecallEntry]) -> String {
         }
         if let Some(caution) = &entry.caution {
             notes.push(caution.clone());
+        }
+        if entry.saved_by_agent {
+            notes.push("decision saved by an agent, not confirmed".into());
         }
         if entry.in_brief {
             notes.push("also in the session brief".into());
@@ -412,6 +421,7 @@ pub fn recall(
                 && m.verification_state != VerificationState::Disputed
                 && !notes.contains_key(&m.id)
                 && !m.tags.iter().any(|t| t.starts_with("guard:")),
+            saved_by_agent: crate::review::unconfirmed_decision(&m, policy),
             content: one_line(&sanitize_text(&m.content)),
             in_brief: seen.briefed.contains(&m.id),
             id: m.id,
@@ -664,6 +674,49 @@ mod tests {
         ] {
             assert!(run(quiet, &Seen::default()).markdown.is_empty(), "{quiet}");
         }
+    }
+
+    #[test]
+    fn a_decision_an_agent_saved_is_recalled_as_a_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = MemoryStore::open(dir.path().join("m.db")).unwrap();
+        let id = store
+            .insert_memory(NewMemory {
+                layer: "project".into(),
+                content: "Webhook retries stop after 3 attempts to protect the payment provider"
+                    .into(),
+                claim_type: ClaimType::Decision,
+                source: "claude-code".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let run = || {
+            recall(
+                &store,
+                "Raise the webhook retries to 10 attempts",
+                &layers(),
+                5,
+                &SearchOptions::default(),
+                &Policy::default(),
+                &none,
+                &Seen::default(),
+            )
+            .unwrap()
+        };
+        let found = run();
+        assert!(found.entries[0].saved_by_agent);
+        assert!(
+            found.markdown.contains(
+                "- [note] Webhook retries stop after 3 attempts to protect the payment provider · `"
+            ),
+            "{}",
+            found.markdown
+        );
+        assert!(found
+            .markdown
+            .contains("· decision saved by an agent, not confirmed"));
+        store.confirm_decision(&id).unwrap();
+        assert!(run().markdown.contains("- [decision] Webhook retries"));
     }
 
     #[test]

@@ -177,6 +177,50 @@ fn only_a_person_pins() {
     assert!(success(&dir, &["show", &id])["memory"]["pinned_at"].is_null());
 }
 
+/// A decision an agent saves is a note in the brief until a person confirms it at a terminal.
+#[test]
+fn only_a_person_confirms_an_agents_decision() {
+    let dir = TempDir::new().unwrap();
+    success(&dir, &["init"]);
+    let out = common::memctrl()
+        .current_dir(dir.path())
+        .env_remove("MEMCTRL_DB_PATH")
+        .env("MEMCTRL_SEMANTIC", "off")
+        .env("CLAUDECODE", "1")
+        .args([
+            "add",
+            "Retry webhooks at most 3 times",
+            "--claim-type",
+            "decision",
+            "--layer",
+            "project",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = serde_json::from_slice::<Value>(&out.stdout).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let brief = String::from_utf8(invoke(&dir, &["context"]).stdout).unwrap();
+    assert!(
+        brief.contains("decision saved by an agent, not confirmed"),
+        "{brief}"
+    );
+    let refused = invoke(&dir, &["accept", &id[..8]]);
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("is a decision an agent saved; only a person can confirm it"),
+        "{stderr}"
+    );
+    assert!(success(&dir, &["show", &id])["memory"]["confirmed_at"].is_null());
+}
+
 #[test]
 fn invalid_input_is_nonzero_and_sanitized() {
     let dir = TempDir::new().unwrap();

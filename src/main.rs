@@ -1485,24 +1485,25 @@ async fn execute(
             // it now: only a person at a terminal releases it.
             let mut reasons = review::held_for_review(&memory);
             reasons.extend(review::withheld(&memory, &rules.guard));
-            let release = if reasons.is_empty() {
+            // A decision an agent saved becomes the team's only when a person confirms it.
+            let decision = review::unconfirmed_decision(&memory, &rules.guard);
+            let short = &id[..8.min(id.len())];
+            let release = if reasons.is_empty() && !decision {
                 Release::Refuse
             } else {
                 ensure!(
                     at_terminal(),
-                    "{} is held for review; only a person can release it: run `memctrl accept {}` yourself in a terminal",
-                    &id[..8.min(id.len())],
-                    &id[..8.min(id.len())]
+                    "{short} {}; only a person can {}: run `memctrl accept {short}` yourself in a terminal",
+                    if reasons.is_empty() { "is a decision an agent saved" } else { "is held for review" },
+                    if reasons.is_empty() { "confirm it" } else { "release it" }
                 );
-                ensure!(
-                    review::confirm_because(
-                        &memory,
-                        &reasons,
-                        &mut std::io::stdin().lock(),
-                        &mut std::io::stderr()
-                    )?,
-                    "cancelled; nothing changed"
-                );
+                let (mut stdin, mut stderr) = (std::io::stdin().lock(), std::io::stderr());
+                let confirmed = if reasons.is_empty() {
+                    review::confirm_decision(&memory, &mut stdin, &mut stderr)?
+                } else {
+                    review::confirm_because(&memory, &reasons, &mut stdin, &mut stderr)?
+                };
+                ensure!(confirmed, "cancelled; nothing changed");
                 Release::Confirmed
             };
             review::accept_with(store, &id, release, &rules.guard)?
