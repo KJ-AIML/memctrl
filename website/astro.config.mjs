@@ -115,6 +115,7 @@ export default defineConfig({
           collapsed: true,
           items: [
             { slug: 'benchmarks/overview' },
+            { slug: 'benchmarks/release-2-8' },
             { slug: 'benchmarks/release-2-6' },
             { slug: 'benchmarks/agent-benchmark' },
             { slug: 'benchmarks/brief-authority' },

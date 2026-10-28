@@ -1,0 +1,148 @@
+---
+title: "2.8.0 full benchmark"
+description: "Agents, retrieval, stability and speed for the 2.8.0 release, on Windows."
+---
+
+Everything measured again for the 2.8.0 release binaries, against 2.6.1, on 2026-10-27 and 2026-10-28: the agent benchmark (both task sets, two rounds, a store grown to 1,069 memories), the retrieval suites, and stability and speed. This is the first full round on Windows (11 Pro, x86_64); the 2.6.1 round ran on an Apple Silicon Mac. Raw numbers, including every run with the judge's reason, are in [`release-2.8.json`](https://github.com/KJ-AIML/memctrl/blob/main/docs/benchmarks/release-2.8.json).
+
+**In short:**
+- **Same accuracy as 2.6.1 and as CLAUDE.md.** On the 16 standard tasks, memctrl 2.8.0 got 31 of 32 right, as did 2.6.1. All 70 notes pasted into CLAUDE.md got 30, and no memory 18. The median cost per task was $0.052 for 2.8.0, $0.046 for 2.6.1, $0.058 for CLAUDE.md and $0.041 for no memory.
+- **At 1,069 memories, the same accuracy for under a quarter of the cost.** memctrl 2.8.0 got 30 of 32 at $0.049 a task. CLAUDE.md got 31 of 32 at $0.220, because every session reads all 1,069 notes (208k input tokens a task against memctrl's 55k).
+- **Reworded requests:** 2.8.0 got 13 of 16, 2.6.1 12, CLAUDE.md 15, no memory 6. Both memctrl versions got all four Thai tasks right in both rounds.
+- **Better Thai search.** 2.8.0 fixes six Thai retrieval misses and breaks none: on the held-out Thai suite the prompt hook finds 91.7% of answers, against 66.7% for 2.6.1. Every other suite scores the same.
+- **Stability unchanged; one speed change.** Every stability check passes as it did for 2.6.1. On 70 memories the two versions are within a few milliseconds, and recall is faster. On a store of 100,076 memories the brief takes about 17% longer in 2.8.0 (1.4 s against 1.2 s), a change that came with 2.8.0.
+
+## Agent benchmark
+
+The setup is described in [Agent benchmark](/memctrl/benchmarks/agent-benchmark/): the ledger-api project, 70 memories its tester saved, and Claude Code (2.1.312, `claude -p --model sonnet`) in fresh isolated sessions. A blind Sonnet judge grades each run, and rule checks run alongside. Each setup ran every task twice. The memctrl setups are the release binaries (x86_64-pc-windows-msvc), each set up by its own `install --hook`. The scale setups add the 1,000 unrelated memories in [`bench/agent/fixture/distractors.jsonl`](https://github.com/KJ-AIML/memctrl/blob/main/bench/agent/fixture/distractors.jsonl). The harness needed a fix to run on Windows; the fix ships with this write-up and leaves macOS and Linux runs unchanged.
+
+### Standard tasks (16)
+
+| Setup | Tasks right | Memory-only tasks | Median cost per task | Median input tokens |
+| --- | ---: | ---: | ---: | ---: |
+| none | 18/32 (56%) | 0/6 | $0.041 | 44.9k |
+| CLAUDE.md, 70 notes | 30/32 (94%) | 4/6 | $0.058 | 56.8k |
+| memctrl 2.6.1 | **31/32 (97%)** | 5/6 | $0.046 | 56.0k |
+| memctrl 2.8.0 | **31/32 (97%)** | 5/6 | $0.052 | 51.1k |
+| CLAUDE.md, 1,069 notes | 31/32 (97%) | 5/6 | $0.220 | 208.2k |
+| memctrl 2.8.0, 1,069 memories | 30/32 (94%) | 4/6 | **$0.049** | 55.5k |
+
+Every memory setup got every other task right in both rounds: the 22 "memory helps" runs, the stale-memory task and the control. All their misses are on one memory-only task, env-var:
+
+| Task | none | CLAUDE.md | 2.6.1 | 2.8.0 | CLAUDE.md, 1,069 | 2.8.0, 1,069 |
+| --- | :-: | :-: | :-: | :-: | :-: | :-: |
+| key-rotation | ✗✗ | ✓✓ | ✓✓ | ✓✓ | ✓✓ | ✓✓ |
+| idem-cleanup | ✗✗ | ✓✓ | ✓✓ | ✓✓ | ✓✓ | ✓✓ |
+| env-var | ✗✗ | ✗✗ | ✗✓ | ✓✗ | ✓✗ | ✗✗ |
+
+- **idem-cleanup** asks for a cleanup job the team rejected. Every memory setup declined it and said why in both runs, CLAUDE.md with 1,069 notes included. In the 2.6.1 round that setup built the job both times; with two runs and one judge, that difference may be chance.
+- **env-var** needs the user's preference to document new env vars in the README's Configuration table, and the repo has no README. The rubric also accepts raising the convention.
+  - In one run, the memctrl 2.8.0 agent created a README with a Configuration table listing the variable. No setup did that in the 2.6.1 round. The rule check agrees.
+  - Every other memory run raised the convention or said it skipped it because there is no README. The judge passed two of those (2.6.1, round 2; CLAUDE.md with 1,069 notes, round 1) and failed the rest, for near-identical answers.
+  - Counting only a README actually created, env-var is 1 of 4 runs for memctrl 2.8.0 (both sizes) and 0 for every other setup.
+- **none** also misses named-prepared, pg17-merge, readiness and zod-400, which need project history.
+
+### Reworded tasks (8)
+
+Requests worded unlike the memory they need, 4 of them in Thai ([`bench/agent/tasks-paraphrase.json`](https://github.com/KJ-AIML/memctrl/blob/main/bench/agent/tasks-paraphrase.json), described in [Reworded requests](/memctrl/benchmarks/reworded-tasks/)).
+
+| Setup | Tasks right | Median cost per task |
+| --- | ---: | ---: |
+| none | 6/16 | $0.047 |
+| CLAUDE.md | **15/16** | $0.052 |
+| memctrl 2.6.1 | 12/16 | $0.042 |
+| memctrl 2.8.0 | 13/16 | **$0.038** |
+
+| Task | none | CLAUDE.md | 2.6.1 | 2.8.0 |
+| --- | :-: | :-: | :-: | :-: |
+| auth-reason | ✗✗ | ✓✗ | ✗✗ | ✗✓ |
+| ci-flake | ✗✗ | ✓✓ | ✗✗ | ✗✗ |
+| key-rotation-th, shutdown-th | ✗✗ | ✓✓ | ✓✓ | ✓✓ |
+| contributing | ✗✓ | ✓✓ | ✓✓ | ✓✓ |
+| money-th | ✓✗ | ✓✓ | ✓✓ | ✓✓ |
+| rate-limit-th, shared-db | ✓✓ | ✓✓ | ✓✓ | ✓✓ |
+
+- **Thai:** both memctrl versions got all four Thai tasks in both runs. shutdown-th asks to reverse a shutdown order a memory says broke requests; both kept the order and said why.
+- **auth-reason:** misses in every setup send jose's `claim` or `reason` to the client, as in the 2.6.1 round.
+- **ci-flake:** memctrl agents find the failing health check but never say that re-running the job fixes it. CLAUDE.md agents did, as in the 2.6.1 round.
+
+### Judge and rule checks
+
+The judge and the rule checks disagreed on 11 of 256 runs:
+- 4 auth-reason runs, where the judge caught jose's `claim` being sent and the rule check didn't.
+- 2 env-var runs, where the rule check counts only a created README.
+- 2 zod-400 runs with no memory, where the issues were under `issues` instead of `details`.
+- 1 pagination run, where the rule check flagged an OFFSET the judge didn't find.
+- 1 rate-limit-q run, where the rule check wanted a code change and the agent instead found the limit isn't enforced and told the user not to quote it.
+- 1 money-th run with no memory, where the judge's reason says every format is correct and "this should pass", but its verdict is a fail.
+
+The judge's verdicts are used, as in earlier rounds, the contradictory one included; counted as a pass, no memory would have 7 of 16 reworded tasks. Rule-check totals are in the [JSON](https://github.com/KJ-AIML/memctrl/blob/main/docs/benchmarks/release-2.8.json).
+
+## Retrieval suites
+
+The five suites in [`bench/retrieval/suites`](https://github.com/KJ-AIML/memctrl/tree/main/bench/retrieval/suites), with each version's release binary. The 2.6.1 column reproduces the 2.6.1 round's published numbers exactly.
+
+| Suite | Words, top 5 | Prompt hook | Vague questions left unanswered |
+| --- | ---: | ---: | ---: |
+| realdev | 91.7% | 81.7% | – |
+| builtin | 93.0% | 72.1% | 92.3% |
+| thai | **97.6%** (2.6.1: 95.1%) | **74.4%** (2.6.1: 73.2%) | 100% |
+| thai-heldout | 91.7% | **91.7%** (2.6.1: 66.7%) | 92.3% |
+| en-mirror (vague questions only) | – | – | 91.7% |
+
+- **Fixed in 2.8.0:** "ดีพลอย" and "เก็บรหัสผ่านไว้ที่ไหน" by word search; "ดีพลอย" by the prompt hook; "ใช้อะไรทำ cache", "ฐานข้อมูลอะไร" and "Redis ใช้ทำอะไรบ้าง" by the prompt hook on the held-out suite. No query that 2.6.1 answered fails in 2.8.0.
+- **Unchanged:** every other score and failure. On builtin, one query that both versions miss now gets a different wrong answer.
+- **The brief** shows the same memories at the same size in both versions on every suite (74 memories, about 2,890 tokens, on realdev).
+- **Search by meaning** was not re-measured: it needs an embedding server. The 2.6.1 round's numbers are in [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/#retrieval-suites).
+
+## Stability
+
+| Check | Result |
+| --- | --- |
+| MCP server | Both versions answer all 8 requests with the same 9 tools and the same schemas; only the description of `memctrl_add`'s `source` argument changed. The same top result and the same brief sections, errors for a non-string `source` and an unknown tool, and an injection attempt quarantined. Both versions also store a memory under a layer name that doesn't exist (`not-a-layer`) when asked over MCP. |
+| Concurrent writers, 60 s | 8 processes, 4 on each version, wrote 1,419 memories with 0 failures and 0 duplicate ids, and the store holds exactly those rows. 4 readers ran 636 queries, briefs and prompt hooks alongside, with 0 failures. SQLite and FTS5 integrity checks pass. Starting a process took about 45 ms on Windows during this run, so each writer managed fewer writes than on the Mac (12,155 in the 2.6.1 round). |
+| Killed mid-write | 30 rounds of `serve` killed during a stream of 300 adds, all 30 mid-stream (4 to 250 writes acknowledged). After every kill, the database and both full-text indexes were intact, the last acknowledged write was stored and found, and the store stayed writable. |
+| Mixed versions | 2.6.1 and 2.8.0 on one store and one session pass 14 of 14 steps. Each finds the other's memories and reads the other's session records, no memory is pointed out twice in a session, and 2.6.1 checks 2.8.0's export. |
+| Windows | Everything above ran natively on Windows with the release zip. The Linux and macOS builds were not tested in this round. |
+
+## Speed
+
+Medians on a Windows 11 x86_64 laptop with nothing else running, the two versions interleaved run by run (21 runs at 70 memories, 11 at 100,076). Starting any process on Windows took 23 ms (`--version`), so every command is slower than on the Mac in the 2.6.1 round; compare the two versions with each other, not with the Mac.
+
+| Command | 70 memories, 2.6.1 / 2.8.0 | 100,076 memories, 2.6.1 / 2.8.0 |
+| --- | ---: | ---: |
+| `context` (session brief, as the hook runs it) | 64 / 69 ms | 1,217 / 1,422 ms |
+| `recall` (prompt hook) | 59 / 50 ms | 1,026 / 1,021 ms |
+| `query` | 51 / 54 ms | 173 / 172 ms |
+| `add` | 48 / 48 ms | 96 / 101 ms |
+| `list` | 52 / 43 ms (`--limit 50`) | 745 / 199 ms (`--limit 20`) |
+
+- **The brief is slower on a very large store.** At 100,076 memories it takes about 17% longer in 2.8.0 (1.4 s against 1.2 s; plain `context` 1,442 against 1,206 ms). 2.7.0 takes the same as 2.6.1 on the same store (1,221 against 1,214 ms), so the change came with 2.8.0. At 70 memories the difference is 5 ms.
+- **`list` is 4 times faster** on the large store, from 2.6.2's change that stops reading once it has enough.
+- **`recall` is faster on a small store** in 2.8.0: 50 against 59 ms for a request that matches, 38 against 48 ms for one that doesn't.
+- **The large store** is the 70-memory fixture plus 100,000 generated memories (ten components, eight kinds of fact, numbered), added through `memctrl serve`, one in ten in the user layer. The 2.6.1 round built its store another way, so its times aren't comparable to these. The brief showed 83 of 100,065 eligible memories with 2.6.1 and 82 with 2.8.0, at about 2,890 tokens.
+- A first pass that timed each version in turn instead of interleaving put `query` 16% slower in 2.8.0 and `add` 24% slower on 70 memories; interleaved, both are the same. That pass is in the JSON.
+
+## Caveats
+
+- Each setup had 16 or 32 runs, with one judge. A difference of one or two tasks can be chance. 2.5.0 scored 10, 11 and 12 of 16 on the reworded tasks across three days in earlier rounds.
+- This round differs from the 2.6.1 round in two ways besides the release: Windows instead of macOS, and Claude Code 2.1.312 instead of 2.1.301. Compare setups within one round.
+- Costs are Claude Code's list-price estimates. This round used $21.72 of usage, judge included.
+- Search by meaning and the Linux and macOS builds were not measured in this round.
+
+## Reproduce
+
+On Windows, run from Git Bash, with the MSVC toolchain if rustup's default host is the GNU one.
+
+```bash
+cargo build --release --example agent_bench
+B=$PWD/target/release/examples/agent_bench
+W=$(mktemp -d)
+$B setup $W/std --memctrl /path/to/memctrl-2.8.0 --baseline /path/to/memctrl-2.6.1 --scale
+$B setup $W/para --memctrl /path/to/memctrl-2.8.0 --baseline /path/to/memctrl-2.6.1 \
+  --tasks bench/agent/tasks-paraphrase.json
+for w in std para; do $B run $W/$w 1 && $B run $W/$w 2 && $B grade $W/$w && $B summary $W/$w; done
+for s in bench/retrieval/suites/*.json; do memctrl eval --file $s; memctrl eval --file $s --retriever recall; done
+```
+
+The [overview](/memctrl/benchmarks/overview/#reproduce-the-benchmarks) lists what you need and what a run costs.

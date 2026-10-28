@@ -13,39 +13,39 @@ memctrl is measured on whether an agent with memory does real tasks right more o
 | --- | --- | --- | --- |
 | Agent benchmark | Does Claude Code do real tasks right more often with memory? | Claude Code works 16 tasks on a real TypeScript project (ledger-api, 70 memories its tester saved), each with a trap only the project's history reveals, in fresh isolated sessions. A blind Sonnet judge grades every run, and rule checks run alongside. A second set of 8 tasks words each request unlike the memory it needs, 4 of them in Thai. A scale setup adds 1,000 unrelated memories. | [Agent benchmark](/memctrl/benchmarks/agent-benchmark/), [Reworded requests](/memctrl/benchmarks/reworded-tasks/), [Preferences and decisions](/memctrl/benchmarks/brief-authority/) |
 | Retrieval suites | Does memctrl find the right memory, and say nothing when it should? | Five suites in `memctrl eval` format: real-dev (77 memories, 60 questions), Thai team (56 memories, 104 questions, plus 25 held-out questions), an English mirror of vague and off-topic questions, and the built-in `dev-memory-v2`. Scored by hit@5 and by the share of vague questions answered with nothing. | [Retrieval comparison](/memctrl/benchmarks/retrieval-comparison/), [Search by meaning](/memctrl/benchmarks/search-by-meaning/) |
-| Stability and speed | Does it stay correct and fast under load? | MCP server checks, 60 seconds of concurrent writers, `serve` killed mid-write, two versions on one store, Linux smoke tests, and command timings at 70 and 100,070 memories. | [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) |
+| Stability and speed | Does it stay correct and fast under load? | MCP server checks, 60 seconds of concurrent writers, `serve` killed mid-write, two versions on one store, Linux smoke tests, and command timings at 70 and 100,070 memories. | [2.8.0 full benchmark](/memctrl/benchmarks/release-2-8/), [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) |
 
-## Latest agent results (2.6.1)
+## Latest agent results (2.8.0)
 
-Measured for the 2.6.1 release binaries, against 2.5.0, on 2026-10-17. Each setup ran the 16 standard tasks twice.
+Measured for the 2.8.0 release binaries, against 2.6.1, on 2026-10-28, on Windows with Claude Code 2.1.312. Each setup ran the 16 standard tasks twice.
 
 | Setup | Tasks right | Memory-only tasks | Median cost per task | Median input tokens |
 | --- | ---: | ---: | ---: | ---: |
-| none | 19/32 (59%) | 0/6 | $0.048 | 49.6k |
-| CLAUDE.md, 70 notes | **31/32 (97%)** | 5/6 | $0.068 | 61.5k |
-| memctrl 2.5.0 | 28/32 (88%) | 2/6 | $0.050 | 55.2k |
-| memctrl 2.6.1 | **31/32 (97%)** | 5/6 | **$0.047** | 54.4k |
-| CLAUDE.md, 1,069 notes | 28/32 (88%) | 2/6 | $0.231 | 255.9k |
-| memctrl 2.6.1, 1,069 memories | **32/32 (100%)** | 6/6 | **$0.047** | 54.4k |
+| none | 18/32 (56%) | 0/6 | $0.041 | 44.9k |
+| CLAUDE.md, 70 notes | 30/32 (94%) | 4/6 | $0.058 | 56.8k |
+| memctrl 2.6.1 | **31/32 (97%)** | 5/6 | $0.046 | 56.0k |
+| memctrl 2.8.0 | **31/32 (97%)** | 5/6 | $0.052 | 51.1k |
+| CLAUDE.md, 1,069 notes | 31/32 (97%) | 5/6 | $0.220 | 208.2k |
+| memctrl 2.8.0, 1,069 memories | 30/32 (94%) | 4/6 | **$0.049** | 55.5k |
 
-- **Same accuracy as CLAUDE.md, for less.** memctrl 2.6.1 got 31 of 32 right, the same as all 70 notes pasted into CLAUDE.md, at a median $0.047 per task against $0.068.
-- **At 1,069 memories, memctrl is ahead.** memctrl 2.6.1 got 32 of 32 at $0.047 a task. CLAUDE.md got 28 of 32 at $0.231, because every session reads all 1,069 notes.
-- **Reworded requests:** 2.6.1 got 13 of 16, 2.5.0 11, CLAUDE.md 15, no memory 7.
+- **Same accuracy as 2.6.1 and as CLAUDE.md.** memctrl 2.8.0 got 31 of 32 right, as did 2.6.1; all 70 notes pasted into CLAUDE.md got 30. Every memory setup's misses are on one task, env-var.
+- **At 1,069 memories, the same accuracy for under a quarter of the cost.** memctrl 2.8.0 got 30 of 32 at $0.049 a task. CLAUDE.md got 31 of 32 at $0.220, because every session reads all 1,069 notes.
+- **Reworded requests:** 2.8.0 got 13 of 16, 2.6.1 12, CLAUDE.md 15, no memory 6. Both memctrl versions got all four Thai tasks right in both runs.
 
 <Aside type="caution">
-Each setup had 16 or 32 runs, with one judge. A difference of one or two tasks can be chance. 2.5.0 scored 10, 11 and 12 of 16 on the reworded tasks across three days.
+Each setup had 16 or 32 runs, with one judge. A difference of one or two tasks can be chance. 2.5.0 scored 10, 11 and 12 of 16 on the reworded tasks across three days. The 2.8.0 round ran on Windows with a newer Claude Code than the 2.6.1 round (macOS), so compare setups within one round.
 </Aside>
 
 ## Retrieval results
 
-With the 2.6.1 release binary on the five suites. "Words" is memctrl's default word search, "Prompt hook" is what [recall](/memctrl/concepts/recall/) adds to a request, and "By meaning" adds EmbeddingGemma on a local server ([search by meaning](/memctrl/concepts/search-by-meaning/)). Every number is the same for 2.5.0.
+With the 2.8.0 release binary on the five suites. "Words" is memctrl's default word search, "Prompt hook" is what [recall](/memctrl/concepts/recall/) adds to a request, and "By meaning" adds EmbeddingGemma on a local server ([search by meaning](/memctrl/concepts/search-by-meaning/)). Search by meaning was last measured for 2.6.1. 2.8.0 matches 2.6.1 everywhere except the bold Thai cells, where it finds more and misses nothing 2.6.1 found.
 
-| Suite | Words, top 5 | Prompt hook | By meaning | Hook with meaning | Vague questions left unanswered, words / meaning |
+| Suite | Words, top 5 | Prompt hook | By meaning (2.6.1) | Hook with meaning (2.6.1) | Vague questions left unanswered, words / meaning (2.6.1) |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | realdev | 91.7% | 81.7% | 95.0% | 85.0% | – |
 | builtin | 93.0% | 72.1% | 95.3% | 74.4% | 92.3% / 84.6% |
-| thai | 95.1% | 73.2% | 96.3% | 73.2% | 100% / 100% |
-| thai-heldout | 91.7% | 66.7% | 100% | 66.7% | 92.3% / 84.6% |
+| thai | **97.6%** | **74.4%** | 96.3% | 73.2% | 100% / 100% |
+| thai-heldout | 91.7% | **91.7%** | 100% | 66.7% | 92.3% / 84.6% |
 | en-mirror (vague questions only) | – | – | – | – | 91.7% / 91.7% |
 
 Against other memory tools, on the same memories and questions with memctrl 2.2.0 ([full comparison](/memctrl/benchmarks/retrieval-comparison/)):
@@ -67,6 +67,7 @@ Each row is one study: setups run side by side with the same harness and judge, 
 | [Reworded requests](/memctrl/benchmarks/reworded-tasks/) (2.5) | – | – | 2.4.0: 28/32 | 2.5: 28/32 |
 | [Preferences and decisions](/memctrl/benchmarks/brief-authority/) (2.6) | – | – | 2.5.0: 28/32 | 2.6, first wording: 29/32 |
 | [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 19/32 (59%) | 31/32 (97%) | 2.5.0: 28/32 (88%) | 2.6.1: 31/32 (97%) |
+| [2.8.0 full benchmark](/memctrl/benchmarks/release-2-8/) (Windows) | 18/32 (56%) | 30/32 (94%) | 2.6.1: 31/32 (97%) | 2.8.0: 31/32 (97%) |
 
 2.4 was measured in one round with search by meaning on: 14 of 16 at both 70 and 1,069 memories, as the 2.3.0 release got in an earlier round (14/16 and 14/16). The prompt hook added the same memories with and without meaning ([search by meaning](/memctrl/benchmarks/search-by-meaning/#agent-benchmark)).
 
@@ -77,6 +78,7 @@ Each row is one study: setups run side by side with the same harness and judge, 
 | [Reworded requests](/memctrl/benchmarks/reworded-tasks/) (2.5) | – | – | 2.4.0: 8/16 | 2.5: 12/16 |
 | [Preferences and decisions](/memctrl/benchmarks/brief-authority/) (2.6) | – | – | 2.5.0: 10/16 | 2.6, first wording: 13/16 |
 | [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 7/16 | 15/16 | 2.5.0: 11/16 | 2.6.1: 13/16 |
+| [2.8.0 full benchmark](/memctrl/benchmarks/release-2-8/) (Windows) | 6/16 | 15/16 | 2.6.1: 12/16 | 2.8.0: 13/16 |
 
 The 2.6 study ran a first wording of the new brief header. The shipped wording was checked on the four tasks its stop rule touches, not in a full round ([details](/memctrl/benchmarks/brief-authority/#the-first-wording-stopped-a-fix)).
 
@@ -88,6 +90,7 @@ The same 70 memories plus 1,000 generated, unrelated ones. CLAUDE.md gets one se
 | --- | ---: | ---: |
 | [Agent benchmark](/memctrl/benchmarks/agent-benchmark/#results-1069-memories) (2.3) | 30/32 (94%), $0.229 a task | 2.3: 29/32 (91%), $0.054 a task |
 | [2.6.1 full benchmark](/memctrl/benchmarks/release-2-6/) | 28/32 (88%), $0.231 a task | 2.6.1: 32/32 (100%), $0.047 a task |
+| [2.8.0 full benchmark](/memctrl/benchmarks/release-2-8/) (Windows) | 31/32 (97%), $0.220 a task | 2.8.0: 30/32 (94%), $0.049 a task |
 
 Costs are median cost per task, from Claude Code's list-price estimates. CLAUDE.md's cost grows with the store because every session reads all of it. memctrl's [session brief](/memctrl/concepts/session-brief/) has a fixed token budget, and recall adds only the memories a request matches.
 
@@ -148,6 +151,7 @@ The other tools in the comparison need Python, so that side ran outside this rep
 Raw numbers for every write-up, including each run with the judge's reason, are in [`docs/benchmarks/`](https://github.com/KJ-AIML/memctrl/tree/main/docs/benchmarks).
 
 <CardGrid>
+  <LinkCard title="2.8.0 full benchmark" description="Agents, retrieval suites, stability and speed for the 2.8.0 release, against 2.6.1, on Windows." href="/memctrl/benchmarks/release-2-8/" />
   <LinkCard title="2.6.1 full benchmark" description="Agents, retrieval suites, stability and speed for the 2.6.1 release, against 2.5.0." href="/memctrl/benchmarks/release-2-6/" />
   <LinkCard title="Agent benchmark" description="The method, and the 2.2 and 2.3 rounds at 70 and 1,069 memories." href="/memctrl/benchmarks/agent-benchmark/" />
   <LinkCard title="Preferences and decisions (2.6)" description="How the 2.6 brief header changed what agents do with preferences and recorded decisions." href="/memctrl/benchmarks/brief-authority/" />

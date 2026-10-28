@@ -1,6 +1,6 @@
 # Agent benchmark: does memory help Claude Code finish tasks?
 
-> **Latest full run:** [release-2.6.md](release-2.6.md) measures 2.6.1 against 2.5.0, CLAUDE.md and no memory, at 70 and 1,069 memories. This page describes the method and the 2.2 and 2.3 rounds.
+> **Latest full run:** [release-2.8.md](release-2.8.md) measures 2.8.0 against 2.6.1, CLAUDE.md and no memory, at 70 and 1,069 memories, on Windows. [release-2.6.md](release-2.6.md) measured 2.6.1 against 2.5.0 on macOS. This page describes the method and the 2.2 and 2.3 rounds.
 
 Retrieval scores say whether the right memory comes back. This benchmark asks the question that matters: does an agent with memory do the task right more often? Claude Code worked 16 tasks on a real TypeScript project, once per setup, in fresh isolated sessions. Each task contains a trap that only the project's history reveals.
 

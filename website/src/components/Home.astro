@@ -20,23 +20,23 @@ const brief: [string, string, number?][] = [
   ['w', '- PG_POOL_MAX defaults to 20 per replica · 7d81ad8d · stale: src/config.ts changed'],
 ];
 
-// The 2.6.1 benchmark (docs/benchmarks/release-2.6.md): 16 standard tasks, two rounds, so 32
+// The 2.8.0 benchmark (docs/benchmarks/release-2.8.md): 16 standard tasks, two rounds, so 32
 // runs per setup. One square per run.
 const RUNS = 32;
 const groups = [
   {
     label: '70 memories',
     rows: [
-      { name: 'No memory', right: 19, cost: '$0.048', memctrl: false },
-      { name: 'CLAUDE.md', right: 31, cost: '$0.068', memctrl: false },
-      { name: 'memctrl 2.6.1', right: 31, cost: '$0.047', memctrl: true },
+      { name: 'No memory', right: 18, cost: '$0.041', memctrl: false },
+      { name: 'CLAUDE.md', right: 30, cost: '$0.058', memctrl: false },
+      { name: 'memctrl 2.8.0', right: 31, cost: '$0.052', memctrl: true },
     ],
   },
   {
     label: '1,069 memories',
     rows: [
-      { name: 'CLAUDE.md', right: 28, cost: '$0.231', memctrl: false },
-      { name: 'memctrl 2.6.1', right: 32, cost: '$0.047', memctrl: true },
+      { name: 'CLAUDE.md', right: 31, cost: '$0.220', memctrl: false },
+      { name: 'memctrl 2.8.0', right: 30, cost: '$0.049', memctrl: true },
     ],
   },
 ];
@@ -178,9 +178,9 @@ const principles = [
       </div>
     </div>
     <p class="mc-foot" data-reveal>
-      With 1,069 notes, CLAUDE.md agents missed the rejected cleanup job and the README preference in every
-      run.{' '}
-      <a href="/memctrl/benchmarks/release-2-6/">Every run, with the judge's reasons →</a>
+      With 1,069 notes, CLAUDE.md agents read 208k tokens a task and memctrl agents 55k, for the same
+      accuracy.{' '}
+      <a href="/memctrl/benchmarks/release-2-8/">Every run, with the judge's reasons →</a>
     </p>
   </section>
 

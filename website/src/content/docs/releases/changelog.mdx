@@ -16,6 +16,7 @@ What each memctrl 2.x release added and fixed, newest first, condensed from the 
 - **The guard reads Thai,** plus Chinese, Japanese, Spanish, French and German overrides, harness tags, `SYSTEM:` lines and forged `[from the user]` labels: 37 of 73 red-team attempts caught (was 26), the same 4 of 50 ordinary notes held.
 - **Fixes:** `lag` no longer matches inside "flagged", vague Thai requests (ทำต่อเลย) add nothing, CI run ids aren't redacted as phone numbers, ZWSP between Thai and English is allowed, and the hooks and read-only commands no longer write timing spans.
 - Thai team suite: answer first 92.7% → 95.1%; Thai held-out through the prompt hook 66.7% → 91.7%; a new bilingual suite 52.9% → 100% in the top 5. Other suites unchanged.
+- **Measured on the 2.8.0 release:** 31 of 32 standard tasks right, the same as 2.6.1 and one more than CLAUDE.md. With 1,069 memories, 30 of 32 at under a quarter of CLAUDE.md's cost per task. All four Thai reworded tasks right in both runs. Stability unchanged; on a store of 100,076 memories the brief takes about 17% longer than 2.6.1's (1.4 s against 1.2 s on Windows). [2.8.0 full benchmark](/memctrl/benchmarks/release-2-8/)
 
 [Release on GitHub](https://github.com/KJ-AIML/memctrl/releases/tag/v2.8.0) · [Upgrade notes](/memctrl/releases/upgrading/#270--280)
 

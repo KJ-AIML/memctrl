@@ -28,7 +28,7 @@ Yes. Everything works without a network. If search by meaning is on and its serv
 
 ### Does memctrl make sessions more expensive?
 
-Not in the benchmark. The brief adds up to about 3,000 tokens at session start, and median input per task rose from 49.6k tokens with no memory to 54.4k with memctrl, but the median cost per task was $0.047 with memctrl and $0.048 with no memory at all. A CLAUDE.md with the same 70 notes cost $0.068 ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+A little, and less than a CLAUDE.md. The brief adds up to about 3,000 tokens at session start. In the 2.8.0 round, median input per task rose from 44.9k tokens with no memory to 51.1k with memctrl, and the median cost per task from $0.041 to $0.052. A CLAUDE.md with the same 70 notes cost $0.058, and one grown to 1,069 notes $0.220, where memctrl with 1,069 memories cost $0.049 ([2.8.0 benchmark](/memctrl/benchmarks/release-2-8/)). In the 2.6.1 round, memctrl and no memory cost the same median $0.047 and $0.048 ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
 
 ## Using memctrl
 
@@ -38,7 +38,7 @@ Both. Put the few rules the agent must follow in every session in CLAUDE.md. Put
 
 ### How many memories can it hold?
 
-There is no fixed limit. The brief holds what fits its budget, about 70 one-line memories at the default 3,000 tokens, and recall adds what each request needs. In the agent benchmark, a store grown to 1,069 memories got 32 of 32 tasks right at the same median cost per task as one with 70. On a store of 100,070 memories the brief took about 650 ms. Each memory can be up to 64 KiB. See [Limits](/memctrl/help/limits/#large-stores-slow-the-brief).
+There is no fixed limit. The brief holds what fits its budget, about 70 one-line memories at the default 3,000 tokens, and recall adds what each request needs. In the agent benchmark, a store grown to 1,069 memories got 30 of 32 tasks right at about the same median cost per task as one with 70 ($0.049 against $0.052; 2.6.1 got 32 of 32 in its round). On a store of 100,070 memories the brief took about 650 ms on a Mac with 2.6.1, and about 1.4 s on Windows with 2.8.0. Each memory can be up to 64 KiB. See [Limits](/memctrl/help/limits/#large-stores-slow-the-brief).
 
 ### Which languages does it support?
 

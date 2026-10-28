@@ -73,7 +73,7 @@ Running `install` again is safe. It updates the memctrl hooks in place, keeps ev
 
 **Recall runs on every prompt.** `memctrl recall --format hook` reads your prompt from the JSON Claude Code passes on stdin and adds the memories it matches under "Project memory for this request". When nothing matches, it adds nothing and the prompt goes on unchanged. Slash commands and prompts under six characters are skipped. See [Recall](/memctrl/concepts/recall/) for how it decides.
 
-The brief never changes your memories, and recall changes them only when you ask it to remember something (below). Both stay quiet when they can't help: where no store exists they print nothing and create nothing, and when the database is committed to git they print a warning on stderr and add nothing. On the benchmark store of 70 memories, the brief took about 22 ms and recall about 12 ms ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+The brief never changes your memories, and recall changes them only when you ask it to remember something (below). Both stay quiet when they can't help: where no store exists they print nothing and create nothing, and when the database is committed to git they print a warning on stderr and add nothing. On the benchmark store of 70 memories, the brief took about 22 ms and recall about 12 ms on a Mac ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)), and about 69 ms and 50 ms on Windows, where starting any process takes 23 ms ([2.8.0 benchmark](/memctrl/benchmarks/release-2-8/#speed)).
 
 ## Save a note with remember:
 

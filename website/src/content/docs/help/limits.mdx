@@ -17,7 +17,7 @@ Without a model, `memctrl query` and the prompt hook find memories by the words 
 
 A memory can be relevant to a request without sharing its words or its meaning. "Add a BODY_LIMIT_BYTES env var" and the preference "document every new env var in the README" share one phrase, which keeps the preference below recall's threshold. EmbeddingGemma puts them at 0.29 similarity, far below any useful threshold.
 
-Having the preference in the brief helps only partly. In the 2.6.1 round, agents with memctrl raised the convention in all four runs but, like every other setup, didn't create the README it asks for; in earlier rounds, agents followed it from CLAUDE.md in 3 of 3 runs ([brief authority](/memctrl/benchmarks/brief-authority/), [2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+Having the preference in the brief helps only partly. In the 2.6.1 round, agents with memctrl raised the convention in all four runs but, like every other setup, didn't create the README it asks for. In the 2.8.0 round, a memctrl 2.8.0 agent created it in one of four runs, the first in any round; the others raised the convention or skipped it because the repo has no README. In earlier rounds, agents followed it from CLAUDE.md in 3 of 3 runs ([brief authority](/memctrl/benchmarks/brief-authority/), [2.6.1 benchmark](/memctrl/benchmarks/release-2-6/), [2.8.0 benchmark](/memctrl/benchmarks/release-2-8/)).
 
 **Instead:** put rules you want followed in every session in CLAUDE.md or AGENTS.md. Keep memctrl for the decisions, facts and lessons that are too many to read every time.
 
@@ -70,6 +70,8 @@ The brief and searches take milliseconds on a store of a few dozen memories, and
 | `context` (session brief) | 22 ms | 654 ms |
 | `recall` (prompt hook) | 12 ms | 72 ms |
 | `query` | 12 ms | 60 ms |
+
+On Windows, where starting any process takes about 23 ms, 2.8.0's brief took 69 ms at 70 memories and 1.4 s on a generated store of 100,076, and recall 50 ms and 1.0 s ([2.8.0 benchmark](/memctrl/benchmarks/release-2-8/#speed)). The two large stores were built differently, so compare within each round.
 
 The brief also holds only what fits its budget, about 70 one-line memories by default; the header names what was left out. Retire memories that no longer hold rather than letting the store grow without limit. See [Correct and retire](/memctrl/guides/correct-and-retire/).
 

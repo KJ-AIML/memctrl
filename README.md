@@ -318,22 +318,22 @@ In 2.8 the Thai team's hit@1 is 0.95, and a bilingual suite (Thai and English no
 
 Paraphrases with no shared words ("which ORM did we pick") are a known limit of lexical search: 3 of 6 are found. Aliases close the gaps that matter to your team, and [search by meaning](#search-by-meaning-optional) closes more.
 
-Retrieval scores don't say whether the agent then does the work right, so we measured that too. Claude Code worked 16 tasks on a real project, each with a trap only the project's history reveals, in fresh sessions, two rounds per setup ([method](docs/benchmarks/agent-benchmark.md), [2.6.1 results](docs/benchmarks/release-2.6.md)):
+Retrieval scores don't say whether the agent then does the work right, so we measured that too. Claude Code worked 16 tasks on a real project, each with a trap only the project's history reveals, in fresh sessions, two rounds per setup ([method](docs/benchmarks/agent-benchmark.md), [2.8.0 results](docs/benchmarks/release-2.8.md)):
 
 | Memory the agent had | Tasks right | Median cost per task |
 | --- | ---: | ---: |
-| None | 59% | $0.048 |
-| memctrl 2.5.0 | 88% | $0.050 |
-| memctrl 2.6.1 | **97%** | **$0.047** |
-| All 70 notes in CLAUDE.md | **97%** | $0.068 |
-| memctrl 2.6.1, store grown to 1,069 memories | **100%** | **$0.047** |
-| CLAUDE.md grown to 1,069 notes | 88% | $0.231 |
+| None | 56% | $0.041 |
+| memctrl 2.6.1 | **97%** | $0.046 |
+| memctrl 2.8.0 | **97%** | $0.052 |
+| All 70 notes in CLAUDE.md | 94% | $0.058 |
+| memctrl 2.8.0, store grown to 1,069 memories | 94% | **$0.049** |
+| CLAUDE.md grown to 1,069 notes | 97% | $0.220 |
 
-Earlier releases on the same tasks: memctrl 2.2 got 81% and 2.3 got 91% ([history](docs/benchmarks/agent-benchmark.md)).
+Earlier releases on the same tasks: memctrl 2.2 got 81%, 2.3 got 91%, and 2.6.1 got 97% in its own release round, run on a Mac ([history](docs/benchmarks/agent-benchmark.md), [2.6.1 results](docs/benchmarks/release-2.6.md)).
 
-Requests worded unlike the memory they need are harder. On 8 such tasks, 4 of them in Thai, 2.4 got 8 of 16 right and 2.5 got 12, because 2.5's brief holds a small store whole and its prompt hook points out the brief memories a request needs. On the 16 tasks above, both got 28 of 32 in the same rounds ([reworded tasks](docs/benchmarks/reworded-tasks.md)). 2.6 lets the user's preferences and the team's decisions carry weight: against 2.5.0 in the same rounds it got 29 of 32 and 13 of 16, where 2.5.0 got 28 and 10. Those rounds ran a first wording; the shipped one was rechecked on the four tasks it changes ([brief authority](docs/benchmarks/brief-authority.md)). In the full round of the 2.6.1 release it got 13 of 16, 2.5.0 got 11 and CLAUDE.md 15 ([2.6.1 results](docs/benchmarks/release-2.6.md)).
+Requests worded unlike the memory they need are harder. On 8 such tasks, 4 of them in Thai, 2.4 got 8 of 16 right and 2.5 got 12, because 2.5's brief holds a small store whole and its prompt hook points out the brief memories a request needs. On the 16 tasks above, both got 28 of 32 in the same rounds ([reworded tasks](docs/benchmarks/reworded-tasks.md)). 2.6 lets the user's preferences and the team's decisions carry weight: against 2.5.0 in the same rounds it got 29 of 32 and 13 of 16, where 2.5.0 got 28 and 10. Those rounds ran a first wording; the shipped one was rechecked on the four tasks it changes ([brief authority](docs/benchmarks/brief-authority.md)). In the full round of the 2.6.1 release it got 13 of 16, 2.5.0 got 11 and CLAUDE.md 15 ([2.6.1 results](docs/benchmarks/release-2.6.md)). In the 2.8.0 round, 2.8.0 got 13 of 16, 2.6.1 12 and CLAUDE.md 15, and both memctrl versions got all four Thai tasks right in both runs ([2.8.0 results](docs/benchmarks/release-2.8.md)).
 
-With a few dozen notes, memctrl 2.6 and a CLAUDE.md get the same tasks right, and memctrl costs a little less. As memory grows, memctrl stays as accurate at a fifth of the cost. With 1,069 notes, CLAUDE.md agents missed the rejected cleanup job and the README preference in every run. It also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
+With a few dozen notes, memctrl and a CLAUDE.md get the same tasks right at about the same cost. As memory grows, memctrl stays as accurate at under a quarter of the cost: with 1,069 notes, CLAUDE.md agents read 208k tokens a task and memctrl agents 55k. In the 2.6.1 round, CLAUDE.md agents at that size also missed the rejected cleanup job in every run; in the 2.8.0 round they got it, so treat that gap as partly chance. memctrl also adds what a file can't: review of what agents write, corrections that reach teammates, and flags when cited code changes. For a head-to-head on retrieval with basic-memory, vector search, grep and loading everything, see [retrieval-comparison.md](docs/benchmarks/retrieval-comparison.md). See `bench/README.md` to re-run them.
 
 ## Commands
 

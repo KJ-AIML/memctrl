@@ -58,17 +58,17 @@ Save new durable facts with `memctrl add "<fact>" --layer project` (add `--claim
 
 ## memctrl or CLAUDE.md
 
-A CLAUDE.md that holds your project notes works well while it is short. memctrl was measured against one: Claude Code worked 16 real tasks on a project, each with a trap only the project's history reveals, in fresh sessions, two rounds per setup ([2.6.1 benchmark](/memctrl/benchmarks/release-2-6/)).
+A CLAUDE.md that holds your project notes works well while it is short. memctrl was measured against one: Claude Code worked 16 real tasks on a project, each with a trap only the project's history reveals, in fresh sessions, two rounds per setup ([2.8.0 benchmark](/memctrl/benchmarks/release-2-8/)).
 
 | Memory the agent had | Tasks right | Median cost per task | What it means |
 | --- | ---: | ---: | --- |
-| None | 19 of 32 | $0.048 | The baseline: tasks that need project history fail |
-| All 70 notes in CLAUDE.md | 31 of 32 | $0.068 | A short notes file works |
-| memctrl 2.6.1, 70 memories | 31 of 32 | $0.047 | Same accuracy, a little cheaper |
-| CLAUDE.md grown to 1,069 notes | 28 of 32 | $0.231 | Every session reads every note, and important ones get lost |
-| memctrl 2.6.1, 1,069 memories | 32 of 32 | $0.047 | The brief stays the same size as memory grows |
+| None | 18 of 32 | $0.041 | The baseline: tasks that need project history fail |
+| All 70 notes in CLAUDE.md | 30 of 32 | $0.058 | A short notes file works |
+| memctrl 2.8.0, 70 memories | 31 of 32 | $0.052 | Same accuracy, about the same cost |
+| CLAUDE.md grown to 1,069 notes | 31 of 32 | $0.220 | Every session reads every note: 208k tokens a task |
+| memctrl 2.8.0, 1,069 memories | 30 of 32 | $0.049 | The brief stays the same size as memory grows |
 
-With a few dozen notes, the two get the same tasks right and memctrl costs a little less. As memory grows, memctrl stays as accurate at about a fifth of the cost. On 8 requests worded unlike the memory they need, CLAUDE.md did better: 15 of 16 against memctrl's 13 ([reworded tasks](/memctrl/benchmarks/reworded-tasks/)).
+With a few dozen notes, the two get the same tasks right at about the same cost. As memory grows, memctrl stays as accurate at under a quarter of the cost. In the [2.6.1 round](/memctrl/benchmarks/release-2-6/), CLAUDE.md with 1,069 notes also missed important notes (28 of 32); in the 2.8.0 round it didn't, so the lasting difference is the cost. On 8 requests worded unlike the memory they need, CLAUDE.md did better: 15 of 16 against memctrl's 13 ([reworded tasks](/memctrl/benchmarks/reworded-tasks/)).
 
 Use both:
 
