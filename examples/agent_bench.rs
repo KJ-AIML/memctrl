@@ -181,11 +181,97 @@ fn main() -> Result<()> {
 }
 
 fn claude_path(given: Option<PathBuf>) -> PathBuf {
-    given.unwrap_or_else(|| home().join(".local/bin/claude"))
+    given.unwrap_or_else(|| {
+        home()
+            .join(".local/bin")
+            .join(format!("claude{}", std::env::consts::EXE_SUFFIX))
+    })
 }
 
 fn home() -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default())
+    // USERPROFILE: Windows outside Git Bash has no HOME
+    PathBuf::from(
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .unwrap_or_default(),
+    )
+}
+
+/// `path` made absolute. On Windows `canonicalize` gives a verbatim path (`\\?\D:\...`), which git
+/// refuses as a work tree, so the prefix comes off when a plain drive path follows it.
+fn absolute(path: &Path) -> Result<PathBuf> {
+    let full = path.canonicalize()?;
+    #[cfg(windows)]
+    if let Some(plain) = full.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        if plain.as_bytes().get(1) == Some(&b':') {
+            return Ok(PathBuf::from(plain));
+        }
+    }
+    Ok(full)
+}
+
+/// The memctrl binary in a setup's `bin-*` folder (`memctrl.exe` on Windows).
+fn memctrl_exe() -> String {
+    format!("memctrl{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// A cleared environment. Windows programs can't start without a few system variables
+/// (SystemRoot above all), and Claude Code there finds its home and Git Bash through
+/// USERPROFILE and CLAUDE_CODE_GIT_BASH_PATH, so those are kept.
+fn cleared(command: &mut Command) -> &mut Command {
+    command.env_clear();
+    #[cfg(windows)]
+    for key in [
+        "SystemRoot",
+        "SystemDrive",
+        "windir",
+        "ComSpec",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "ProgramData",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "CLAUDE_CODE_GIT_BASH_PATH",
+    ] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
+    }
+    command
+}
+
+/// The PATH a setup's commands get: `first` (a setup's `bin-*` folder), then `unix`. Windows has
+/// no such fixed folders, so there it's the system folders and the folders of the tools the agent
+/// may run (git, Git Bash's coreutils, node, rg), taken from the current PATH.
+fn base_path(first: Option<&Path>, unix: &str) -> std::ffi::OsString {
+    #[cfg(not(windows))]
+    {
+        match first {
+            Some(dir) => format!("{}:{unix}", dir.display()).into(),
+            None => unix.into(),
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = unix;
+        let root = std::env::var("SystemRoot")
+            .unwrap_or_default()
+            .to_lowercase();
+        let tools = ["git.exe", "bash.exe", "ls.exe", "node.exe", "rg.exe"];
+        let current = std::env::var_os("PATH").unwrap_or_default();
+        let kept = std::env::split_paths(&current).filter(|dir| {
+            (!root.is_empty() && dir.to_string_lossy().to_lowercase().starts_with(&root))
+                || tools.iter().any(|tool| dir.join(tool).is_file())
+        });
+        std::env::join_paths(first.map(Path::to_path_buf).into_iter().chain(kept))
+            .unwrap_or_default()
+    }
 }
 
 fn default_tasks() -> PathBuf {
@@ -220,11 +306,10 @@ fn sh_with(
 ) -> Result<String> {
     let program = program.as_ref();
     let mut command = Command::new(program);
-    command
+    cleared(&mut command)
         .args(args)
         .current_dir(cwd)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+        .env("PATH", base_path(None, "/usr/bin:/bin:/usr/sbin:/sbin"))
         .env("HOME", home());
     if let Some(dir) = config_home {
         command.env("XDG_CONFIG_HOME", dir);
@@ -276,7 +361,7 @@ fn clone(work: &Path, name: &str) -> Result<PathBuf> {
 fn with_memctrl(work: &Path, name: &str, binary: &Path) -> Result<PathBuf> {
     let bindir = work.join(format!("bin-{name}"));
     std::fs::create_dir_all(&bindir)?;
-    std::fs::copy(binary, bindir.join("memctrl"))?;
+    std::fs::copy(binary, bindir.join(memctrl_exe()))?;
     let repo = clone(work, name)?;
     let fixture = Path::new(HERE).join("fixture");
     std::fs::create_dir_all(repo.join(".memctrl"))?;
@@ -287,7 +372,7 @@ fn with_memctrl(work: &Path, name: &str, binary: &Path) -> Result<PathBuf> {
     std::fs::write(repo.join(".memctrl/.gitignore"), "*\n")?;
     std::fs::copy(fixture.join("memoryrc"), repo.join(".memoryrc"))?;
     sh(
-        bindir.join("memctrl"),
+        bindir.join(memctrl_exe()),
         &["install", "--tool", "claude", "--project", "--hook"],
         &repo,
     )?;
@@ -359,7 +444,7 @@ fn setup(
     tasks: Option<&Path>,
 ) -> Result<()> {
     std::fs::create_dir_all(work.join("templates"))?;
-    let work = work.canonicalize()?;
+    let work = absolute(work)?;
     let tasks = tasks.map_or_else(default_tasks, Path::to_path_buf);
     ensure!(
         !load_tasks(&tasks)?.is_empty(),
@@ -367,10 +452,10 @@ fn setup(
         tasks.display()
     );
     std::fs::copy(&tasks, work.join("tasks.json"))?;
-    let memctrl = memctrl.canonicalize()?;
+    let memctrl = absolute(memctrl)?;
     let m = with_memctrl(&work, "memctrl", &memctrl)?;
     let listed = sh(
-        work.join("bin-memctrl/memctrl"),
+        work.join("bin-memctrl").join(memctrl_exe()),
         &["list", "--limit", "5000"],
         &m,
     )?;
@@ -379,7 +464,7 @@ fn setup(
         .cloned()
         .unwrap_or_default();
     if let Some(baseline) = baseline {
-        with_memctrl(&work, "baseline", &baseline.canonicalize()?)?;
+        with_memctrl(&work, "baseline", &absolute(baseline)?)?;
     }
 
     let notes = claude_md(&memories)?;
@@ -426,7 +511,7 @@ fn setup(
         let ms = with_memctrl(&work, "memctrl-scale", &memctrl)?;
         for row in &rows {
             let out = sh(
-                work.join("bin-memctrl-scale/memctrl"),
+                work.join("bin-memctrl-scale").join(memctrl_exe()),
                 &[
                     "add",
                     row["content"].as_str().unwrap_or_default(),
@@ -462,7 +547,7 @@ fn setup(
             std::fs::create_dir_all(config_home.join("memctrl"))?;
             std::fs::write(config_home.join("memctrl/config.toml"), &text)?;
             let out = sh_with(
-                work.join(format!("bin-{name}/memctrl")),
+                work.join(format!("bin-{name}")).join(memctrl_exe()),
                 &["semantic", "index"],
                 &repo,
                 Some(&config_home),
@@ -549,11 +634,7 @@ fn run_one(
     let repo = out.join("repo");
     copy_tree(&work.join("templates").join(cond), &repo)?;
     let bindir = work.join(format!("bin-{cond}"));
-    let path = if bindir.is_dir() {
-        format!("{}:{BASE_PATH}", bindir.display())
-    } else {
-        BASE_PATH.to_string()
-    };
+    let path = base_path(Some(bindir.as_path()).filter(|dir| dir.is_dir()), BASE_PATH);
     let prompt = format!("{}{SUFFIX}", task["prompt"].as_str().unwrap_or_default());
     let allowed: Vec<String> = ["Read", "Edit", "Write", "Skill"]
         .iter()
@@ -562,7 +643,8 @@ fn run_one(
         .collect();
     let started = Instant::now();
     let transcript = std::fs::File::create(out.join("transcript.jsonl"))?;
-    let output = Command::new(claude)
+    let mut command = Command::new(claude);
+    let output = cleared(&mut command)
         .args(["-p", &prompt, "--model", model])
         .args(["--setting-sources", "project,local", "--strict-mcp-config"])
         .args(["--no-session-persistence", "--output-format", "stream-json"])
@@ -587,7 +669,6 @@ fn run_one(
             "2",
         ])
         .current_dir(&repo)
-        .env_clear()
         .env("HOME", home())
         .env("USER", std::env::var("USER").unwrap_or_default())
         .env("LANG", "en_US.UTF-8")
@@ -687,7 +768,7 @@ fn run_all(
     model: &str,
     claude: &Path,
 ) -> Result<()> {
-    let work = work.canonicalize()?;
+    let work = absolute(work)?;
     let mut conds: Vec<String> = conds
         .split(',')
         .filter(|c| !c.is_empty())
@@ -1052,7 +1133,7 @@ fn run_dirs(work: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn grade_all(work: &Path, jobs: usize, judged: bool, claude: &Path) -> Result<()> {
-    let work = work.canonicalize()?;
+    let work = absolute(work)?;
     let cwd = work.join("judge-cwd");
     std::fs::create_dir_all(&cwd)?;
     let tasks = tasks(&work)?;
