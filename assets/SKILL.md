@@ -20,7 +20,7 @@ memctrl context
 memctrl recall "<the request, in its own words>"
 ```
 
-Where the last session on this branch stopped arrives too, under "Where work on `<branch>` left off": the user's last requests, your last message, the files with uncommitted changes. memctrl saves it by itself. To leave the next session something it wouldn't otherwise have, such as an approach that failed and why, run:
+With the hooks installed, where the last session on this branch stopped arrives too, under "Where work on `<branch>` left off": the user's last requests, your last message, the files with uncommitted changes. memctrl saves it as you work. Without hooks, run `memctrl checkpoint` to see it. To leave the next session something it wouldn't otherwise have, such as an approach that failed and why, run:
 
 ```bash
 memctrl checkpoint note "Tried rotating the session id inside the transaction: deadlocks with the audit trigger"
@@ -95,7 +95,7 @@ Anyone who can edit `.memctrl/memory.md` can add an entry, so imported entries w
 
 ## Session end
 
-Nothing to do: memctrl saves where you stopped. Save what stays true after this task with `memctrl add` (decisions and conventions in `project`, the person's preferences in `user`).
+With the hooks installed, nothing to do: memctrl saves where you stopped. Without them, leave a `memctrl checkpoint note` saying where you stopped. Save what stays true after this task with `memctrl add` (decisions and conventions in `project`, the person's preferences in `user`).
 
 ## MCP tools
 
