@@ -355,7 +355,7 @@ Expected: FAIL to compile (`store_root`), then after the field exists, assertion
 
 - [ ] **Step 4: Implement**
 
-In `locate`: compute `rc`, `dir`, `found` as today, then `store_root`. If `dir.join(DEFAULT_DB)` is a file, it is `dir`. Otherwise take `gitmeta::repo_root` of `dir` (or of `cwd` when nothing was found), ask `gitmeta::main_worktree` for it, and when the main worktree's `DEFAULT_DB` is a file: `store_root` is the main worktree, `found` is true, `dir` is the worktree's root when nothing had been found, and `rc` is `dir`'s `.memoryrc` when it is a file, else the main worktree's. Fill `store_root: dir.clone()` in every other `Project` literal (two in `main.rs::project`, those in `project.rs` tests).
+In `locate`: compute `rc`, `dir`, `found` as today, then `store_root`. If `dir.join(DEFAULT_DB)` is a file, it is `dir`. Otherwise find the repository root of `dir` (or of `cwd` when nothing was found) with the same bounded walk `locate` already does, which never climbs into `home` from below (reuse the `.git` folder the walk found; when the rules file ended the walk early, keep walking up from it under the same rule), ask `gitmeta::main_worktree` for it, and when the main worktree's `DEFAULT_DB` is a file: `store_root` is the main worktree, `found` is true, `dir` is the worktree's root when nothing had been found, and `rc` is `dir`'s `.memoryrc` when it is a file, else the main worktree's. Fill `store_root: dir.clone()` in every other `Project` literal (two in `main.rs::project`, those in `project.rs` tests).
 
 In `main.rs::project`, for `Command::Init { force }` and before the existing `ensure!`: when `!force` and `located.store_root != located.dir`, bail with exactly
 
@@ -466,7 +466,9 @@ mod tests {
             assert!(key.len() <= 69, "{key}");
             assert!(!key.starts_with('.'), "{key}");
             assert!(key.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)), "{key}");
-            assert!(!key.contains(".."), "{key}");
+            // ".." inside one file name is harmless; the file test below proves the path stays
+            // inside checkpoints/.
+            assert!(key != "." && key != "..", "{key}");
         }
         let detached = key(Some(&Head::Detached("0123".into())), Path::new("/w/one"));
         assert!(detached.starts_with("_detached-"));
@@ -551,7 +553,7 @@ Expected: FAIL to compile.
 
 - [ ] **Step 3: Implement**
 
-`clip_middle`: when the text has more than `max` characters, take `(max - 3) / 3` characters from the start and `max - 3 - head` from the end, joined by `" … "`. `key`: per the spec; SHA-256 through `sha2::Sha256`, hex of the first 4 bytes. `record_*`: trim, drop when empty, `sanitize_text`, then `clip_middle` to the part's limit; `record_prompt` also drops text starting with `/` or with fewer than `MIN_PROMPT_CHARS` non-whitespace characters. Timestamps are `now.to_rfc3339_opts(SecondsFormat::Secs, true)`. `save` creates the folder, calls `fsutil::ignore_all`, and writes pretty JSON plus a newline with `fsutil::write_atomic(path, bytes, Some(folder))`. `load` returns the default for a `version` above `VERSION`. Move the body of `recall::ignore_records` to `fsutil::ignore_all` unchanged.
+`clip_middle`: when the text has more than `max` characters, take `(max - 3) / 3` characters from the start and `max - 3 - head` from the end, joined by `" … "`. `key`: per the spec; SHA-256 through `sha2::Sha256`, hex of the first 4 bytes. `record_*`: trim, drop when empty, `sanitize_text`, then `clip_middle` to the part's limit; `record_prompt` also drops text starting with `/` or with fewer than `MIN_PROMPT_CHARS` non-whitespace characters. Timestamps are `now.to_rfc3339_opts(SecondsFormat::Secs, true)`. `save` creates the folder, calls `fsutil::ignore_all`, and writes pretty JSON plus a newline with `fsutil::write_atomic(path, bytes, Some(folder))`. `load` returns the default for a `version` above `VERSION`. Move the body of `recall::ignore_records` to `fsutil::ignore_all`, changing only its comment line to `# memctrl: files here stay local.` (it now serves `checkpoints/` too; no test pins the old wording).
 
 - [ ] **Step 4: Run the tests and see them pass**
 
@@ -799,6 +801,12 @@ fn continuity_is_on_by_default_and_a_repository_can_only_turn_it_off() {
     assert!(broken.warnings.iter().any(|w| w.starts_with("continuity is off: [continuity]")), "{:?}", broken.warnings);
     let broken = load("", "[continuity]\nprompts = 3\n");
     assert_eq!(broken.continuity, Continuity { enabled: false, prompts: false });
+
+    // Your settings apply where the project has no .memoryrc at all.
+    std::fs::write(&config, "[continuity]\nprompts = false\n").unwrap();
+    let user = UserConfig::load_from(&config).unwrap();
+    let bare = Rules::load_with(dir.path().join("missing/.memoryrc"), &user).unwrap();
+    assert_eq!(bare.continuity, Continuity { enabled: true, prompts: false });
 }
 ```
 
@@ -809,7 +817,7 @@ Expected: FAIL to compile (`Continuity`).
 
 - [ ] **Step 3: Implement**
 
-Parse `[continuity]` in `UserConfig::load_from` and in `Rules::parse` the way `[capture]` is parsed at `rules.rs:297-310`: each of `enabled` and `prompts` must be a boolean when present; anything else turns both off and pushes the warning `continuity is off: [continuity] enabled and prompts in {path} must be true or false`. In `load_with`, start from the user's values, then `&&` each with the repository's (also for a trusted repository: off is never loosening). Last, when `MEMCTRL_CONTINUITY` equals `off` ignoring case, set `enabled = false`, as `MEMCTRL_SEMANTIC` is read at `rules.rs:409`. Add the two keys to the `UserConfig` doc comment's example.
+Parse `[continuity]` in `UserConfig::load_from` and in `Rules::parse` the way `[capture]` is parsed at `rules.rs:297-310`: each of `enabled` and `prompts` must be a boolean when present; anything else turns both off and pushes the warning `continuity is off: [continuity] enabled and prompts in {path} must be true or false`. In `load_with`, put the user's values and the `MEMCTRL_CONTINUITY` override on `base` before the file is read, as `MEMCTRL_SEMANTIC` is at `rules.rs:409`, so the early return for a missing `.memoryrc` carries them: when `MEMCTRL_CONTINUITY` equals `off` ignoring case, `enabled = false`. Then `&&` each value with the repository's (also for a trusted repository: off is never loosening). Add the two keys to the `UserConfig` doc comment's example.
 
 - [ ] **Step 4: Run the tests and see them pass**
 
@@ -1062,7 +1070,8 @@ Add the variant and `CheckpointCommand`. In `run`, directly after `let (db, name
   - `Compacting`: print `COMPACT_INSTRUCTIONS` and a newline (Hook format only; Gemini prints `{}`).
   - `Start { fresh: false }` and `Ignore`: print `format.nothing()`.
   - An error from loading, saving or the store is printed as `{"warning": …}` on stderr (sanitized) and the command still returns `Ok(())` after printing `format.nothing()`.
-- `Show` (or no subcommand with a non-hook format), `Note`, `Clear`: where `!db.exists()` fail with the existing "no memctrl project in …" error (reuse the text at `main.rs:2121-2125`). `Show` renders with `fresh_only: false`; Markdown prints the block, or `No checkpoint for this branch yet.` and a newline; `--format json` prints the stored checkpoint (the default one when none) through `sanitize_value`. `Note` records, sets `branch`, saves, and prints `{"status":"saved","branch":…}`; text the checkpoint drops (empty) fails with `nothing to save`. `Clear` deletes the file and prints `{"status":"cleared"}`, or `{"status":"none"}` when there was none.
+- Before rendering (hook or `show`), when the loaded checkpoint has no `branch`, fill it from the name `checkpoint::file` returned, so a block made only of session-layer notes still names the branch.
+- `Show` (or no subcommand with a non-hook format), `Note`, `Clear`: where `!db.exists()` fail with the existing "no memctrl project in …" error (reuse the text at `main.rs:2121-2125`); where the store is committed to git and not trusted, fail with the existing message at `main.rs:2136-2141`, since `show` reads session-layer memories from it. `Show` renders with `fresh_only: false`; Markdown prints the block, or `No checkpoint for this branch yet.` and a newline; `--format json` prints the stored checkpoint (the default one when none) through `sanitize_value`. `Note` records, sets `branch`, saves, and prints `{"status":"saved","branch":…}`; text the checkpoint drops (empty) fails with `nothing to save`. `Clear` deletes the file and prints `{"status":"cleared"}`, or `{"status":"none"}` when there was none.
 
 - [ ] **Step 5: Run the tests and see them pass**
 
@@ -1209,9 +1218,19 @@ In `tests/continuity.rs`:
 #[test]
 fn the_session_start_brief_fits_claude_codes_cap() {
     let dir = project();
+    // Written through the library: 90 `add` processes would make this test slow.
+    let store = memctrl::store::MemoryStore::open(dir.path().join(".memctrl/memories.db")).unwrap();
     for n in 0..90 {
-        ok(dir.path(), &["add", &format!("Convention {n}: every handler in the billing service validates its input with the shared schema module before touching the ledger tables"), "--layer", "project"]);
+        store
+            .insert_memory(memctrl::model::NewMemory {
+                content: format!("Convention {n}: every handler in the billing service validates its input with the shared schema module before touching the ledger tables"),
+                layer: "project".into(),
+                source: "manual".into(),
+                ..Default::default()
+            })
+            .unwrap();
     }
+    drop(store);
     assert!(ok(dir.path(), &["context"]).chars().count() > 9_500, "Markdown output is unchanged");
     let hooked = context_of(&hook(dir.path(), &["context", "--format", "hook"], &start("startup")));
     assert!(hooked.chars().count() <= 9_500, "{}", hooked.chars().count());
@@ -1439,13 +1458,9 @@ git commit -m "feat: add defaults to the project layer; the skill describes chec
 Run: `make ci`
 Expected: fmt, Clippy with `-D warnings`, every test, and the release build all succeed, and the Python check prints nothing.
 
-- [ ] **Step 6: Try it by hand, once**
+- [ ] **Step 6: Smoke-test the release binary's hooks**
 
-```bash
-cargo run --release --bin memctrl -- install --tool claude --project --hook
-```
-
-In a scratch repository with `memctrl init`: start Claude Code, ask for a small change, run `/clear`, and check that the next session's context holds "Where work on `<branch>` left off" and that the status line showed "memctrl: picked up where …". Then check a store with a long brief: the model should see the whole brief, not a file path and a preview. Write what you saw in the pull request description. If the `systemMessage` line doesn't appear or the cap behaves differently from the docs, say so there; don't change the code to hide it.
+In a scratch folder under the system temp directory (never inside this repository): `git init`, `memctrl init` with `target/release/memctrl`, then `install --tool claude --project --hook` and check `.claude/settings.local.json` holds the handlers of Task 9. Pipe the hooks' JSON to the release binary in the order a session produces it: `UserPromptSubmit` (through `recall --format hook`), `Stop`, `PreCompact`, `PostCompact`, then `SessionStart` with `source` `clear` through `checkpoint --format hook --announce`. Check each output against the spec, and time the `Stop` and `SessionStart` hooks. Write the commands and what you saw in your task report. A live Claude Code session (does the `systemMessage` line show, does a long brief reach the model whole) can't be run from here: say so in the report as not done.
 
 - [ ] **Step 7: Commit**
 
