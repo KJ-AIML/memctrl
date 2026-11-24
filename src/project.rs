@@ -97,20 +97,28 @@ pub fn locate(cwd: &Path, home: Option<&Path>) -> Project {
     let Some(main) = crate::gitmeta::main_worktree(&root) else {
         return project;
     };
-    if !main.join(DEFAULT_DB).is_file() {
+    let dir = if project.found {
+        project.dir.clone()
+    } else {
+        root.clone()
+    };
+    // The same project folder in the main checkout, so a nested project never takes the root's.
+    let Ok(relative) = dir.strip_prefix(&root) else {
+        return project;
+    };
+    let main_dir = main.join(relative);
+    if !main_dir.join(DEFAULT_DB).is_file() {
         return project;
     }
-    if !project.found {
-        project.dir = root;
-    }
+    project.dir = dir;
     let own_rc = project.dir.join(RULES_FILE);
     project.rc = if own_rc.is_file() {
         own_rc
     } else {
-        main.join(RULES_FILE)
+        main_dir.join(RULES_FILE)
     };
     project.found = true;
-    project.store_root = main;
+    project.store_root = main_dir;
     project
 }
 
@@ -357,6 +365,30 @@ mod tests {
         let nothing = locate(&plain, None);
         assert!(!nothing.found);
         assert_eq!(nothing.store_root, plain);
+    }
+
+    #[test]
+    fn a_nested_project_in_a_linked_worktree_falls_back_to_its_own_main_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let (main, wt) = (dir.path().join("main"), dir.path().join("wt"));
+        let gitdir = main.join(".git/worktrees/wt");
+        std::fs::create_dir_all(&gitdir).unwrap();
+        std::fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+        std::fs::create_dir_all(wt.join("sub/src")).unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        touch(&wt.join("sub").join(RULES_FILE));
+
+        // Only the root project's store: never the nested project's.
+        touch(&main.join(DEFAULT_DB));
+        let found = locate(&wt.join("sub/src"), None);
+        assert_eq!(found.store_root, wt.join("sub"));
+
+        // The nested project's own store in the main checkout.
+        touch(&main.join("sub").join(DEFAULT_DB));
+        let found = locate(&wt.join("sub/src"), None);
+        assert_eq!(found.store_root, main.join("sub"));
+        assert_eq!(found.dir, wt.join("sub"));
+        assert_eq!(found.rc, wt.join("sub").join(RULES_FILE));
     }
 
     #[test]
