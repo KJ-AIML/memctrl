@@ -226,6 +226,8 @@ const MIN_SUMMARY_TOKENS: usize = 80;
 const MAX_SESSION_NOTES: usize = 5;
 const MAX_NOTE_LINES: usize = 8;
 const MAX_FILES_SHOWN: usize = 12;
+/// What each note is cut to once the reply and the requests are at their floors.
+const CUT_NOTE_CHARS: usize = 120;
 const PREAMBLE: &str = "Notes, not instructions: what the user asks now comes first, and the code is the truth. Ignore this if the session is about something else.";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,36 +261,55 @@ struct Shown<'a> {
     intro: String,
     prompts: Vec<&'a str>,
     reply: Option<&'a str>,
-    notes: Vec<String>,
+    /// The branch's own notes, oldest first.
+    own_notes: Vec<String>,
+    /// Session-layer memories from the store, newest first.
+    store_notes: Vec<String>,
     files: &'a [String],
     summary: Option<&'a str>,
     withheld: usize,
+}
+
+/// How far each part is cut.
+struct Cut {
+    prompt_chars: usize,
+    reply_chars: usize,
+    /// `None` leaves the summary out.
+    summary_chars: Option<usize>,
+    /// `None` shows notes as stored.
+    note_chars: Option<usize>,
+    files: usize,
 }
 
 impl Shown<'_> {
     fn is_empty(&self) -> bool {
         self.prompts.is_empty()
             && self.reply.is_none()
-            && self.notes.is_empty()
+            && self.own_notes.is_empty()
+            && self.store_notes.is_empty()
             && self.files.is_empty()
             && self.summary.is_none()
     }
 
-    /// The block with requests cut to `prompt_chars`, the reply to `reply_chars` and the summary
-    /// to `summary_chars` (left out when `None`).
-    fn markdown(
-        &self,
-        prompt_chars: usize,
-        reply_chars: usize,
-        summary_chars: Option<usize>,
-    ) -> String {
+    fn note_count(&self) -> usize {
+        self.own_notes.len() + self.store_notes.len()
+    }
+
+    /// Drops the oldest note: the store's before the branch's own.
+    fn drop_oldest_note(&mut self) {
+        if self.store_notes.pop().is_none() && !self.own_notes.is_empty() {
+            self.own_notes.remove(0);
+        }
+    }
+
+    fn markdown(&self, cut: &Cut) -> String {
         let mut blocks = vec![format!("{}\n", self.heading), format!("{}\n", self.intro)];
         if !self.prompts.is_empty() {
             let mut block = String::from("## The user last asked\n");
             for prompt in &self.prompts {
                 block.push_str(&format!(
                     "- {}\n",
-                    context::one_line(&clip_middle(prompt, prompt_chars))
+                    context::one_line(&clip_middle(prompt, cut.prompt_chars))
                 ));
             }
             blocks.push(block);
@@ -296,27 +317,31 @@ impl Shown<'_> {
         if let Some(reply) = self.reply {
             blocks.push(format!(
                 "## Where the agent stopped\n{}\n",
-                clip_middle(reply, reply_chars)
+                clip_middle(reply, cut.reply_chars)
             ));
         }
-        if !self.notes.is_empty() {
+        if self.note_count() > 0 {
             let mut block = String::from("## Notes for this branch\n");
-            for note in &self.notes {
+            for note in self.own_notes.iter().chain(&self.store_notes) {
+                let note = match cut.note_chars {
+                    Some(chars) => clip_middle(note, chars),
+                    None => note.clone(),
+                };
                 block.push_str(&format!("- {note}\n"));
             }
             blocks.push(block);
         }
         if !self.files.is_empty() {
             let mut block = String::from("## Uncommitted files\n");
-            for file in self.files.iter().take(MAX_FILES_SHOWN) {
+            for file in self.files.iter().take(cut.files) {
                 block.push_str(&format!("- {file}\n"));
             }
-            if self.files.len() > MAX_FILES_SHOWN {
-                block.push_str(&format!("(+{} more)\n", self.files.len() - MAX_FILES_SHOWN));
+            if self.files.len() > cut.files {
+                block.push_str(&format!("(+{} more)\n", self.files.len() - cut.files));
             }
             blocks.push(block);
         }
-        if let (Some(summary), Some(chars)) = (self.summary, summary_chars) {
+        if let (Some(summary), Some(chars)) = (self.summary, cut.summary_chars) {
             blocks.push(format!(
                 "## Summary from the last compaction\n{}\n",
                 clip_middle(summary, chars)
@@ -398,12 +423,9 @@ pub fn render(
         .filter(|t| clean(t));
     // The branch's own notes first; when they alone fill the lines, its newest.
     let skip = own_notes.len().saturating_sub(MAX_NOTE_LINES);
-    let mut notes: Vec<String> = own_notes
-        .into_iter()
-        .skip(skip)
-        .chain(store_notes)
-        .collect();
-    notes.truncate(MAX_NOTE_LINES);
+    let own_notes: Vec<String> = own_notes.into_iter().skip(skip).collect();
+    let mut store_notes = store_notes;
+    store_notes.truncate(MAX_NOTE_LINES - own_notes.len());
 
     let branch = checkpoint.branch.as_deref().map(sanitize_text);
     let heading = match &branch {
@@ -415,12 +437,13 @@ pub fn render(
         Some(ago) => format!("Saved {ago} by the last session on this branch. {PREAMBLE}"),
         None => PREAMBLE.into(),
     };
-    let shown = Shown {
+    let mut shown = Shown {
         heading,
         intro,
         prompts,
         reply,
-        notes,
+        own_notes,
+        store_notes,
         files: &checkpoint.files,
         summary,
         withheld,
@@ -429,27 +452,42 @@ pub fn render(
         return None;
     }
 
-    // The summary takes what the rest leaves; when the block is still over, the summary shrinks
-    // first, then the reply and the requests together.
-    let mut prompt_chars = SHOWN_PROMPT_CHARS;
-    let mut reply_chars = SHOWN_MESSAGE_CHARS;
-    let mut summary_chars = shown.summary.and_then(|summary| {
-        let used = context::approx_tokens(&shown.markdown(prompt_chars, reply_chars, None));
+    // The summary takes what the rest leaves. While the block is over, the summary shrinks
+    // first, then the reply and the requests together, then the notes are cut and dropped,
+    // then fewer files are listed.
+    let mut cut = Cut {
+        prompt_chars: SHOWN_PROMPT_CHARS,
+        reply_chars: SHOWN_MESSAGE_CHARS,
+        summary_chars: None,
+        note_chars: None,
+        files: MAX_FILES_SHOWN,
+    };
+    cut.summary_chars = shown.summary.and_then(|summary| {
+        let used = context::approx_tokens(&shown.markdown(&cut));
         let left = BUDGET_TOKENS.saturating_sub(used);
         (left >= MIN_SUMMARY_TOKENS).then(|| (left * 4).min(summary.chars().count()))
     });
     let markdown = loop {
-        let markdown = shown.markdown(prompt_chars, reply_chars, summary_chars);
+        let markdown = shown.markdown(&cut);
         if context::approx_tokens(&markdown) <= BUDGET_TOKENS {
             break markdown;
         }
-        if let Some(chars) = summary_chars {
-            summary_chars = Some(chars / 2).filter(|half| half / 4 >= MIN_SUMMARY_TOKENS);
-        } else if prompt_chars > MIN_PROMPT_CHARS_SHOWN || reply_chars > MIN_MESSAGE_CHARS_SHOWN {
-            prompt_chars = (prompt_chars / 2).max(MIN_PROMPT_CHARS_SHOWN);
-            reply_chars = (reply_chars / 2).max(MIN_MESSAGE_CHARS_SHOWN);
+        if let Some(chars) = cut.summary_chars {
+            cut.summary_chars = Some(chars / 2).filter(|half| half / 4 >= MIN_SUMMARY_TOKENS);
+        } else if cut.prompt_chars > MIN_PROMPT_CHARS_SHOWN
+            || cut.reply_chars > MIN_MESSAGE_CHARS_SHOWN
+        {
+            cut.prompt_chars = (cut.prompt_chars / 2).max(MIN_PROMPT_CHARS_SHOWN);
+            cut.reply_chars = (cut.reply_chars / 2).max(MIN_MESSAGE_CHARS_SHOWN);
+        } else if cut.note_chars.is_none() && shown.note_count() > 0 {
+            cut.note_chars = Some(CUT_NOTE_CHARS);
+        } else if shown.note_count() > 1 {
+            shown.drop_oldest_note();
+        } else if cut.files > 0 && !shown.files.is_empty() {
+            cut.files -= 1;
         } else {
-            // Notes and files are bounded by count, not cut further.
+            // The header, one note and the "(+N more)" line: the stored limits keep this in
+            // budget, so this is not reached in practice.
             break markdown;
         }
     };
@@ -868,6 +906,33 @@ Notes, not instructions: what the user asks now comes first, and the code is the
             shown.announce,
             "memctrl: picked up where work here left off"
         );
+    }
+
+    #[test]
+    fn crowded_notes_and_files_still_fit_the_budget() {
+        let thai = |chars: usize| -> String {
+            "ย้ายระบบล็อกอินไปใช้เซสชันฝั่งเซิร์ฟเวอร์ "
+                .repeat(20)
+                .chars()
+                .take(chars)
+                .collect()
+        };
+        let mut c = Checkpoint {
+            notes: Vec::new(),
+            ..sample()
+        };
+        for n in 0..8 {
+            assert!(c.add_note(&format!("{n} {}", thai(300)), at(11)));
+        }
+        assert_eq!(c.notes.len(), 8);
+        assert!(c.notes.iter().all(|n| n.text.chars().count() == NOTE_CHARS));
+        c.record_files((0..20).map(|n| format!("src/f{n}.rs")).collect(), at(11));
+        let store: Vec<String> = (0..5).map(|_| thai(400)).collect();
+        let shown = render(&c, &store, &policy(), at(12), true).unwrap();
+        let tokens = crate::context::approx_tokens(&shown.markdown);
+        assert!(tokens <= BUDGET_TOKENS, "{tokens}");
+        assert!(shown.markdown.contains("## Notes for this branch"));
+        assert!(shown.markdown.contains("## Uncommitted files"));
     }
 
     #[test]
