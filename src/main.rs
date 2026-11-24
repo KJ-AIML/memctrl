@@ -1445,7 +1445,7 @@ async fn execute(
             };
             let notes = citations::stale_notes(store, rules);
             let build = |budget: usize| {
-                context::session_brief_with(
+                context::unrecorded_brief(
                     store,
                     &layers,
                     budget,
@@ -1459,6 +1459,8 @@ async fn execute(
             } else {
                 build(*budget)?
             };
+            // One provenance row for the brief shown, however many were built to fit it.
+            context::record_provenance(store, &brief);
             if format.hook() && write.is_none() {
                 record_brief(&brief, db);
             }
