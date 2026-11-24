@@ -148,7 +148,7 @@ Login and logout use sessions now. Refresh still reads the JWT: `refresh()` in s
 - Requests are cut to 300 characters each and the reply to 1,200 when shown.
 - "Notes for this branch" holds the checkpoint's notes, then up to 5 accepted, unexpired `session`-layer memories, newest first, 8 lines at most. Session-layer memories alone are enough for a block: it then has no "Saved …" sentence.
 - Paths under `.memctrl/` are never listed as uncommitted files.
-- The budget is measured with `approx_tokens`, which counts a token per Thai or CJK character; when a block is over, the summary shrinks first, then the reply, then the requests.
+- The budget is measured with `approx_tokens`, which counts a token per Thai or CJK character; when a block is over, the summary shrinks first, then the reply and the requests together, then the notes (each shortened, then the oldest dropped), then the file list.
 - "Uncommitted files" shows 12 paths, then `(+N more)`.
 - The compaction summary takes what budget is left and is dropped when under 80 tokens remain.
 - **Guard.** Each text part is checked with the guard's content rules, the way `review::withheld` checks an accepted memory (flag mode, whatever the configured mode; skipped when the guard is off). A flagged part is left out and the block ends with ``1 part left out: it reads like instructions (`memctrl checkpoint show`).`` or ``N parts left out: they read like instructions (`memctrl checkpoint show`).`` `<!--` is escaped to `<\!--` in every line, as the brief does.

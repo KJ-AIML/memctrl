@@ -35,7 +35,7 @@ This page takes you from nothing to a Claude Code session that starts with your 
    memctrl install --tool claude --project --hook
    ```
 
-   This writes the memctrl skill to `.claude/skills/memctrl/SKILL.md` and adds two hooks to `.claude/settings.local.json`: one that runs `memctrl context` when a session starts and one that runs `memctrl recall` on each prompt. [Claude Code](/memctrl/agents/claude-code/) explains both. Using Codex or Gemini CLI? Run `install` with `--tool codex` or `--tool gemini` instead, and see [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/). Using Cursor? Follow [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/).
+   This writes the memctrl skill to `.claude/skills/memctrl/SKILL.md` and adds hooks to `.claude/settings.local.json`: the brief and recall hooks, which run `memctrl context` when a session starts and `memctrl recall` on each prompt, plus the checkpoint hooks, which save where work on the branch left off and show it to the next session. [Claude Code](/memctrl/agents/claude-code/#what-it-writes) lists them all. Using Codex or Gemini CLI? Run `install` with `--tool codex` or `--tool gemini` instead, and see [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/). Using Cursor? Follow [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/).
 
 4. Save three memories: a decision, a convention tied to the code it describes, and a preference of yours.
 
@@ -119,7 +119,7 @@ After these steps, `git status` lists the files memctrl created. Some belong in 
   - memories.db local: ignored by `.memctrl/.gitignore`
   - sessions/ local: what each Claude Code session was shown
 - .claude/
-  - settings.local.json personal: the two hook commands
+  - settings.local.json personal: the memctrl hook commands
   - skills/
     - memctrl/
       - SKILL.md optional: commit to give teammates the skill

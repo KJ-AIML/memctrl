@@ -185,7 +185,7 @@ Login and logout use sessions now. Refresh still reads the JWT: `refresh()` in s
 ```
 
 - **When it's shown:** on a fresh start and after `/clear`. Not on resume, after compaction or on a fork: those sessions still hold the conversation or its summary. Claude Code also shows you one line, such as ``memctrl: picked up where `feat/auth-sessions` left off (2 hours ago)``.
-- **Only if recent, and short.** A checkpoint older than 7 days isn't shown. The block stays within 900 tokens: the compaction summary is cut first, then the agent's message, then the requests.
+- **Only if recent, and short.** A checkpoint older than 7 days isn't shown. The block stays within 900 tokens: the compaction summary is cut first, then the agent's message and the requests, then notes and the file list.
 - **Notes for this branch** are the checkpoint's notes, then up to 5 memories in the `session` layer.
 - **Checked like memories.** Everything is redacted before it's saved. When the block is built, each part is checked by the [guard](#safe-writes): a part that reads like instructions is left out, and the block says how many were.
 
