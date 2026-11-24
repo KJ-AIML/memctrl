@@ -200,7 +200,7 @@ enum Command {
     /// Store a memory (or explicitly request LLM extraction).
     Add {
         content: String,
-        #[arg(long, default_value = "session")]
+        #[arg(long, default_value = "project")]
         layer: String,
         #[arg(
             long,

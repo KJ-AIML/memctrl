@@ -577,3 +577,22 @@ fn the_session_start_brief_fits_claude_codes_cap() {
     );
     assert!(hooked.contains("Convention"));
 }
+
+#[test]
+fn add_without_a_layer_reaches_the_brief() {
+    let dir = project();
+    ok(
+        dir.path(),
+        &["add", "The staging database resets nightly at 02:00"],
+    );
+    assert!(ok(dir.path(), &["context"]).contains("The staging database resets nightly at 02:00"));
+    let listed: Value =
+        serde_json::from_str(&ok(dir.path(), &["list", "--layer", "project"])).unwrap();
+    assert!(listed.to_string().contains("resets nightly"));
+    let skill = include_str!("../assets/SKILL.md");
+    assert!(skill.contains("memctrl checkpoint note"));
+    assert!(
+        !skill.contains("--layer session"),
+        "the skill no longer sends work in progress to a layer nobody reads"
+    );
+}
