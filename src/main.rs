@@ -142,7 +142,7 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Install SKILL.md for a coding tool (and optionally a Claude Code session-start hook).
+    /// Install SKILL.md for a coding tool (and optionally its hooks: the brief, recall and checkpoints).
     Install {
         #[arg(long)]
         tool: Option<String>,
@@ -150,7 +150,7 @@ enum Command {
         project: bool,
         #[arg(
             long,
-            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt"
+            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt, and save a checkpoint per branch (with your last three requests) in .memctrl/checkpoints/"
         )]
         hook: bool,
     },
@@ -1270,6 +1270,9 @@ fn checkpoint_command(
                 if saved.branch.is_none() {
                     saved.branch = branch;
                 }
+                if !rules.continuity.prompts {
+                    saved.prompts.clear();
+                }
                 let notes = checkpoint::session_notes(&MemoryStore::open(db)?, &rules.guard)?;
                 match checkpoint::render(&saved, &notes, &rules.guard, now, false) {
                     Some(rendered) => sanitize_text(&rendered.markdown),
@@ -1281,6 +1284,9 @@ fn checkpoint_command(
             let mut saved = checkpoint::load(&file);
             ensure!(saved.add_note(text, now), "nothing to save");
             saved.branch = branch;
+            if !rules.continuity.prompts {
+                saved.prompts.clear();
+            }
             checkpoint::save(&file, &saved)?;
             serde_json::to_string(&sanitize_value(
                 &json!({"status": "saved", "branch": saved.branch}),
@@ -1320,6 +1326,10 @@ fn hook_session_id(input: &Value) -> Option<&str> {
 /// Keeps the request the user just typed in this branch's checkpoint, for the prompt hook.
 /// A failure is a warning; recall carries on.
 fn keep_request(rules: &Rules, db: &Path, input: &Value, text: &str) {
+    // A `remember:` prompt is saved as a memory, not a task to pick up again.
+    if rules.remember && memctrl::capture::request(text).is_some() {
+        return;
+    }
     let worktree = match &rules.project_dir {
         Some(dir) => dir.clone(),
         None => std::env::current_dir().unwrap_or_default(),
@@ -1355,10 +1365,15 @@ fn checkpoint_hook(
     let (file, branch) = checkpoint_file(db, &project.dir);
     let file = file.as_path();
     let session_id = hook_session_id(input);
+    // With `[continuity] prompts = false`, requests kept earlier are never shown and the next
+    // save drops them.
     let stamp = |saved: &mut checkpoint::Checkpoint| {
         saved.branch = branch.clone();
         if let Some(id) = session_id {
             saved.session_id = Some(id.to_string());
+        }
+        if !rules.continuity.prompts {
+            saved.prompts.clear();
         }
     };
     match checkpoint::event(input) {
@@ -1366,6 +1381,9 @@ fn checkpoint_hook(
             let mut saved = checkpoint::load(file);
             if saved.branch.is_none() {
                 saved.branch = branch.clone();
+            }
+            if !rules.continuity.prompts {
+                saved.prompts.clear();
             }
             let notes = checkpoint::session_notes(&MemoryStore::open(db)?, &rules.guard)?;
             let Some(rendered) = checkpoint::render(&saved, &notes, &rules.guard, now, true) else {

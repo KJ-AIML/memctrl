@@ -457,6 +457,149 @@ fn continuity_can_be_turned_off_and_uncommitted_files_are_listed() {
 }
 
 #[test]
+fn uncommitted_files_keep_non_ascii_names_and_git_takes_no_lock() {
+    let repo = TempDir::new().unwrap();
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(repo.path())
+        .status();
+    if !git.is_ok_and(|s| s.success()) {
+        eprintln!("git isn't available; skipping the non-ASCII file-name check");
+        return;
+    }
+    ok(repo.path(), &["init"]);
+    // memctrl's own .gitignore is the user's change too; commit it so only the new file is left.
+    for args in [
+        vec!["add", "-A"],
+        vec![
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "start",
+        ],
+    ] {
+        std::process::Command::new("git")
+            .args(&args)
+            .current_dir(repo.path())
+            .status()
+            .unwrap();
+    }
+    std::fs::write(repo.path().join("ไฟล์ใหม่.txt"), "x").unwrap();
+    hook(repo.path(), &HOOK, &stop("Added a Thai file."));
+    let stored: Value = serde_json::from_str(&ok(
+        repo.path(),
+        &["checkpoint", "show", "--format", "json"],
+    ))
+    .unwrap();
+    assert_eq!(stored["files"], json!(["ไฟล์ใหม่.txt"]));
+    assert!(ok(repo.path(), &["checkpoint", "show"]).contains("ไฟล์ใหม่.txt"));
+    assert!(
+        !repo.path().join(".git/index.lock").exists(),
+        "no lock is left behind"
+    );
+}
+
+#[test]
+fn prompts_off_drops_requests_already_kept() {
+    let dir = project();
+    hook(
+        dir.path(),
+        &["recall", "--format", "hook"],
+        &json!({"session_id": "s-1", "hook_event_name": "UserPromptSubmit", "prompt": "Move login to server-side sessions"}),
+    );
+    let config = dir.path().join("no-config/memctrl");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("config.toml"),
+        "[continuity]\nprompts = false\n",
+    )
+    .unwrap();
+    assert!(
+        !ok(dir.path(), &["checkpoint", "show"]).contains("The user last asked"),
+        "show leaves them out before any save"
+    );
+    hook(dir.path(), &HOOK, &stop("Sessions are wired in."));
+    let block = context_of(&hook(dir.path(), &HOOK, &start("clear")));
+    assert!(!block.contains("The user last asked"), "{block}");
+    assert!(!block.contains("server-side sessions"), "{block}");
+    let stored: Value =
+        serde_json::from_str(&ok(dir.path(), &["checkpoint", "show", "--format", "json"])).unwrap();
+    assert!(stored["prompts"].as_array().unwrap().is_empty(), "{stored}");
+}
+
+#[test]
+fn a_shared_store_keeps_each_repositorys_checkpoints_apart() {
+    let root = TempDir::new().unwrap();
+    let (a, b, shared) = (
+        root.path().join("a"),
+        root.path().join("b"),
+        root.path().join("shared"),
+    );
+    for dir in [&a, &b, &shared] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    on_branch(&a, "main");
+    on_branch(&b, "main");
+    let db = shared.join(".memctrl/memories.db");
+    let with_db = |dir: &Path, args: &[&str], input: Option<&Value>| {
+        let mut child = memctrl(dir)
+            .env("MEMCTRL_DB_PATH", &db)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        if let Some(input) = input {
+            stdin.write_all(input.to_string().as_bytes()).unwrap();
+        }
+        drop(stdin);
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    };
+    with_db(&a, &["init"], None);
+    assert!(db.exists());
+    with_db(&a, &HOOK, Some(&stop("Repo A's private work.")));
+    assert!(
+        with_db(&b, &HOOK, Some(&start("clear"))).stdout.is_empty(),
+        "repo B sees nothing of repo A"
+    );
+    assert!(
+        context_of(&with_db(&a, &HOOK, Some(&start("clear")))).contains("Repo A's private work.")
+    );
+}
+
+#[test]
+fn a_remember_prompt_is_not_kept_as_a_request() {
+    let dir = project();
+    let out = hook(
+        dir.path(),
+        &["recall", "--format", "hook"],
+        &json!({"session_id": "s-1", "hook_event_name": "UserPromptSubmit", "prompt": "remember: the staging database resets nightly"}),
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stored: Value =
+        serde_json::from_str(&ok(dir.path(), &["checkpoint", "show", "--format", "json"])).unwrap();
+    assert!(stored["prompts"].as_array().unwrap().is_empty(), "{stored}");
+}
+
+#[test]
 fn the_prompt_hook_keeps_the_last_three_requests() {
     let dir = project();
     let ask = |format: &str, event: &str, text: &str| {

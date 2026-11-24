@@ -73,8 +73,10 @@ fn short_hash(text: &str) -> String {
         .collect()
 }
 
-/// A file name for a branch (see the spec's "Key").
-pub fn key(head: Option<&Head>, worktree: &Path) -> String {
+/// A file name for a branch (see the spec's "Key"). `repository` names the repository (see
+/// [`identity`]), so stores shared by several repositories keep their checkpoints apart;
+/// `worktree` names a detached HEAD's checkout.
+pub fn key(head: Option<&Head>, repository: &str, worktree: &Path) -> String {
     match head {
         Some(Head::Branch(name)) => {
             let mut safe: String = name
@@ -91,10 +93,21 @@ pub fn key(head: Option<&Head>, worktree: &Path) -> String {
             if safe.starts_with('.') {
                 safe.replace_range(..1, "-");
             }
-            format!("{safe}-{}", short_hash(name))
+            format!("{safe}-{}", short_hash(&format!("{repository}\n{name}")))
         }
         _ => format!("_detached-{}", short_hash(&worktree.to_string_lossy())),
     }
+}
+
+/// The repository a checkout belongs to, as text to hash: the main worktree's root for a linked
+/// worktree (so its worktrees share a branch's checkpoint), else `root`. Canonicalized where it
+/// can be, so one folder spelled two ways is one repository; only ever hashed, never compared.
+pub fn identity(root: &Path) -> String {
+    let identity = gitmeta::main_worktree(root).unwrap_or_else(|| root.to_path_buf());
+    std::fs::canonicalize(&identity)
+        .unwrap_or(identity)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The checkpoint file for the branch checked out in `worktree`, and the branch's name.
@@ -102,7 +115,11 @@ pub fn file(store_dir: &Path, worktree: &Path) -> (PathBuf, Option<String>) {
     let root = gitmeta::repo_root(worktree);
     let head = root.as_deref().and_then(gitmeta::head);
     let root = root.unwrap_or_else(|| worktree.to_path_buf());
-    let name = format!("{}.json", key(head.as_ref(), &root));
+    let repository = match head {
+        Some(Head::Branch(_)) => identity(&root),
+        _ => String::new(),
+    };
+    let name = format!("{}.json", key(head.as_ref(), &repository, &root));
     let branch = match head {
         Some(Head::Branch(name)) => Some(name),
         _ => None,
@@ -585,14 +602,16 @@ fn porcelain_paths(output: &str) -> Vec<String> {
 }
 
 /// Paths with uncommitted changes, from `git status --porcelain`. `None` when git is missing,
-/// fails, or takes longer than `wait`.
+/// fails, or takes longer than `wait`. Git takes no optional lock (a killed git leaves no
+/// `index.lock` behind) and writes non-ASCII names as they are.
 pub fn changed_files(worktree: &Path, wait: std::time::Duration) -> Option<Vec<String>> {
     use std::io::Read;
     use std::process::{Command, Stdio};
     let mut child = Command::new("git")
+        .arg("--no-optional-locks")
         .arg("-C")
         .arg(worktree)
-        .args(["status", "--porcelain"])
+        .args(["-c", "core.quotePath=false", "status", "--porcelain"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -728,7 +747,7 @@ mod tests {
         Utc.with_ymd_and_hms(2026, 11, 24, hour, 0, 0).unwrap()
     }
     fn branch(name: &str) -> String {
-        key(Some(&Head::Branch(name.into())), Path::new("/w"))
+        key(Some(&Head::Branch(name.into())), "/repo", Path::new("/w"))
     }
 
     #[test]
@@ -736,6 +755,24 @@ mod tests {
         assert!(branch("feat/auth").starts_with("feat-auth-"));
         assert_eq!(branch("feat/auth").len(), "feat-auth-".len() + 8);
         assert_ne!(branch("a/b"), branch("a-b"), "the hash tells them apart");
+        let main = |repository: &str| {
+            key(
+                Some(&Head::Branch("main".into())),
+                repository,
+                Path::new("/w"),
+            )
+        };
+        assert_ne!(main("/one"), main("/two"), "each repository has its own");
+        assert_eq!(main("/one"), main("/one"));
+        assert_eq!(
+            main("/one"),
+            key(
+                Some(&Head::Branch("main".into())),
+                "/one",
+                Path::new("/elsewhere")
+            ),
+            "a branch's key doesn't depend on the worktree"
+        );
         for name in [
             "feat/../../x",
             ".hidden",
@@ -755,9 +792,13 @@ mod tests {
             // inside checkpoints/.
             assert!(key != "." && key != "..", "{key}");
         }
-        let detached = key(Some(&Head::Detached("0123".into())), Path::new("/w/one"));
+        let detached = key(
+            Some(&Head::Detached("0123".into())),
+            "/repo",
+            Path::new("/w/one"),
+        );
         assert!(detached.starts_with("_detached-"));
-        assert_ne!(detached, key(None, Path::new("/w/two")));
+        assert_ne!(detached, key(None, "/repo", Path::new("/w/two")));
     }
 
     #[test]

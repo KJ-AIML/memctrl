@@ -83,7 +83,7 @@ One JSON file per branch at `<store folder>/checkpoints/<key>.json`, where the s
 
 `branch` is null for a detached HEAD or a folder outside git. Text over a limit keeps its head and tail with ` … ` between (one third head, two thirds tail: the end of a summary or a reply is where the next step is). Every stored string goes through `sanitize_text` first, so secrets are redacted as in memories. Timestamps are RFC 3339 UTC.
 
-**Key.** The branch name with every character outside `[A-Za-z0-9._-]` replaced by `-`, cut to 60 characters, a leading `.` replaced by `-`, then `-` and the first 8 hex characters of the SHA-256 of the full name. A detached HEAD or a folder outside git uses `_detached-` plus the first 8 hex of the SHA-256 of the worktree's path. The branch is read from `HEAD` in the git folder directly, without starting git.
+**Key.** The branch name with every character outside `[A-Za-z0-9._-]` replaced by `-`, cut to 60 characters, a leading `.` replaced by `-`, then `-` and the first 8 hex characters of the SHA-256 of the repository's identity, a newline and the full branch name. The identity is the main worktree's root for a linked worktree, else the repository root, canonicalized where possible (only hashed, never compared), so linked worktrees of one repository share a branch's checkpoint while repositories sharing one store (`MEMCTRL_DB_PATH`) don't. A detached HEAD or a folder outside git uses `_detached-` plus the first 8 hex of the SHA-256 of the worktree's path. The branch is read from `HEAD` in the git folder directly, without starting git.
 
 **Writers.** A missing or unreadable file reads as an empty checkpoint; writes go through `fsutil::write_atomic` confined to the folder. Two sessions on one branch overwrite each other part by part; the last writer of a part wins.
 
@@ -102,7 +102,7 @@ One command handles every event but the prompt: `memctrl checkpoint --format hoo
 
 - Input carrying `agent_id` comes from inside a sub-agent and is ignored.
 - A null or empty message leaves `last_message` as it was and still refreshes `files`.
-- `files` comes from `git status --porcelain` in the worktree. memctrl waits at most 2 seconds for it and keeps the previous list if git is missing, fails or is slow. The message is written before git is started.
+- `files` comes from `git --no-optional-locks -c core.quotePath=false status --porcelain` in the worktree (no index lock, non-ASCII names as written). memctrl waits at most 2 seconds for it and keeps the previous list if git is missing, fails or is slow. The message is written before git is started.
 - Where there is no store, nothing is written and nothing printed (`{}` for Gemini), as with the other hooks.
 
 `PreCompact` prints exactly:
