@@ -155,9 +155,9 @@ pub fn parse_spec(spec: &str) -> Result<CitationSpec> {
     );
     let as_path = Path::new(&normalized);
     ensure!(
-        !as_path.is_absolute()
-            && !normalized.starts_with('/')
-            && !(normalized.len() > 1 && normalized.as_bytes()[1] == b':'),
+        !(as_path.is_absolute()
+            || normalized.starts_with('/')
+            || (normalized.len() > 1 && normalized.as_bytes()[1] == b':')),
         "citation paths are relative to the project root"
     );
     ensure!(
