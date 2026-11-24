@@ -149,14 +149,14 @@ fn hook_flags(hook: &Value, args: &str) -> Option<String> {
 /// Idempotent: an existing memctrl hook gets the new program and keeps its flags, everything else
 /// is preserved in its original key order, and a file that isn't valid JSON is never rewritten.
 pub fn install_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
-    let handler = Host::ClaudeCode.handler("SessionStart", command);
+    let handler = Host::ClaudeCode.handler("SessionStart", BRIEF_ARGS, command);
     install_event_hook(root, settings, "SessionStart", BRIEF_ARGS, command, handler)
 }
 
 /// Adds (or updates) the UserPromptSubmit hook that runs `memctrl recall` on each prompt, the
 /// same way `install_hook` handles the session-start hook.
 pub fn install_recall_hook(root: &Path, settings: &str, command: &str) -> Result<(PathBuf, bool)> {
-    let handler = Host::ClaudeCode.handler("UserPromptSubmit", command);
+    let handler = Host::ClaudeCode.handler("UserPromptSubmit", RECALL_ARGS, command);
     install_event_hook(
         root,
         settings,
@@ -194,34 +194,55 @@ impl Host {
         }
     }
 
-    /// The session-start and prompt events, with the memctrl arguments each runs.
-    fn events(self) -> [(&'static str, &'static str); 2] {
+    /// Every (event, memctrl arguments) pair this host gets, in install order.
+    fn events(self) -> Vec<(&'static str, &'static str)> {
+        const CHECKPOINT: &str = "checkpoint --format hook";
         match self {
-            Self::ClaudeCode | Self::Codex => [
+            Self::ClaudeCode => vec![
                 ("SessionStart", BRIEF_ARGS),
+                ("SessionStart", "checkpoint --format hook --announce"),
+                ("UserPromptSubmit", RECALL_ARGS),
+                ("Stop", CHECKPOINT),
+                ("PreCompact", CHECKPOINT),
+                ("PostCompact", CHECKPOINT),
+            ],
+            Self::Codex => vec![
+                ("SessionStart", BRIEF_ARGS),
+                ("SessionStart", CHECKPOINT),
+                ("Stop", CHECKPOINT),
                 ("UserPromptSubmit", RECALL_ARGS),
             ],
-            Self::Gemini => [
+            Self::Gemini => vec![
                 ("SessionStart", "context --format gemini"),
+                ("SessionStart", "checkpoint --format gemini"),
+                ("AfterAgent", "checkpoint --format gemini"),
                 ("BeforeAgent", "recall --format gemini"),
             ],
         }
     }
 
-    /// The handler written for a new hook. Codex cuts hook output past about 2,500 tokens unless
-    /// told otherwise, and the brief can reach 3,000; Gemini times out in milliseconds.
-    fn handler(self, event: &str, command: &str) -> Value {
-        let brief = event == "SessionStart";
+    /// The handler written for a new hook running memctrl `args`. Codex cuts hook output past
+    /// about 2,500 tokens unless told otherwise, and the brief can reach 3,000; Claude Code's
+    /// checkpoint hooks outside session start get 10 seconds; Gemini times out in milliseconds.
+    fn handler(self, event: &str, args: &str, command: &str) -> Value {
+        let subcommand = args.split(' ').next().unwrap_or(args);
         match self {
+            Self::ClaudeCode if subcommand == "checkpoint" && event != "SessionStart" => {
+                json!({"type": "command", "command": command, "timeout": 10})
+            }
             Self::ClaudeCode => json!({"type": "command", "command": command}),
-            Self::Codex if brief => {
+            Self::Codex if subcommand == "context" => {
                 json!({"type": "command", "command": command, "additionalContextLimit": 4000})
             }
             Self::Codex => json!({"type": "command", "command": command}),
             Self::Gemini => json!({
                 "type": "command",
                 "command": command,
-                "name": if brief { "memctrl-brief" } else { "memctrl-recall" },
+                "name": match subcommand {
+                    "context" => "memctrl-brief",
+                    "recall" => "memctrl-recall",
+                    _ => "memctrl-checkpoint",
+                },
                 "timeout": 10000,
             }),
         }
@@ -231,12 +252,12 @@ impl Host {
     pub fn note(self) -> Option<&'static str> {
         match self {
             Self::ClaudeCode => None,
-            Self::Codex => Some("Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the two memctrl hooks. Project hooks also need the project trusted"),
+            Self::Codex => Some("Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the memctrl hooks. Project hooks also need the project trusted"),
             Self::Gemini => Some("with folder trust on, Gemini CLI runs these hooks only in folders you've trusted, and it warns about new project hooks the first time"),
         }
     }
 
-    /// Adds (or updates) both hooks, the way `install_hook` does for Claude Code.
+    /// Adds (or updates) every hook in `events`, the way `install_hook` does for Claude Code.
     pub fn install_hooks(
         self,
         root: &Path,
@@ -255,7 +276,7 @@ impl Host {
                 event,
                 args,
                 &command,
-                self.handler(event, &command),
+                self.handler(event, args, &command),
             )?;
             written = Some(path);
             changed |= this;
@@ -472,7 +493,15 @@ mod tests {
             gemini["hooks"]["SessionStart"][0]["hooks"][0],
             json!({"type": "command", "command": "/usr/local/bin/memctrl context --format gemini --budget 1500", "name": "memctrl-brief", "timeout": 10000})
         );
-        assert_eq!(gemini["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            gemini["hooks"]["SessionStart"][1]["hooks"][0]["command"],
+            "/usr/local/bin/memctrl checkpoint --format gemini"
+        );
+        assert_eq!(
+            gemini["hooks"]["SessionStart"].as_array().unwrap().len(),
+            2,
+            "the brief and the checkpoint, no duplicates"
+        );
         assert!(Host::for_tool("cursor").is_none());
     }
 
@@ -498,6 +527,146 @@ mod tests {
         assert_eq!(
             value["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"],
             "memctrl recall --format hook"
+        );
+    }
+
+    /// The memctrl commands installed for `event`, in order.
+    fn commands(settings: &Value, event: &str) -> Vec<String> {
+        settings["hooks"][event]
+            .as_array()
+            .map(|groups| {
+                groups
+                    .iter()
+                    .flat_map(|g| g["hooks"].as_array().cloned().unwrap_or_default())
+                    .filter_map(|h| h["command"].as_str().map(String::from))
+                    .filter(|c| c.contains("memctrl"))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    fn installed(host: Host, root: &Path) -> Value {
+        let (path, _) = host
+            .install_hooks(root, true, Path::new("/opt/bin/memctrl"))
+            .unwrap();
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn each_host_gets_its_continuity_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude = installed(Host::ClaudeCode, dir.path());
+        assert_eq!(
+            commands(&claude, "SessionStart"),
+            [
+                "/opt/bin/memctrl context --format hook",
+                "/opt/bin/memctrl checkpoint --format hook --announce"
+            ]
+        );
+        assert_eq!(
+            commands(&claude, "UserPromptSubmit"),
+            ["/opt/bin/memctrl recall --format hook"]
+        );
+        for event in ["Stop", "PreCompact", "PostCompact"] {
+            assert_eq!(
+                commands(&claude, event),
+                ["/opt/bin/memctrl checkpoint --format hook"],
+                "{event}"
+            );
+            assert_eq!(
+                claude["hooks"][event][0]["hooks"][0]["timeout"], 10,
+                "{event}"
+            );
+        }
+        let (_, changed) = Host::ClaudeCode
+            .install_hooks(dir.path(), true, Path::new("/opt/bin/memctrl"))
+            .unwrap();
+        assert!(!changed, "installing twice changes nothing");
+
+        let dir = tempfile::tempdir().unwrap();
+        let codex = installed(Host::Codex, dir.path());
+        assert_eq!(
+            commands(&codex, "SessionStart"),
+            [
+                "/opt/bin/memctrl context --format hook",
+                "/opt/bin/memctrl checkpoint --format hook"
+            ]
+        );
+        assert_eq!(
+            commands(&codex, "Stop"),
+            ["/opt/bin/memctrl checkpoint --format hook"]
+        );
+        assert_eq!(
+            codex["hooks"]["SessionStart"][0]["hooks"][0]["additionalContextLimit"],
+            4000
+        );
+        assert!(
+            commands(&codex, "PreCompact").is_empty() && commands(&codex, "PostCompact").is_empty()
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        let gemini = installed(Host::Gemini, dir.path());
+        assert_eq!(
+            commands(&gemini, "SessionStart"),
+            [
+                "/opt/bin/memctrl context --format gemini",
+                "/opt/bin/memctrl checkpoint --format gemini"
+            ]
+        );
+        assert_eq!(
+            commands(&gemini, "BeforeAgent"),
+            ["/opt/bin/memctrl recall --format gemini"]
+        );
+        assert_eq!(
+            commands(&gemini, "AfterAgent"),
+            ["/opt/bin/memctrl checkpoint --format gemini"]
+        );
+        let names: Vec<&str> = ["SessionStart", "SessionStart", "BeforeAgent", "AfterAgent"]
+            .iter()
+            .zip([0, 1, 0, 0])
+            .map(|(event, i)| {
+                gemini["hooks"][event][i]["hooks"][0]["name"]
+                    .as_str()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "memctrl-brief",
+                "memctrl-checkpoint",
+                "memctrl-recall",
+                "memctrl-checkpoint"
+            ]
+        );
+    }
+
+    #[test]
+    fn upgrading_2_8_hooks_adds_the_new_ones_and_keeps_hand_added_flags() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join(".claude/settings.local.json");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, r#"{"model":"opus","hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"memctrl context --format hook --budget 1500"}]}],"UserPromptSubmit":[{"hooks":[{"type":"command","command":"memctrl recall --format hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}"#).unwrap();
+        let (_, changed) = Host::ClaudeCode
+            .install_hooks(dir.path(), true, Path::new("/opt/bin/memctrl"))
+            .unwrap();
+        assert!(changed);
+        let settings: Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(settings["model"], "opus");
+        assert_eq!(
+            commands(&settings, "SessionStart"),
+            [
+                "/opt/bin/memctrl context --format hook --budget 1500",
+                "/opt/bin/memctrl checkpoint --format hook --announce"
+            ]
+        );
+        assert_eq!(
+            commands(&settings, "Stop"),
+            ["/opt/bin/memctrl checkpoint --format hook"]
+        );
+        assert_eq!(
+            settings["hooks"]["Stop"][0]["hooks"][0]["command"], "say done",
+            "someone else's hook stays"
         );
     }
 

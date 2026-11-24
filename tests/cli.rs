@@ -676,11 +676,49 @@ fn claude_install_uses_the_real_skill_path_and_merges_the_hook_once() {
         .as_str()
         .unwrap();
     assert!(recall.ends_with("recall --format hook"), "{recall}");
+    for (event, expected) in [
+        (
+            "SessionStart",
+            &[
+                "context --format hook",
+                "checkpoint --format hook --announce",
+            ][..],
+        ),
+        ("UserPromptSubmit", &["recall --format hook"][..]),
+        ("Stop", &["checkpoint --format hook"][..]),
+        ("PreCompact", &["checkpoint --format hook"][..]),
+        ("PostCompact", &["checkpoint --format hook"][..]),
+    ] {
+        assert_hooks(&settings, event, expected);
+    }
+    assert_eq!(
+        settings["hooks"].as_object().unwrap().len(),
+        5,
+        "{settings}"
+    );
     assert!(failure(
         &dir,
         &["install", "--tool", "cursor", "--project", "--hook"]
     )
     .contains("--hook works with claude, codex and gemini"));
+}
+
+/// Asserts that `event` has exactly one hook per `expected` arguments, in order, each a single
+/// handler in its own group that runs memctrl with those arguments.
+fn assert_hooks(settings: &Value, event: &str, expected: &[&str]) {
+    let groups = settings["hooks"][event].as_array().unwrap_or_else(|| {
+        panic!("no {event} hooks: {settings}");
+    });
+    let commands: Vec<&str> = groups
+        .iter()
+        .flat_map(|group| group["hooks"].as_array().unwrap())
+        .map(|hook| hook["command"].as_str().unwrap())
+        .collect();
+    assert_eq!(commands.len(), expected.len(), "{event}: {commands:?}");
+    for (command, args) in commands.iter().zip(expected) {
+        assert!(command.contains("memctrl"), "{event}: {command}");
+        assert!(command.ends_with(&format!(" {args}")), "{event}: {command}");
+    }
 }
 
 /// Runs a hook command the way Claude Code does: the event's JSON on stdin.
@@ -1250,6 +1288,33 @@ fn gemini_hooks_always_print_json_and_codex_and_gemini_install() {
     let codex = success(&dir, &["install", "--tool", "codex", "--project", "--hook"]);
     assert!(codex["hook_note"].as_str().unwrap().contains("/hooks"));
     assert!(dir.path().join(".codex/hooks.json").exists());
+    let read = |file: &str| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join(file)).unwrap()).unwrap()
+    };
+    let gemini_settings = read(".gemini/settings.json");
+    for (event, expected) in [
+        (
+            "SessionStart",
+            &["context --format gemini", "checkpoint --format gemini"][..],
+        ),
+        ("BeforeAgent", &["recall --format gemini"][..]),
+        ("AfterAgent", &["checkpoint --format gemini"][..]),
+    ] {
+        assert_hooks(&gemini_settings, event, expected);
+    }
+    assert_eq!(gemini_settings["hooks"].as_object().unwrap().len(), 3);
+    let codex_settings = read(".codex/hooks.json");
+    for (event, expected) in [
+        (
+            "SessionStart",
+            &["context --format hook", "checkpoint --format hook"][..],
+        ),
+        ("UserPromptSubmit", &["recall --format hook"][..]),
+        ("Stop", &["checkpoint --format hook"][..]),
+    ] {
+        assert_hooks(&codex_settings, event, expected);
+    }
+    assert_eq!(codex_settings["hooks"].as_object().unwrap().len(), 3);
     let refused = failure(
         &dir,
         &["install", "--tool", "cursor", "--project", "--hook"],
