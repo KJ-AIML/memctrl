@@ -584,11 +584,18 @@ fn project(cli: &Cli) -> Result<Project> {
             found: rc.is_file(),
             rc,
             dir: cwd.clone(),
+            store_root: cwd.clone(),
             searched_to: cwd,
         });
     }
     let located = project::locate_here()?;
     if let Command::Init { force } = &cli.command {
+        if !*force && located.store_root != located.dir {
+            bail!(
+                "this worktree already uses the memctrl store at {}; run `memctrl init --force` to give it a separate one",
+                located.store_root.display()
+            );
+        }
         ensure!(
             *force || !located.found || located.dir == cwd,
             "{} is already a memctrl project, and commands work from any folder inside it; to start a separate project here, run `memctrl init --force`",
@@ -599,6 +606,7 @@ fn project(cli: &Cli) -> Result<Project> {
             found: rc.is_file(),
             rc,
             dir: cwd.clone(),
+            store_root: cwd.clone(),
             searched_to: cwd,
         });
     }
