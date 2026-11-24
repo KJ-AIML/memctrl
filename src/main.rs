@@ -1444,13 +1444,21 @@ async fn execute(
                 layers.clone()
             };
             let notes = citations::stale_notes(store, rules);
-            let brief = context::session_brief_with(
-                store,
-                &layers,
-                *budget,
-                &|m| notes.get(&m.id).cloned(),
-                &rules.guard,
-            )?;
+            let build = |budget: usize| {
+                context::session_brief_with(
+                    store,
+                    &layers,
+                    budget,
+                    &|m| notes.get(&m.id).cloned(),
+                    &rules.guard,
+                )
+            };
+            // Only Claude Code and Codex cap a hook's output; every other format stays whole.
+            let brief = if *format == ContextFormat::Hook && write.is_none() {
+                context::fit_hook(*budget, &build)?
+            } else {
+                build(*budget)?
+            };
             if format.hook() && write.is_none() {
                 record_brief(&brief, db);
             }

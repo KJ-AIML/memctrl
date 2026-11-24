@@ -544,3 +544,36 @@ fn the_prompt_hook_keeps_the_last_three_requests() {
     );
     assert!(!bare.path().join(".memctrl").exists());
 }
+
+#[test]
+fn the_session_start_brief_fits_claude_codes_cap() {
+    let dir = project();
+    // Written through the library: 90 `add` processes would make this test slow.
+    let store = memctrl::store::MemoryStore::open(dir.path().join(".memctrl/memories.db")).unwrap();
+    for n in 0..90 {
+        store
+            .insert_memory(memctrl::model::NewMemory {
+                content: format!("Convention {n}: every handler in the billing service validates its input with the shared schema module before touching the ledger tables"),
+                layer: "project".into(),
+                source: "manual".into(),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    drop(store);
+    assert!(
+        ok(dir.path(), &["context"]).chars().count() > 9_500,
+        "Markdown output is unchanged"
+    );
+    let hooked = context_of(&hook(
+        dir.path(),
+        &["context", "--format", "hook"],
+        &start("startup"),
+    ));
+    assert!(
+        hooked.chars().count() <= 9_500,
+        "{}",
+        hooked.chars().count()
+    );
+    assert!(hooked.contains("Convention"));
+}
