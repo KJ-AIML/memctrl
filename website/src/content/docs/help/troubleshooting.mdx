@@ -157,7 +157,7 @@ memctrl context --format json
 
 | Cause | How to tell | Fix |
 | --- | --- | --- |
-| It's in the `session` layer, the default for `add` | `memctrl show <id>` says `"layer":"session"` | The brief reads `project` and `user`. Add it again with `--layer project` |
+| It's in the `session` layer | `memctrl show <id>` says `"layer":"session"` | The brief reads `project` and `user`. Add it again with `--layer project` |
 | It's a candidate waiting for review | `memctrl candidates` lists it; the brief's header says memories wait for review | Review it: [Review candidates](/memctrl/guides/review-candidates/) |
 | The guard flags it now | `doctor` lists it under `withheld_from_brief` | Read it with `memctrl show <id>`, then `memctrl accept <id>` at a terminal or `memctrl forget <id>` |
 | It expired | `memctrl show <id>` gives an `expires_at` in the past; `doctor` counts them as `expired_count` | `user` memories last 90 days and `session` memories seven. Save it again in `project` if it should last |

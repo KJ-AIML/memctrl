@@ -54,6 +54,7 @@ Work on a branch survives `/clear`, compaction, a new session and a new worktree
 - Linked worktrees share the main worktree's store.
 - Session-layer notes show up in the checkpoint, so the skill's advice finally works.
 - `memctrl add` defaults to the `project` layer.
+- `memctrl/templates/SKILL.md`, a 1.x file nothing installed, was deleted in 2.9.0.
 - The brief stays under Claude Code's 10,000-character cap on hook output, past which the model gets a 2,000-character preview and a file path.
 
 Design: [superpowers/specs/2026-11-24-continuity-design.md](superpowers/specs/2026-11-24-continuity-design.md). Plan: [superpowers/plans/2026-11-24-continuity.md](superpowers/plans/2026-11-24-continuity.md).
@@ -83,7 +84,7 @@ Exit: a store gains at least five accepted memories a week from normal work, wit
 
 ### M4. Smaller (3.0.0)
 
-Remove what the loop doesn't use: `tree`, `decay`, `reinforce`, `reflect`, `done`, `trigger` and the `[triggers]` table, `heatmap`, `timeline`, `spans`, `otel-export`, `otel-stats`, `agent`, `review heli`, the legacy keyword scorer outside `eval`, and all but one LLM adapter. Each is deprecated with a warning in 2.11 and deleted in 3.0, with the schema's tables left in place so old stores open. Also delete `memctrl/templates/SKILL.md`, a 1.x file nothing installs.
+Remove what the loop doesn't use: `tree`, `decay`, `reinforce`, `reflect`, `done`, `trigger` and the `[triggers]` table, `heatmap`, `timeline`, `spans`, `otel-export`, `otel-stats`, `agent`, `review heli`, the legacy keyword scorer outside `eval`, and all but one LLM adapter. Each is deprecated with a warning in 2.11 and deleted in 3.0, with the schema's tables left in place so old stores open.
 
 Exit: under 25 commands, and `make ci` time down by the share of tests removed.
 

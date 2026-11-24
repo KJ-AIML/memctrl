@@ -17,10 +17,10 @@ memctrl install --tool codex --project --hook
 ```
 
 ```json
-{"path":"/home/you/your-project/.agents/skills/memctrl/SKILL.md","hook":"/home/you/your-project/.codex/hooks.json","hook_changed":true,"hook_note":"Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the two memctrl hooks. Project hooks also need the project trusted"}
+{"path":"/home/you/your-project/.agents/skills/memctrl/SKILL.md","hook":"/home/you/your-project/.codex/hooks.json","hook_changed":true,"hook_note":"Codex runs new hooks only after you trust them: start Codex, run /hooks and trust the memctrl hooks. Project hooks also need the project trusted"}
 ```
 
-Then start Codex, run `/hooks` and trust the two memctrl hooks. Codex skips a new or changed hook until you do.
+Then start Codex, run `/hooks` and trust the memctrl hooks. Codex skips a new or changed hook until you do.
 
 </TabItem>
 <TabItem label="Gemini CLI">
@@ -51,7 +51,11 @@ Both tools also get the skill, which explains memctrl to the agent, in `.agents/
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "memctrl context --format hook", "additionalContextLimit": 4000}]}
+      {"hooks": [{"type": "command", "command": "memctrl context --format hook", "additionalContextLimit": 4000}]},
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook"}]}
     ],
     "UserPromptSubmit": [
       {"hooks": [{"type": "command", "command": "memctrl recall --format hook"}]}
@@ -69,7 +73,11 @@ The commands are the ones Claude Code runs: Codex passes hooks the same JSON and
 {
   "hooks": {
     "SessionStart": [
-      {"hooks": [{"type": "command", "command": "memctrl context --format gemini", "name": "memctrl-brief", "timeout": 10000}]}
+      {"hooks": [{"type": "command", "command": "memctrl context --format gemini", "name": "memctrl-brief", "timeout": 10000}]},
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format gemini", "name": "memctrl-checkpoint", "timeout": 10000}]}
+    ],
+    "AfterAgent": [
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format gemini", "name": "memctrl-checkpoint", "timeout": 10000}]}
     ],
     "BeforeAgent": [
       {"hooks": [{"type": "command", "command": "memctrl recall --format gemini", "name": "memctrl-recall", "timeout": 10000}]}
@@ -114,7 +122,7 @@ The Codex hooks were tested in Codex 0.160: its request to the model carried the
 
 ## Remove the hooks
 
-Delete the two memctrl entries from `.codex/hooks.json` or `.gemini/settings.json` (or the copies in your home folder). memctrl doesn't remove them for you.
+Delete the memctrl entries (every command that starts memctrl) from `.codex/hooks.json` or `.gemini/settings.json` (or the copies in your home folder). memctrl doesn't remove them for you.
 
 ## Related
 

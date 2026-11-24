@@ -21,7 +21,7 @@ memctrl add "We chose SQLx over Diesel: compile-time checks caught 3 prod bugs" 
 | Field | What it is | Set with |
 | --- | --- | --- |
 | Content | The text: one fact, at most 64 KiB | the argument to [`add`](/memctrl/reference/cli/add/) |
-| Layer | How long it lives and who it belongs to: `project`, `user` or `session` | `--layer` (default `session`) |
+| Layer | How long it lives and who it belongs to: `project`, `user` or `session` | `--layer` (default `project`) |
 | Claim type | What kind of statement it is: `assertion`, `observation`, `decision`, `hypothesis` or `derived_lesson` | `--claim-type` (default `assertion`) |
 | Source | Where it came from, such as `manual`, `user` or `mcp` | `--source` (default `manual`) |
 | Confidence | From 0 to 1; weighs the memory in the brief and in search | `--confidence` (default `1`) |
@@ -44,7 +44,7 @@ The layer decides how long a memory lives and where it goes. The default retenti
 | `user` | 90 days | Your preferences, working style and personal rules | Yes |
 | `session` | 7 days | The current task and work in progress | No |
 
-`session` is the default for `memctrl add`, so pass `--layer project` for anything you want to keep. Search (`memctrl query`) looks in every layer unless you pass `--layer`. `memctrl export` writes only the project layer unless you name others, so your user layer stays on your machine.
+`project` is the default for `memctrl add`. Search (`memctrl query`) looks in every layer unless you pass `--layer`. `memctrl export` writes only the project layer unless you name others, so your user layer stays on your machine.
 
 ## Claim types
 
