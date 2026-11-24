@@ -1063,6 +1063,10 @@ fn recall_command(
                 .map(String::from)
         })
         .unwrap_or_default();
+    // Only the hook's own input is the user's request; a PROMPT argument only looks things up.
+    if format.hook() && prompt.is_none() && rules.continuity.enabled && rules.continuity.prompts {
+        keep_request(rules, db, &input, &text);
+    }
     let record = session_record(&input, db);
     let mut seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
     // A prompt that starts with `remember:` saves the note first. Only the hook's own input does
@@ -1251,7 +1255,7 @@ fn checkpoint_command(
     }
     // `show` reads session-layer memories from the store.
     ensure!(!committed, committed_store(db, user));
-    let (file, branch) = checkpoint_file(db, project);
+    let (file, branch) = checkpoint_file(db, &project.dir);
     let now = chrono::Utc::now();
     let output = match command {
         None | Some(CheckpointCommand::Show) => {
@@ -1297,10 +1301,44 @@ fn checkpoint_command(
     Ok(())
 }
 
-/// This branch's checkpoint file, and the branch's name, sanitized.
-fn checkpoint_file(db: &Path, project: &Project) -> (PathBuf, Option<String>) {
-    let (file, branch) = checkpoint::file(db.parent().unwrap_or(Path::new("")), &project.dir);
+/// This branch's checkpoint file, and the branch's name, sanitized. `worktree` is the folder
+/// the branch is checked out in.
+fn checkpoint_file(db: &Path, worktree: &Path) -> (PathBuf, Option<String>) {
+    let (file, branch) = checkpoint::file(db.parent().unwrap_or(Path::new("")), worktree);
     (file, branch.as_deref().map(sanitize_text))
+}
+
+/// The hook input's `session_id`, only when it could name a session record, so hook input
+/// never stores anything else.
+fn hook_session_id(input: &Value) -> Option<&str> {
+    input
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|id| recall::session_file(Path::new(""), id).is_some())
+}
+
+/// Keeps the request the user just typed in this branch's checkpoint, for the prompt hook.
+/// A failure is a warning; recall carries on.
+fn keep_request(rules: &Rules, db: &Path, input: &Value, text: &str) {
+    let worktree = match &rules.project_dir {
+        Some(dir) => dir.clone(),
+        None => std::env::current_dir().unwrap_or_default(),
+    };
+    let (file, branch) = checkpoint_file(db, &worktree);
+    let mut saved = checkpoint::load(&file);
+    if !saved.record_prompt(text, chrono::Utc::now()) {
+        return;
+    }
+    saved.branch = branch;
+    if let Some(id) = hook_session_id(input) {
+        saved.session_id = Some(id.to_string());
+    }
+    if let Err(error) = checkpoint::save(&file, &saved) {
+        eprintln!(
+            "{}",
+            json!({"warning": sanitize_text(&format!("cannot save the checkpoint: {error:#}"))})
+        );
+    }
 }
 
 /// What `memctrl checkpoint --format hook|gemini` prints for a hook's input, after saving what
@@ -1314,13 +1352,9 @@ fn checkpoint_hook(
     db: &Path,
 ) -> Result<Option<String>> {
     let now = chrono::Utc::now();
-    let (file, branch) = checkpoint_file(db, project);
+    let (file, branch) = checkpoint_file(db, &project.dir);
     let file = file.as_path();
-    // Only an id that could name a session record, so hook input never stores anything else.
-    let session_id = input
-        .get("session_id")
-        .and_then(Value::as_str)
-        .filter(|id| recall::session_file(Path::new(""), id).is_some());
+    let session_id = hook_session_id(input);
     let stamp = |saved: &mut checkpoint::Checkpoint| {
         saved.branch = branch.clone();
         if let Some(id) = session_id {

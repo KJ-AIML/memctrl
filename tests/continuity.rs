@@ -455,3 +455,92 @@ fn continuity_can_be_turned_off_and_uncommitted_files_are_listed() {
     );
     assert!(ok(repo.path(), &["checkpoint", "show"]).contains("## Uncommitted files\n"));
 }
+
+#[test]
+fn the_prompt_hook_keeps_the_last_three_requests() {
+    let dir = project();
+    let ask = |format: &str, event: &str, text: &str| {
+        hook(
+            dir.path(),
+            &["recall", "--format", format],
+            &json!({"session_id": "s-1", "hook_event_name": event, "prompt": text}),
+        )
+    };
+    for text in [
+        "ok",
+        "/clear",
+        "Move login to server-side sessions",
+        "Keep the JWT path for mobile",
+        "Add a migration for the sessions table",
+        "Now wire refresh() to the session store",
+    ] {
+        assert!(ask("hook", "UserPromptSubmit", text).status.success());
+    }
+    assert!(
+        ask("gemini", "BeforeAgent", "And document it in the README")
+            .status
+            .success()
+    );
+    let stored: Value =
+        serde_json::from_str(&ok(dir.path(), &["checkpoint", "show", "--format", "json"])).unwrap();
+    let kept: Vec<&str> = stored["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            "Add a migration for the sessions table",
+            "Now wire refresh() to the session store",
+            "And document it in the README"
+        ]
+    );
+    assert_eq!(stored["session_id"], "s-1");
+    let block = context_of(&hook(dir.path(), &HOOK, &start("clear")));
+    assert!(block.contains("## The user last asked\n- Add a migration for the sessions table\n- Now wire refresh() to the session store\n- And document it in the README\n"));
+
+    // A PROMPT argument only looks things up, as with `remember:`.
+    ok(
+        dir.path(),
+        &["recall", "What did we decide about the sessions table?"],
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(&ok(dir.path(), &["checkpoint", "show", "--format", "json"]))
+            .unwrap()["prompts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+
+    // Requests are not kept when you say so; the rest still is.
+    let config = dir.path().join("no-config/memctrl");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("config.toml"),
+        "[continuity]\nprompts = false\n",
+    )
+    .unwrap();
+    ok(dir.path(), &["checkpoint", "clear"]);
+    ask(
+        "hook",
+        "UserPromptSubmit",
+        "This request must not be stored",
+    );
+    hook(dir.path(), &HOOK, &stop("But this reply is."));
+    let stored: Value =
+        serde_json::from_str(&ok(dir.path(), &["checkpoint", "show", "--format", "json"])).unwrap();
+    assert!(stored["prompts"].as_array().unwrap().is_empty());
+    assert_eq!(stored["last_message"]["text"], "But this reply is.");
+
+    // No store: the prompt hook still creates nothing.
+    let bare = TempDir::new().unwrap();
+    hook(
+        bare.path(),
+        &["recall", "--format", "hook"],
+        &json!({"session_id": "s-1", "hook_event_name": "UserPromptSubmit", "prompt": "Move login to server-side sessions"}),
+    );
+    assert!(!bare.path().join(".memctrl").exists());
+}
