@@ -4,7 +4,9 @@ use crate::context;
 use crate::fsutil;
 use crate::gitmeta::{self, Head};
 use crate::guard::{self, Mode, Policy};
+use crate::review;
 use crate::sanitize::sanitize_text;
+use crate::store::MemoryStore;
 use anyhow::{Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,8 @@ pub const SUMMARY_CHARS: usize = 6_000;
 pub const NOTE_CHARS: usize = 300;
 pub const MAX_FILES: usize = 20;
 pub const MAX_NOTES: usize = 10;
+/// What a `PreCompact` hook prints: Claude Code reads it as instructions for the summary.
+pub const COMPACT_INSTRUCTIONS: &str = "Keep these in the summary, in the user's and the agent's own words where possible: what the user asked for; decisions made and why; every approach that was tried and failed, with the reason; the exact next step; file paths and commands that worked.";
 
 /// Characters of the sanitized branch name kept in a key, before its hash.
 const KEY_NAME_CHARS: usize = 60;
@@ -507,10 +511,217 @@ pub fn render(
     })
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    /// A session started; `fresh` is false for `source` resume, compact or fork.
+    Start {
+        fresh: bool,
+    },
+    /// The agent finished a turn (`Stop`, or Gemini's `AfterAgent`).
+    Stopped {
+        message: Option<String>,
+    },
+    Compacted {
+        summary: Option<String>,
+    },
+    Compacting,
+    Ignore,
+}
+
+/// What a hook's JSON asks for. Anything carrying `agent_id`, or not an object, is `Ignore`.
+pub fn event(input: &serde_json::Value) -> Event {
+    let Some(object) = input.as_object() else {
+        return Event::Ignore;
+    };
+    if object.contains_key("agent_id") {
+        return Event::Ignore;
+    }
+    let text = |key: &str| {
+        object
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(String::from)
+    };
+    match text("hook_event_name").as_deref() {
+        Some("SessionStart") => Event::Start {
+            fresh: !matches!(
+                text("source").as_deref(),
+                Some("resume" | "compact" | "fork")
+            ),
+        },
+        Some("Stop") => Event::Stopped {
+            message: text("last_assistant_message"),
+        },
+        Some("AfterAgent") => Event::Stopped {
+            message: text("prompt_response"),
+        },
+        Some("PostCompact") => Event::Compacted {
+            summary: text("compact_summary"),
+        },
+        Some("PreCompact") => Event::Compacting,
+        _ => Event::Ignore,
+    }
+}
+
+/// The paths in `git status --porcelain` output, memctrl's own folder left out.
+fn porcelain_paths(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(|path| {
+            let path = path.rsplit(" -> ").next().unwrap_or(path);
+            path.strip_prefix('"')
+                .and_then(|p| p.strip_suffix('"'))
+                .unwrap_or(path)
+                .to_string()
+        })
+        .filter(|path| {
+            !path.is_empty()
+                && path != ".memctrl"
+                && !path.starts_with(".memctrl/")
+                && !path.contains("/.memctrl/")
+        })
+        .collect()
+}
+
+/// Paths with uncommitted changes, from `git status --porcelain`. `None` when git is missing,
+/// fails, or takes longer than `wait`.
+pub fn changed_files(worktree: &Path, wait: std::time::Duration) -> Option<Vec<String>> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(worktree)
+        .args(["status", "--porcelain"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Read as git writes, so a long listing can't fill the pipe and stall it.
+    let mut stdout = child.stdout.take()?;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.read_to_end(&mut bytes);
+        let _ = sender.send(bytes);
+    });
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Ok(Some(_)) => return None,
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let left = deadline.saturating_duration_since(std::time::Instant::now());
+    let bytes = receiver
+        .recv_timeout(left.max(std::time::Duration::from_millis(100)))
+        .ok()?;
+    Some(porcelain_paths(&String::from_utf8_lossy(&bytes)))
+}
+
+/// Accepted, unexpired session-layer memories the guard doesn't withhold, newest first, one line each.
+pub fn session_notes(store: &MemoryStore, policy: &Policy) -> Result<Vec<String>> {
+    let mut memories: Vec<_> = store
+        .list_memories(Some("session"), false)?
+        .into_iter()
+        .filter(|m| m.eligible() && review::withheld(m, policy).is_empty())
+        .collect();
+    memories.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(memories
+        .iter()
+        .map(|m| context::one_line(&m.content))
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gitmeta::Head;
+    use serde_json::json;
+
+    #[test]
+    fn hook_input_names_an_event() {
+        let stopped = |message: &str| Event::Stopped {
+            message: Some(message.into()),
+        };
+        for (input, expected) in [
+            (
+                json!({"hook_event_name": "SessionStart", "source": "clear"}),
+                Event::Start { fresh: true },
+            ),
+            (
+                json!({"hook_event_name": "SessionStart"}),
+                Event::Start { fresh: true },
+            ),
+            (
+                json!({"hook_event_name": "SessionStart", "source": "resume"}),
+                Event::Start { fresh: false },
+            ),
+            (
+                json!({"hook_event_name": "SessionStart", "source": "fork"}),
+                Event::Start { fresh: false },
+            ),
+            (
+                json!({"hook_event_name": "Stop", "last_assistant_message": "done"}),
+                stopped("done"),
+            ),
+            (
+                json!({"hook_event_name": "Stop", "last_assistant_message": null}),
+                Event::Stopped { message: None },
+            ),
+            (
+                json!({"hook_event_name": "AfterAgent", "prompt_response": "gemini"}),
+                stopped("gemini"),
+            ),
+            (
+                json!({"hook_event_name": "PostCompact", "compact_summary": 42}),
+                Event::Compacted { summary: None },
+            ),
+            (json!({"hook_event_name": "PreCompact"}), Event::Compacting),
+            (
+                json!({"hook_event_name": "Stop", "last_assistant_message": "x", "agent_id": "a"}),
+                Event::Ignore,
+            ),
+            (json!({"hook_event_name": "Notification"}), Event::Ignore),
+            (json!([1, 2]), Event::Ignore),
+            (serde_json::Value::Null, Event::Ignore),
+        ] {
+            assert_eq!(event(&input), expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn porcelain_lines_become_paths() {
+        let output = " M src/lib.rs\n?? \"new file.txt\"\nR  old.rs -> src/new.rs\nR  \"a b.rs\" -> \"c d.rs\"\n?? .memctrl/\n?? sub/.memctrl/x.json\n?? .memoryrc\n";
+        assert_eq!(
+            porcelain_paths(output),
+            [
+                "src/lib.rs",
+                "new file.txt",
+                "src/new.rs",
+                "c d.rs",
+                ".memoryrc"
+            ]
+        );
+        let missing = tempfile::tempdir().unwrap();
+        // A folder that doesn't exist (or no git at all): no answer, not an empty list.
+        assert_eq!(
+            changed_files(
+                &missing.path().join("nowhere"),
+                std::time::Duration::from_secs(2)
+            ),
+            None
+        );
+    }
     use chrono::TimeZone;
 
     fn at(hour: u32) -> DateTime<Utc> {
