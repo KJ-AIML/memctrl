@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 pub mod agent;
 pub mod capture;
+pub mod checkpoint;
 pub mod citations;
 pub mod context;
 pub mod decay;

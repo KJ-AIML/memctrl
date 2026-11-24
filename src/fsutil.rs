@@ -99,6 +99,22 @@ pub fn write_atomic(path: &Path, contents: &[u8], confine: Option<&Path>) -> Res
     Ok(target)
 }
 
+/// Writes a `.gitignore` holding `*` into `dir` unless one exists. Best effort; never follows a symlink.
+///
+/// Session records and checkpoints are personal, never meant to be committed; a `.gitignore`
+/// inside their folder keeps them out of git in every project, including ones whose
+/// `.memctrl/.gitignore` an older memctrl wrote without them. Callers never fail over it.
+pub fn ignore_all(dir: &Path) {
+    // create_new never follows a symlink planted at the path, dangling or not.
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir.join(".gitignore"))
+    {
+        let _ = std::io::Write::write_all(&mut file, b"# memctrl: files here stay local.\n*\n");
+    }
+}
+
 /// Replaces the one block from `begin` through `end` with `block` (which carries its own
 /// markers), or appends `block` after a blank line when neither marker is present. Anything else
 /// (an orphan marker, several blocks, reversed markers) is refused rather than guessed at,
