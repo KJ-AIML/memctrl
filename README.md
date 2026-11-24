@@ -79,14 +79,14 @@ memctrl context
 | Host | Setup |
 | --- | --- |
 | Claude Code | `memctrl install --tool claude --project --hook`. With `--project` the hooks go in `.claude/settings.local.json`, which is personal and not committed; without it, in your user settings. The brief also runs after `/clear`, resume and compaction, and recall runs on every prompt. `--hook` also saves and shows [checkpoints](#where-work-left-off). |
-| Codex | `memctrl install --tool codex --project --hook`, then trust the memctrl hooks with `/hooks` in Codex. The same brief, recall and checkpoints as Claude Code, from `.codex/hooks.json`. |
+| Codex | `memctrl install --tool codex --project --hook`, then trust the memctrl hooks with `/hooks` in Codex. The brief, recall and checkpoints, from `.codex/hooks.json`, without Claude Code's compaction summary or announce line. |
 | Gemini CLI | `memctrl install --tool gemini --project --hook`: the brief, recall and checkpoints from `.gemini/settings.json`, in folders you've trusted. |
 | Cursor | `memctrl install --tool cursor --project`, then `memctrl context --write AGENTS.md` to refresh a marked block in AGENTS.md. Cursor's prompt hook can't add context, so there's no recall. |
 | Any MCP host | `memctrl serve` ([configuration](#reference)) |
 
 `install` also supports `axga`, `pi` and `kimi`.
 
-A worktree made with `git worktree add` uses the main worktree's store, so it starts with the project's memories. To give one its own store, run `memctrl init --force` in it.
+A worktree made with `git worktree add` uses the main worktree's store, so it starts with the project's memories. To give one its own store, run `memctrl init --force` in it. This applies to the default store location: a `.memoryrc` that sets `db_path` keeps resolving it in each worktree, as in 2.8.
 
 ```bash
 # Any platform with a Rust toolchain
@@ -154,7 +154,7 @@ Check facts against the code.
 - [fact] When rotating the JWT key, send the new public key to the mobile team via the #platform channel · `d2a41fc5`
 ```
 
-Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once, and a name like `reset-ledger` twice when the memory holds it whole), and request verbs like *add* or *fix*, or ทำ and แก้ in Thai, don't count. On 15 everyday prompts unrelated to the stored memories, recall added 3 memories in total, all of them pointed out from the brief. It reads only: no access counts, cache, provenance or timing, and the prompt isn't stored in the database. The last three requests are kept in the branch's checkpoint file, unless you set `[continuity] prompts = false`. Which memories each session's brief showed and recall added are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
+Requests are longer than questions, so recall searches a sentence at a time and asks for more than a single shared word. A memory must share two topics with the sentence (a path or identifier counts once, and a name like `reset-ledger` twice when the memory holds it whole), and request verbs like *add* or *fix*, or ทำ and แก้ in Thai, don't count. On 15 everyday prompts unrelated to the stored memories, recall added 3 memories in total, all of them pointed out from the brief. It reads only: no access counts, cache, provenance or timing, and the prompt isn't stored in the database. The last three requests are kept in the branch's checkpoint file, unless you set `[continuity] prompts = false`, which also drops requests kept earlier at the next save and never shows them. Which memories each session's brief showed and recall added are kept in `.memctrl/sessions/`, which the brief resets after `/clear` or compaction.
 
 ### Where work left off
 
@@ -199,7 +199,7 @@ memctrl checkpoint clear      # delete this branch's checkpoint
 # ~/.config/memctrl/config.toml, or a repository's .memoryrc
 [continuity]
 enabled = true    # false: no checkpoint is written or shown
-prompts = true    # false: the user's requests are not kept
+prompts = true    # false: the user's requests are not kept, and ones kept earlier are dropped and never shown
 ```
 
 A repository's `.memoryrc` can only turn these off. `MEMCTRL_CONTINUITY=off` turns checkpoints off for one command.

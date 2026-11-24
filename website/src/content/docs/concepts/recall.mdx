@@ -98,7 +98,7 @@ Session records stay local: `.memctrl/.gitignore` lists `sessions/`, and the fol
 
 ## Read-only, unless you ask
 
-Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, records no timing, and doesn't store the prompt in the database; the session record holds memory ids only. The last three requests are kept in the branch's checkpoint file in `.memctrl/checkpoints/`, unless you set `[continuity] prompts = false`. A memory that keeps matching requests doesn't promote itself in the brief. Two exceptions:
+Recall only reads. It doesn't count as access, doesn't touch the query cache or provenance, records no timing, and doesn't store the prompt in the database; the session record holds memory ids only. The last three requests are kept in the branch's checkpoint file in `.memctrl/checkpoints/`, unless you set `[continuity] prompts = false`, which also drops requests kept earlier at the next save and never shows them. A memory that keeps matching requests doesn't promote itself in the brief. Two exceptions:
 
 - **A prompt that starts with `remember:`** asks the hook to save the rest as your note. That note, and nothing else from the prompt, is stored in the database. See [Save a note with remember:](/memctrl/agents/claude-code/#save-a-note-with-remember).
 - **With search by meaning on**, recall may store vectors for memories that had none, but never a vector of the request.

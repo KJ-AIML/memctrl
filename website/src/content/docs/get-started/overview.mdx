@@ -83,8 +83,8 @@ Each setup ran 16 or 32 times with one judge, so a difference of one or two task
 
 | Agent | How memory arrives | Setup |
 | --- | --- | --- |
-| Claude Code | Session-start hook for the brief, prompt hook for recall | [Claude Code](/memctrl/agents/claude-code/) |
-| Codex, Gemini CLI | The same two hooks as Claude Code | [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/) |
+| Claude Code | Session-start hook for the brief, prompt hook for recall, checkpoint hooks for where work left off | [Claude Code](/memctrl/agents/claude-code/) |
+| Codex, Gemini CLI | The brief, recall and checkpoint hooks, without Claude Code's compaction summary or announce line | [Codex and Gemini CLI](/memctrl/agents/codex-and-gemini/) |
 | Cursor | The brief in a marked block of AGENTS.md; a skill file | [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/) |
 | axga, pi, kimi | A skill file that tells the agent to load the brief with `memctrl context` | [Cursor and AGENTS.md](/memctrl/agents/codex-and-cursor/) |
 | Any MCP host | Nine tools over stdio, including the brief | [MCP hosts](/memctrl/agents/mcp/) |

@@ -3,7 +3,7 @@ title: "Hooks"
 description: "The Claude Code hook commands memctrl installs, the JSON they read and print, and the session records that keep recall from repeating itself."
 ---
 
-memctrl reaches Claude Code through two hook commands: one prints the session brief when a session starts, and one adds the memories each prompt matches. Since 2.9, `install --hook` also adds `memctrl checkpoint --format hook`, which saves where work on the branch left off and shows it to the next session ([README](https://github.com/KJ-AIML/memctrl#where-work-left-off)). This page is the exact contract: what `install` writes, what each command reads on stdin and prints on stdout, and the session records they share. For setting up and tuning the hooks, see [Claude Code](/memctrl/agents/claude-code/).
+memctrl reaches Claude Code through three hook commands: one prints the session brief when a session starts, one adds the memories each prompt matches, and, since 2.9, `memctrl checkpoint --format hook` saves where work on the branch left off and shows it to the next session ([README](https://github.com/KJ-AIML/memctrl#where-work-left-off)). This page is the exact contract: what `install` writes, what each command reads on stdin and prints on stdout, and the session records they share. For setting up and tuning the hooks, see [Claude Code](/memctrl/agents/claude-code/).
 
 ## What install writes
 
@@ -127,13 +127,13 @@ A prompt that starts with `remember:` (any case), `จำไว้:` or `จำ�
 | Couldn't be saved | `# Note not saved (memctrl)` and the error, which also goes to stderr |
 | memctrl isn't set up in this project | `# Note not saved (memctrl)` and a hint to run `memctrl init`; nothing is created |
 
-Saved notes join the [session record](#session-records). `[capture] remember = false` in your [user config](/memctrl/reference/user-config/#capture) turns off `remember:` notes. Nothing else in a prompt is stored in the database. The hook does keep the request in the branch's checkpoint file in `.memctrl/checkpoints/` (the last three); `[continuity] prompts = false` in your user config or `.memoryrc` stops that.
+Saved notes join the [session record](#session-records). `[capture] remember = false` in your [user config](/memctrl/reference/user-config/#capture) turns off `remember:` notes. Nothing else in a prompt is stored in the database. The hook does keep the request in the branch's checkpoint file in `.memctrl/checkpoints/` (the last three); `[continuity] prompts = false` in your user config or `.memoryrc` stops that, and drops requests kept earlier at the next save; they are never shown.
 
 Without a store, or with a store committed to an untrusted repository, it prints nothing and exits 0, like the session-start hook. The one exception is a prompt that starts with `remember:` in a project without a store: the agent is told nothing was saved.
 
 ## Session records
 
-The two hooks share a small file per session, so a session never gets the same memory twice from recall:
+The brief and recall hooks share a small file per session, so a session never gets the same memory twice from recall:
 
 ```text
 <store folder>/sessions/<session_id>

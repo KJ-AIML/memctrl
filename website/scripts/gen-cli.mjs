@@ -93,7 +93,7 @@ const FILL = {
 // The overview groups commands by what you use them for.
 const GROUPS = [
   ['Set up', ['init', 'install', 'serve']],
-  ['Everyday use', ['add', 'query', 'context', 'recall', 'list', 'show']],
+  ['Everyday use', ['add', 'query', 'context', 'recall', 'checkpoint', 'list', 'show']],
   ['Review and correct', ['candidates', 'accept', 'pin', 'unpin', 'reject', 'dispute', 'refute', 'supersede', 'forget', 'clear', 'history']],
   ['Code citations', ['cite', 'stale', 'refresh']],
   ['Team sharing', ['export', 'sync', 'import', 'check']],

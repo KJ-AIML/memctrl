@@ -5,7 +5,7 @@ description: "Give Claude Code the session brief and per-request recall with hoo
 
 import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 
-Claude Code is the host memctrl supports most fully. Two hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, and one adds the memories each prompt matches. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
+Claude Code is the host memctrl supports most fully. Hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, one adds the memories each prompt matches, and the checkpoint hooks save where work on the branch left off and show it to the next session. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
 
 ## Install the hooks
 
@@ -100,7 +100,7 @@ So what the agent saves shows in the brief as facts, and "From the user" holds o
 
 ## Session records
 
-The two hooks share a record of what each session has seen, so a memory is never added twice. The brief writes the ids it showed to `.memctrl/sessions/<session id>`, using the `session_id` Claude Code passes, and recall adds the ids it shows:
+The brief and recall hooks share a record of what each session has seen, so a memory is never added twice. The brief writes the ids it showed to `.memctrl/sessions/<session id>`, using the `session_id` Claude Code passes, and recall adds the ids it shows:
 
 ```text title=".memctrl/sessions/abc123"
 brief 759c05a4-77a3-4fed-891e-68f1ec7e6cd8

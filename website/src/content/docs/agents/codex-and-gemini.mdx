@@ -5,7 +5,7 @@ description: "Give Codex and Gemini CLI the session brief at startup and the mem
 
 import { Aside, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Codex and Gemini CLI run hooks the way Claude Code does, so memctrl works the same in both. When a session starts, a hook adds the session brief. When you send a prompt, a second hook adds the memories it matches. Both hooks need a store: run `memctrl init` in the project first.
+Codex and Gemini CLI run hooks the way Claude Code does, so memctrl works much the same in both. When a session starts, a hook adds the session brief, and a checkpoint hook shows where work on the branch left off. When you send a prompt, another hook adds the memories it matches. When the agent finishes a reply (`Stop` in Codex, `AfterAgent` in Gemini CLI), the checkpoint hook saves where it stopped. What they don't get is Claude Code's compaction summary in the checkpoint and its announce line when a checkpoint is picked up. Every hook needs a store: run `memctrl init` in the project first.
 
 ## Install the hooks
 
@@ -128,7 +128,7 @@ Delete the memctrl entries (every command that starts memctrl) from `.codex/hook
 
 <CardGrid>
   <LinkCard title="Claude Code" description="The same hooks, where memctrl started." href="/memctrl/agents/claude-code/" />
-  <LinkCard title="Hooks reference" description="Exact input and output of both hook commands." href="/memctrl/reference/hooks/" />
+  <LinkCard title="Hooks reference" description="Exact input and output of each hook command." href="/memctrl/reference/hooks/" />
   <LinkCard title="Cursor and AGENTS.md" description="For agents without hooks memctrl can use." href="/memctrl/agents/codex-and-cursor/" />
   <LinkCard title="Recall" description="How memctrl decides which memories a request needs." href="/memctrl/concepts/recall/" />
 </CardGrid>

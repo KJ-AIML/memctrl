@@ -1,6 +1,6 @@
 # MemCtrl 2.9.0: where work left off
 
-memctrl kept what stays true about a project, and nothing about the work in hand. After `/clear`, a compaction or a new terminal, the agent got the project's memories and not what you had asked, where it had stopped or what had failed, so you avoided `/clear` and retyped the task after every compaction. A new worktree started with an empty store. This release keeps a small checkpoint per branch, saved by the hooks from what the host already hands them, and shows it to the next session on that branch. Nothing is typed.
+memctrl kept what stays true about a project, and nothing about the work in hand. After `/clear`, a compaction or a new terminal, the agent got the project's memories and not what you had asked, where it had stopped or what had failed, so you avoided `/clear` and retyped the task after every compaction. A worktree without its own store had no store at all. This release keeps a small checkpoint per branch, saved by the hooks from what the host already hands them, and shows it to the next session on that branch. Nothing is typed.
 
 ## What's new
 
@@ -10,7 +10,7 @@ memctrl kept what stays true about a project, and nothing about the work in hand
 - **Session-layer notes reach the next session.** Up to 5 of them join the checkpoint's notes. Before, the brief and recall never read the `session` layer, so notes saved there never came back.
 - **Worktrees share the store.** A worktree made with `git worktree add` uses the main worktree's store, so it starts with the project's memories. Checkpoints are kept per branch, and git allows a branch in only one worktree, so worktrees don't overwrite each other's. `memctrl init --force` gives one its own store.
 - **New hooks.** `memctrl install --tool <host> --hook` adds `Stop`, `PreCompact`, `PostCompact` and a second `SessionStart` handler for Claude Code; `Stop` and a second `SessionStart` for Codex; `AfterAgent` and a second `SessionStart` for Gemini CLI. Codex and Gemini CLI hand over no compaction summary, so they get the last exchange and the files.
-- **Your settings.** `[continuity] prompts = false` keeps your requests out of the checkpoint, and `enabled = false` turns checkpoints off, in your user config or a repository's `.memoryrc`, which can only turn them off. `MEMCTRL_CONTINUITY=off` does it for one command.
+- **Your settings.** `[continuity] prompts = false` keeps your requests out of the checkpoint (requests kept earlier are dropped at the next save and never shown), and `enabled = false` turns checkpoints off, in your user config or a repository's `.memoryrc`, which can only turn them off. `MEMCTRL_CONTINUITY=off` does it for one command.
 
 On the machine this was built on, a `Stop` hook took about 0.2 s and a `SessionStart` checkpoint hook about 0.1 s, release build, Windows 11.
 
@@ -29,7 +29,7 @@ See the 2.8.0 → 2.9.0 section of [MIGRATION.md](MIGRATION.md). In short:
 
 - **Run `memctrl install --tool <host> --hook` again** to get the new hooks. Codex asks you to trust them with `/hooks`.
 - **`memctrl add` defaults to `project`.** Scripts that want a seven-day note pass `--layer session`.
-- **Your last three requests are kept on disk**, redacted, in `.memctrl/checkpoints/`, where 2.8 stored no prompt. Set `[continuity] prompts = false` to stop it.
+- **Your last three requests are kept on disk**, redacted, in `.memctrl/checkpoints/`, where 2.8 stored no prompt. Set `[continuity] prompts = false` to stop it; that also drops requests already kept, at the next save, and they are never shown.
 - **No schema change.** 2.8.0 and 2.9.0 work on one store.
 
 ## Install
