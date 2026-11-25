@@ -633,6 +633,18 @@ fn project(cli: &Cli) -> Result<Project> {
     }
     Ok(located)
 }
+/// Whether `init` writes the default rules file. An existing .memoryrc (often committed by a
+/// teammate) is kept unless --force. In a linked worktree that shares the main checkout's store,
+/// --force only gives it a store of its own (as the refusal message says) and keeps its rules.
+/// Decided before the store is opened, since opening it ends the sharing.
+fn init_writes_rules(force: bool, project: &Project) -> bool {
+    if !project.rc.exists() {
+        return true;
+    }
+    force
+        && !project::locate_here()
+            .is_ok_and(|here| here.dir == project.dir && here.store_root != here.dir)
+}
 /// The database: `--db` (or `MEMCTRL_DB_PATH`), else `db_path` from the rules file (relative to
 /// that file), else the project's `.memctrl/memories.db`. True when the user named the path.
 fn database(cli: &Cli, rules: &Rules, project: &Project) -> (PathBuf, bool) {
@@ -1406,7 +1418,10 @@ fn checkpoint_hook(
             if let Some(files) =
                 checkpoint::changed_files(&project.dir, std::time::Duration::from_secs(2))
             {
+                // Reload: another session's hook may have saved while git ran.
+                let mut saved = checkpoint::load(file);
                 saved.record_files(files, now);
+                stamp(&mut saved);
                 checkpoint::save(file, &saved)?;
             }
             Ok(None)
@@ -1433,11 +1448,11 @@ async fn execute(
     rules: &Rules,
     project: &Project,
     db: &Path,
+    init_writes_rules: bool,
 ) -> Result<Value> {
     let result = match &cli.command {
-        Command::Init { force } => {
-            // An existing .memoryrc (often committed by a teammate) is kept unless --force.
-            let written = *force || !project.rc.exists();
+        Command::Init { .. } => {
+            let written = init_writes_rules;
             if written {
                 if let Some(parent) = project.rc.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -2171,9 +2186,14 @@ async fn run(cli: Cli) -> Result<()> {
     let user = UserConfig::load()?;
     // Init must be able to replace malformed rules explicitly; every other command fails closed.
     // Init without --force keeps an existing rules file, so its db_path still applies.
-    let mut rules = match &cli.command {
-        Command::Init { force } if *force || !project.rc.exists() => Rules::default(),
-        _ => Rules::load_with(&project.rc, &user)?,
+    let init_writes_rules = match &cli.command {
+        Command::Init { force } => init_writes_rules(*force, &project),
+        _ => false,
+    };
+    let mut rules = if init_writes_rules {
+        Rules::default()
+    } else {
+        Rules::load_with(&project.rc, &user)?
     };
     for warning in &rules.warnings {
         // `semantic` commands report why it's off themselves; tune is how you fix it.
@@ -2456,7 +2476,15 @@ async fn run(cli: Cli) -> Result<()> {
     }
     let started = Instant::now();
     // Boxed: the future of a function this large would otherwise sit on the main thread's stack.
-    let result = Box::pin(execute(&cli, &mut store, &rules, &project, &db)).await?;
+    let result = Box::pin(execute(
+        &cli,
+        &mut store,
+        &rules,
+        &project,
+        &db,
+        init_writes_rules,
+    ))
+    .await?;
     let operation = command_name(&cli.command);
     if records_span(&cli.command) {
         // Best effort: a command whose result is ready never fails or waits on telemetry.

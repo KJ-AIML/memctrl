@@ -45,7 +45,9 @@ pub fn head(repo_root: &Path) -> Option<Head> {
     let text = text.trim();
     if let Some(name) = text.strip_prefix("ref: refs/heads/") {
         let name = name.trim();
-        return (!name.is_empty()).then(|| Head::Branch(name.to_string()));
+        // A reftable repository's HEAD file is always the stub `refs/heads/.invalid`; the real
+        // HEAD is in the reftable, which this module doesn't read.
+        return (!name.is_empty() && name != ".invalid").then(|| Head::Branch(name.to_string()));
     }
     let is_commit = matches!(text.len(), 40 | 64) && text.bytes().all(|b| b.is_ascii_hexdigit());
     is_commit.then(|| Head::Detached(text.to_string()))

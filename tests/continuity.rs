@@ -115,6 +115,51 @@ fn a_linked_worktree_reads_and_writes_the_main_store() {
     );
 }
 
+#[test]
+fn init_force_in_a_linked_worktree_keeps_its_rules_file() {
+    let root = TempDir::new().unwrap();
+    let (main, wt) = (root.path().join("main"), root.path().join("wt"));
+    std::fs::create_dir_all(&main).unwrap();
+    on_branch(&main, "main");
+    ok(&main, &["init"]);
+    link_worktree(&main, &wt, "feat/x");
+    // The team's committed rules, checked out in the worktree.
+    let team_rules = std::fs::read_to_string(main.join(".memoryrc")).unwrap() + "\n# team rules\n";
+    std::fs::write(wt.join(".memoryrc"), &team_rules).unwrap();
+
+    let refused = run(&wt, &["init"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("init --force"));
+    let out: Value = serde_json::from_str(&ok(&wt, &["init", "--force"])).unwrap();
+    assert_eq!(out["rules_written"], false);
+    assert_eq!(
+        std::fs::read_to_string(wt.join(".memoryrc")).unwrap(),
+        team_rules
+    );
+    assert!(wt.join(".memctrl/memories.db").exists());
+
+    // Outside a worktree, --force still resets the rules, as before.
+    let out: Value = serde_json::from_str(&ok(&wt, &["init", "--force"])).unwrap();
+    assert_eq!(out["rules_written"], true);
+}
+
+#[test]
+fn a_reftable_head_is_no_branch_name() {
+    let dir = TempDir::new().unwrap();
+    on_branch(dir.path(), ".invalid");
+    ok(dir.path(), &["init"]);
+    ok(
+        dir.path(),
+        &[
+            "checkpoint",
+            "note",
+            "Dead end: the cache key ignores locale",
+        ],
+    );
+    let shown = ok(dir.path(), &["checkpoint", "show"]);
+    assert!(shown.starts_with("# Where work here left off"), "{shown}");
+    assert!(!shown.contains(".invalid"));
+}
+
 fn project() -> TempDir {
     let dir = TempDir::new().unwrap();
     on_branch(dir.path(), "feat/auth-sessions");
