@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: "Every memctrl command and option, generated from memctrl 2.8.0."
+description: "Every memctrl command and option, generated from memctrl 2.9.0."
 sidebar:
   label: Overview
   order: 0
@@ -14,7 +14,7 @@ memctrl is one binary. Every command prints JSON on stdout, except the Markdown 
 | Command | What it does |
 | --- | --- |
 | [`memctrl init`](/memctrl/reference/cli/init/) | Create rules and initialize the database |
-| [`memctrl install`](/memctrl/reference/cli/install/) | Install SKILL.md for a coding tool (and optionally a Claude Code session-start hook) |
+| [`memctrl install`](/memctrl/reference/cli/install/) | Install SKILL.md for a coding tool (and optionally its hooks: the brief, recall and checkpoints) |
 | [`memctrl serve`](/memctrl/reference/cli/serve/) | Start the official MCP SDK stdio server |
 
 ## Everyday use
@@ -25,6 +25,7 @@ memctrl is one binary. Every command prints JSON on stdout, except the Markdown 
 | [`memctrl query`](/memctrl/reference/cli/query/) | Retrieve relevant active memories with provenance |
 | [`memctrl context`](/memctrl/reference/cli/context/) | Print a budgeted brief of the highest-trust memories for a session start |
 | [`memctrl recall`](/memctrl/reference/cli/recall/) | The memories that match a prompt, minus what this session already saw (for a prompt hook) |
+| [`memctrl checkpoint`](/memctrl/reference/cli/checkpoint/) | Where work on this branch left off: saved by hooks as you work, shown when a session starts |
 | [`memctrl list`](/memctrl/reference/cli/list/) | List memories |
 | [`memctrl show`](/memctrl/reference/cli/show/) | Inspect a memory, relations and evidence |
 
@@ -112,4 +113,4 @@ Every command takes these two options. Without them, memctrl walks up from the c
 | `-h, --help` | Print help | |
 | `-V, --version` | Print version | |
 
-<sub>Generated from `memctrl 2.8.0` by `website/scripts/gen-cli.mjs`.</sub>
+<sub>Generated from `memctrl 2.9.0` by `website/scripts/gen-cli.mjs`.</sub>

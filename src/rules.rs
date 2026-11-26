@@ -125,6 +125,56 @@ pub struct Rules {
     /// user config; see `capture`).
     #[serde(skip, default = "default_true")]
     pub remember: bool,
+    /// `[continuity]` from your user config, which a repository's `.memoryrc` can only turn off,
+    /// and `MEMCTRL_CONTINUITY=off`.
+    #[serde(skip)]
+    pub continuity: Continuity,
+}
+
+/// `[continuity]`: whether hooks save and show a checkpoint per branch (`enabled`) and whether the
+/// checkpoint keeps your recent requests (`prompts`). Both default to on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Continuity {
+    pub enabled: bool,
+    pub prompts: bool,
+}
+
+impl Default for Continuity {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            prompts: true,
+        }
+    }
+}
+
+impl Continuity {
+    /// Parses a `[continuity]` section. It is optional like `[capture]`: a mistake turns both
+    /// settings off with a warning rather than stopping every command, the hooks included.
+    fn parse(value: &toml::Value, path: &Path, warnings: &mut Vec<String>) -> Self {
+        let flag = |key: &str| value.get(key).map_or(Some(true), toml::Value::as_bool);
+        match (value.is_table(), flag("enabled"), flag("prompts")) {
+            (true, Some(enabled), Some(prompts)) => Self { enabled, prompts },
+            _ => {
+                warnings.push(format!(
+                    "continuity is off: [continuity] enabled and prompts in {} must be true or false",
+                    path.display()
+                ));
+                Self {
+                    enabled: false,
+                    prompts: false,
+                }
+            }
+        }
+    }
+
+    /// Off wherever either side is off.
+    fn and(self, other: Self) -> Self {
+        Self {
+            enabled: self.enabled && other.enabled,
+            prompts: self.prompts && other.prompts,
+        }
+    }
 }
 
 impl Default for Rules {
@@ -190,6 +240,7 @@ impl Default for Rules {
             warnings: Vec::new(),
             semantic: None,
             remember: true,
+            continuity: Continuity::default(),
         }
     }
 }
@@ -208,6 +259,9 @@ impl Default for Rules {
 /// model = "embeddinggemma"           # optional semantic search (see `semantic::Settings`)
 /// [capture]
 /// remember = true                    # a prompt starting with `remember:` saves the note
+/// [continuity]
+/// enabled = true                     # hooks save and show a checkpoint per branch
+/// prompts = true                     # the checkpoint keeps your recent requests
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UserConfig {
@@ -222,6 +276,8 @@ pub struct UserConfig {
     pub semantic_error: Option<String>,
     /// `[capture] remember`; unset means on.
     pub capture_remember: Option<bool>,
+    /// `[continuity]`; unset means both on.
+    pub continuity: Continuity,
     /// Mistakes in optional sections, each of which turned its feature off.
     pub warnings: Vec<String>,
     /// Where the file is (or would be).
@@ -307,6 +363,9 @@ impl UserConfig {
                     ));
                 }
             }
+        }
+        if let Some(continuity) = raw.get("continuity") {
+            config.continuity = Continuity::parse(continuity, path, &mut config.warnings);
         }
         if let Some(semantic) = raw.get("semantic") {
             match crate::semantic::Settings::parse(semantic) {
@@ -406,6 +465,10 @@ impl Rules {
         }
         base.remember = user.capture_remember.unwrap_or(true);
         base.warnings.extend(user.warnings.iter().cloned());
+        base.continuity = user.continuity;
+        if std::env::var("MEMCTRL_CONTINUITY").is_ok_and(|v| v.eq_ignore_ascii_case("off")) {
+            base.continuity.enabled = false;
+        }
         let off = std::env::var("MEMCTRL_SEMANTIC").is_ok_and(|v| v.eq_ignore_ascii_case("off"));
         if let Some(settings) = user.semantic.as_ref().filter(|_| !off) {
             match crate::semantic::Engine::new(settings) {
@@ -729,6 +792,11 @@ impl Rules {
                 .unwrap_or(Path::new("."));
             rules.citations_root = Some(base.join(root));
         }
+        if let Some(continuity) = raw.get("continuity") {
+            // Applies to trusted repositories too: turning continuity off never loosens anything.
+            let repo = Continuity::parse(continuity, path, &mut rules.warnings);
+            rules.continuity = rules.continuity.and(repo);
+        }
         if let Some(path) = raw.get("memctrl").and_then(|v| v.get("db_path")) {
             rules.db_path = Some(path.as_str().context("db_path must be a string")?.into());
         }
@@ -1001,5 +1069,89 @@ impl Rules {
         let ids = result?;
         guard.commit()?;
         Ok(ids)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn continuity_is_on_by_default_and_a_repository_can_only_turn_it_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let (config, rc) = (dir.path().join("config.toml"), dir.path().join(".memoryrc"));
+        let load = |user: &str, repo: &str| {
+            std::fs::write(&config, user).unwrap();
+            std::fs::write(&rc, repo).unwrap();
+            let user = UserConfig::load_from(&config).unwrap();
+            Rules::load_with(&rc, &user).unwrap()
+        };
+        let on = Continuity {
+            enabled: true,
+            prompts: true,
+        };
+        assert_eq!(load("", "").continuity, on);
+        assert_eq!(
+            load("[continuity]\nprompts = false\n", "").continuity,
+            Continuity {
+                enabled: true,
+                prompts: false
+            }
+        );
+        assert_eq!(
+            load("", "[continuity]\nenabled = false\n").continuity,
+            Continuity {
+                enabled: false,
+                prompts: true
+            }
+        );
+        assert_eq!(
+            load(
+                "[continuity]\nenabled = false\nprompts = false\n",
+                "[continuity]\nenabled = true\nprompts = true\n"
+            )
+            .continuity,
+            Continuity {
+                enabled: false,
+                prompts: false
+            },
+            "a repository can't turn on what you turned off"
+        );
+        let broken = load("[continuity]\nenabled = \"yes\"\n", "");
+        assert_eq!(
+            broken.continuity,
+            Continuity {
+                enabled: false,
+                prompts: false
+            }
+        );
+        assert!(
+            broken
+                .warnings
+                .iter()
+                .any(|w| w.starts_with("continuity is off: [continuity]")),
+            "{:?}",
+            broken.warnings
+        );
+        let broken = load("", "[continuity]\nprompts = 3\n");
+        assert_eq!(
+            broken.continuity,
+            Continuity {
+                enabled: false,
+                prompts: false
+            }
+        );
+
+        // Your settings apply where the project has no .memoryrc at all.
+        std::fs::write(&config, "[continuity]\nprompts = false\n").unwrap();
+        let user = UserConfig::load_from(&config).unwrap();
+        let bare = Rules::load_with(dir.path().join("missing/.memoryrc"), &user).unwrap();
+        assert_eq!(
+            bare.continuity,
+            Continuity {
+                enabled: true,
+                prompts: false
+            }
+        );
     }
 }

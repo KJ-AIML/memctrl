@@ -16,56 +16,110 @@ pub struct Project {
     pub found: bool,
     /// The last folder searched, for error messages.
     pub searched_to: PathBuf,
+    /// The folder whose `.memctrl/` holds the store: `dir`, or the main worktree for a linked
+    /// worktree that has no store of its own.
+    pub store_root: PathBuf,
 }
 
 impl Project {
     /// The store a project uses when nothing names another one.
     pub fn default_db(&self) -> PathBuf {
-        self.dir.join(DEFAULT_DB)
+        self.store_root.join(DEFAULT_DB)
     }
 }
 
 /// Walks up from `cwd` to the nearest folder with a `.memoryrc`. The walk stops at the first
 /// folder containing `.git` (the repository root), and never climbs into `home` from below it,
 /// so one stray file can't capture every project. Without a rules file, a store already at the
-/// git root or in `cwd` is used, which keeps projects set up by memctrl 2.1.0 working.
+/// git root or in `cwd` is used, which keeps projects set up by memctrl 2.1.0 working. A linked
+/// worktree without a store of its own uses its main worktree's store (git ignores the store, so
+/// a new worktree never has one), while the worktree stays the project its files are read from.
 pub fn locate(cwd: &Path, home: Option<&Path>) -> Project {
+    // `cwd` and its ancestors, never climbing into `home` from below it.
+    let walk = |from: &'_ Path| {
+        from.ancestors()
+            .take_while(|dir| *dir == cwd || home.is_none_or(|home| *dir != home))
+            .map(Path::to_path_buf)
+            .collect::<Vec<_>>()
+    };
     let mut searched_to = cwd.to_path_buf();
     let mut git_root = None;
-    for dir in cwd.ancestors() {
-        if dir != cwd && home.is_some_and(|home| dir == home) {
-            break;
-        }
-        searched_to = dir.to_path_buf();
+    let mut rules_dir = None;
+    for dir in walk(cwd) {
+        searched_to = dir.clone();
         if dir.join(RULES_FILE).is_file() {
-            return Project {
-                rc: dir.join(RULES_FILE),
-                dir: dir.to_path_buf(),
-                found: true,
-                searched_to,
-            };
+            rules_dir = Some(dir);
+            break;
         }
         if dir.join(".git").exists() {
             git_root = Some(dir);
             break;
         }
     }
-    for dir in git_root.into_iter().chain([cwd]) {
-        if dir.join(DEFAULT_DB).is_file() {
-            return Project {
-                rc: dir.join(RULES_FILE),
-                dir: dir.to_path_buf(),
-                found: true,
-                searched_to,
-            };
+    let mut project = if let Some(dir) = rules_dir {
+        // The rules file ended the walk early: keep walking up from it for the repository root.
+        git_root = walk(&dir).into_iter().find(|d| d.join(".git").exists());
+        Project {
+            rc: dir.join(RULES_FILE),
+            store_root: dir.clone(),
+            dir,
+            found: true,
+            searched_to,
         }
+    } else if let Some(dir) = git_root
+        .iter()
+        .map(PathBuf::as_path)
+        .chain([cwd])
+        .find(|dir| dir.join(DEFAULT_DB).is_file())
+    {
+        Project {
+            rc: dir.join(RULES_FILE),
+            dir: dir.to_path_buf(),
+            store_root: dir.to_path_buf(),
+            found: true,
+            searched_to,
+        }
+    } else {
+        Project {
+            rc: cwd.join(RULES_FILE),
+            dir: cwd.to_path_buf(),
+            store_root: cwd.to_path_buf(),
+            found: false,
+            searched_to,
+        }
+    };
+    if project.dir.join(DEFAULT_DB).is_file() {
+        return project;
     }
-    Project {
-        rc: cwd.join(RULES_FILE),
-        dir: cwd.to_path_buf(),
-        found: false,
-        searched_to,
+    let Some(root) = git_root else {
+        return project;
+    };
+    let Some(main) = crate::gitmeta::main_worktree(&root) else {
+        return project;
+    };
+    let dir = if project.found {
+        project.dir.clone()
+    } else {
+        root.clone()
+    };
+    // The same project folder in the main checkout, so a nested project never takes the root's.
+    let Ok(relative) = dir.strip_prefix(&root) else {
+        return project;
+    };
+    let main_dir = main.join(relative);
+    if !main_dir.join(DEFAULT_DB).is_file() {
+        return project;
     }
+    project.dir = dir;
+    let own_rc = project.dir.join(RULES_FILE);
+    project.rc = if own_rc.is_file() {
+        own_rc
+    } else {
+        main_dir.join(RULES_FILE)
+    };
+    project.found = true;
+    project.store_root = main_dir;
+    project
 }
 
 /// True when git tracks `db`. A committed database holds whatever anyone with push access wrote,
@@ -270,6 +324,71 @@ mod tests {
         assert!(!locate(&home.join("notes/today"), Some(&home)).found);
         // Home itself is a project when you run memctrl there.
         assert!(locate(&home, Some(&home)).found);
+    }
+
+    #[test]
+    fn a_linked_worktree_falls_back_to_the_main_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let (main, wt) = (dir.path().join("main"), dir.path().join("wt"));
+        let gitdir = main.join(".git/worktrees/wt");
+        std::fs::create_dir_all(&gitdir).unwrap();
+        std::fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+        std::fs::create_dir_all(wt.join("src")).unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        touch(&main.join(DEFAULT_DB));
+        touch(&main.join(RULES_FILE));
+
+        // No rules file in the worktree: the main worktree's rules and store, the worktree as project.
+        let found = locate(&wt.join("src"), None);
+        assert!(found.found);
+        assert_eq!(
+            (found.dir.as_path(), found.rc.as_path()),
+            (wt.as_path(), main.join(RULES_FILE).as_path())
+        );
+        assert!(found.default_db().ends_with("main/.memctrl/memories.db"));
+
+        // Its own rules file is kept; the store is still the main one.
+        touch(&wt.join(RULES_FILE));
+        let found = locate(&wt, None);
+        assert_eq!(found.rc, wt.join(RULES_FILE));
+        assert!(found.default_db().ends_with("main/.memctrl/memories.db"));
+
+        // Its own store wins.
+        touch(&wt.join(DEFAULT_DB));
+        let found = locate(&wt, None);
+        assert_eq!(found.store_root, wt);
+
+        // A main worktree, and a folder outside git, are unchanged.
+        assert_eq!(locate(&main, None).store_root, main);
+        let plain = dir.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let nothing = locate(&plain, None);
+        assert!(!nothing.found);
+        assert_eq!(nothing.store_root, plain);
+    }
+
+    #[test]
+    fn a_nested_project_in_a_linked_worktree_falls_back_to_its_own_main_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let (main, wt) = (dir.path().join("main"), dir.path().join("wt"));
+        let gitdir = main.join(".git/worktrees/wt");
+        std::fs::create_dir_all(&gitdir).unwrap();
+        std::fs::write(gitdir.join("commondir"), "../..\n").unwrap();
+        std::fs::create_dir_all(wt.join("sub/src")).unwrap();
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+        touch(&wt.join("sub").join(RULES_FILE));
+
+        // Only the root project's store: never the nested project's.
+        touch(&main.join(DEFAULT_DB));
+        let found = locate(&wt.join("sub/src"), None);
+        assert_eq!(found.store_root, wt.join("sub"));
+
+        // The nested project's own store in the main checkout.
+        touch(&main.join("sub").join(DEFAULT_DB));
+        let found = locate(&wt.join("sub/src"), None);
+        assert_eq!(found.store_root, main.join("sub"));
+        assert_eq!(found.dir, wt.join("sub"));
+        assert_eq!(found.rc, wt.join("sub").join(RULES_FILE));
     }
 
     #[test]

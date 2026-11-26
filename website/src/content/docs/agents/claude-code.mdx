@@ -1,11 +1,11 @@
 ---
 title: "Claude Code"
-description: "Give Claude Code the session brief and per-request recall with two hooks, and check, tune or remove them."
+description: "Give Claude Code the session brief and per-request recall with hooks, and check, tune or remove them."
 ---
 
 import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 
-Claude Code is the host memctrl supports most fully. Two hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, and one adds the memories each prompt matches. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
+Claude Code is the host memctrl supports most fully. Hooks deliver memory without the agent having to ask: one puts the session brief in context when a session starts, one adds the memories each prompt matches, and the checkpoint hooks save where work on the branch left off and show it to the next session. This matters because agents skip optional lookups: in 112 benchmark sessions with memctrl available, Claude Code never ran `memctrl query` on its own.
 
 ## Install the hooks
 
@@ -29,35 +29,31 @@ memctrl install --tool claude --project --hook
 | No `--project` | `~/.claude/skills/memctrl/SKILL.md` | `~/.claude/settings.json` |
 
 - **The skill** tells the agent what the brief's sections mean, how to search and save memories, and never to accept a held memory itself.
-- **`--hook` adds two hooks.** Without it, `install` writes only the skill.
+- **`--hook` adds the hooks below.** Without it, `install` writes only the skill.
 - **The project folder** is the one with the nearest `.memoryrc` (the current folder if there is none), so running `install --project` from a subfolder of a set-up project still writes to its root.
 - **Project installs use `settings.local.json`**, Claude Code's personal settings file, so one machine's executable path never lands in the team's shared `.claude/settings.json`. Don't commit it.
 - **User installs** put the hooks in your user settings, so they run in every project you open with Claude Code. In a project without a memctrl store they print nothing.
 
-The settings file gets a `SessionStart` hook and a `UserPromptSubmit` hook:
+The settings file gets the brief and recall hooks, and since 2.9 the checkpoint hooks, which save where work on the branch left off and show it to the next session after `/clear` or a fresh start:
 
 ```json title=".claude/settings.local.json"
 {
   "hooks": {
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "memctrl context --format hook"
-          }
-        ]
-      }
+      {"hooks": [{"type": "command", "command": "memctrl context --format hook"}]},
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook --announce"}]}
     ],
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "memctrl recall --format hook"
-          }
-        ]
-      }
+      {"hooks": [{"type": "command", "command": "memctrl recall --format hook"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook", "timeout": 10}]}
+    ],
+    "PreCompact": [
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook", "timeout": 10}]}
+    ],
+    "PostCompact": [
+      {"hooks": [{"type": "command", "command": "memctrl checkpoint --format hook", "timeout": 10}]}
     ]
   }
 }
@@ -104,7 +100,7 @@ So what the agent saves shows in the brief as facts, and "From the user" holds o
 
 ## Session records
 
-The two hooks share a record of what each session has seen, so a memory is never added twice. The brief writes the ids it showed to `.memctrl/sessions/<session id>`, using the `session_id` Claude Code passes, and recall adds the ids it shows:
+The brief and recall hooks share a record of what each session has seen, so a memory is never added twice. The brief writes the ids it showed to `.memctrl/sessions/<session id>`, using the `session_id` Claude Code passes, and recall adds the ids it shows:
 
 ```text title=".memctrl/sessions/abc123"
 brief 759c05a4-77a3-4fed-891e-68f1ec7e6cd8
@@ -175,7 +171,7 @@ Running `memctrl install --hook` again keeps the flags you added. It only update
 
 There is no uninstall command. To remove memctrl from Claude Code:
 
-1. In `.claude/settings.local.json` (or `~/.claude/settings.json` for a user install), delete the `SessionStart` entry whose command contains `memctrl context --format hook` and the `UserPromptSubmit` entry whose command contains `memctrl recall --format hook`. Leave other hooks as they are.
+1. In `.claude/settings.local.json` (or `~/.claude/settings.json` for a user install), delete the `SessionStart` entry whose command contains `memctrl context --format hook`, the `UserPromptSubmit` entry whose command contains `memctrl recall --format hook`, and every entry whose command contains `memctrl checkpoint` (`SessionStart`, `Stop`, `PreCompact`, `PostCompact`). Leave other hooks as they are.
 2. Delete the `.claude/skills/memctrl/` folder (or `~/.claude/skills/memctrl/`).
 
 Your memories stay in `.memctrl/` until you delete them. Re-run `memctrl install --tool claude --project --hook` at any time to put the hooks back.

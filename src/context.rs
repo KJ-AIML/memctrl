@@ -576,6 +576,20 @@ pub fn session_brief_with(
     stale: &dyn Fn(&Memory) -> Option<String>,
     policy: &crate::guard::Policy,
 ) -> Result<Brief> {
+    let brief = unrecorded_brief(store, layers, budget, stale, policy)?;
+    record_provenance(store, &brief);
+    Ok(brief)
+}
+
+/// `session_brief_with` without its provenance row, for a caller that builds several briefs and
+/// keeps one: it records the one it keeps with `record_provenance`.
+pub fn unrecorded_brief(
+    store: &MemoryStore,
+    layers: &[String],
+    budget: usize,
+    stale: &dyn Fn(&Memory) -> Option<String>,
+    policy: &crate::guard::Policy,
+) -> Result<Brief> {
     let mut unique: Vec<String> = Vec::new();
     for layer in layers {
         validate_identifier(layer, "layer")?;
@@ -610,7 +624,11 @@ pub fn session_brief_with(
         }
         true
     });
-    let brief = build_with(&memories, &unique, budget, stale, &extras);
+    Ok(build_with(&memories, &unique, budget, stale, &extras))
+}
+
+/// Records which memories `brief` showed, the audit row every session brief leaves.
+pub fn record_provenance(store: &MemoryStore, brief: &Brief) {
     let ids: Vec<String> = brief.entries.iter().map(|e| e.id.clone()).collect();
     let average = if brief.entries.is_empty() {
         0.0
@@ -622,12 +640,31 @@ pub fn session_brief_with(
         store.save_provenance_ids(
             "session context brief",
             &ids,
-            memories.len(),
+            brief.eligible,
             "context_brief",
             average,
         )
     });
-    Ok(brief)
+}
+
+/// Claude Code replaces hook output over 10,000 characters with a 2,000-character preview.
+pub const HOOK_CHAR_CAP: usize = 9_500;
+
+/// The brief `build` makes for `budget`, rebuilt with smaller budgets until its Markdown is at
+/// most `HOOK_CHAR_CAP` characters.
+pub fn fit_hook(budget: usize, build: &dyn Fn(usize) -> Result<Brief>) -> Result<Brief> {
+    let mut budget = budget;
+    let mut brief = build(budget)?;
+    let mut attempts = 1;
+    loop {
+        let chars = brief.markdown.chars().count();
+        if chars <= HOOK_CHAR_CAP || attempts >= 6 {
+            return Ok(brief);
+        }
+        budget = (budget * HOOK_CHAR_CAP / chars).saturating_sub(50).max(1);
+        brief = build(budget)?;
+        attempts += 1;
+    }
 }
 
 /// The brief wrapped in markers so `--write` can refresh it in place inside AGENTS.md.
@@ -1005,5 +1042,89 @@ mod tests {
             brief.markdown
         );
         assert!(brief.approx_tokens <= 1500);
+    }
+
+    #[test]
+    fn a_hook_brief_never_passes_the_cap() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        for n in 0..120 {
+            store
+                .insert_memory(crate::model::NewMemory {
+                    content: format!("Convention {n}: every handler in the billing service validates its input with the shared schema module before touching the ledger tables"),
+                    layer: "project".into(),
+                    source: "manual".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        let layers = vec!["project".to_string()];
+        let policy = crate::guard::Policy::default();
+        let build = |budget: usize| session_brief_with(&store, &layers, budget, &|_| None, &policy);
+        let whole = build(DEFAULT_BUDGET).unwrap();
+        assert!(
+            whole.markdown.chars().count() > HOOK_CHAR_CAP,
+            "the fixture must be over the cap"
+        );
+        let fitted = fit_hook(DEFAULT_BUDGET, &build).unwrap();
+        assert!(fitted.markdown.chars().count() <= HOOK_CHAR_CAP);
+        assert!(fitted.entries.len() > 30 && fitted.entries.len() < whole.entries.len());
+        assert!(fitted.markdown.contains("Not shown for space"));
+
+        let small = MemoryStore::open(":memory:").unwrap();
+        small
+            .insert_memory(crate::model::NewMemory {
+                content: "We use pnpm".into(),
+                layer: "project".into(),
+                source: "manual".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let build = |budget: usize| session_brief_with(&small, &layers, budget, &|_| None, &policy);
+        assert_eq!(
+            fit_hook(DEFAULT_BUDGET, &build).unwrap().markdown,
+            build(DEFAULT_BUDGET).unwrap().markdown
+        );
+    }
+
+    #[test]
+    fn a_trimmed_hook_brief_records_its_provenance_once() {
+        let store = MemoryStore::open(":memory:").unwrap();
+        for n in 0..120 {
+            store
+                .insert_memory(crate::model::NewMemory {
+                    content: format!("Convention {n}: every handler in the billing service validates its input with the shared schema module before touching the ledger tables"),
+                    layer: "project".into(),
+                    source: "manual".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        let layers = vec!["project".to_string()];
+        let policy = crate::guard::Policy::default();
+        let build = |budget: usize| unrecorded_brief(&store, &layers, budget, &|_| None, &policy);
+        let whole = build(DEFAULT_BUDGET).unwrap();
+        assert!(
+            whole.markdown.chars().count() > HOOK_CHAR_CAP,
+            "the fixture must be over the cap"
+        );
+        let fitted = fit_hook(DEFAULT_BUDGET, &build).unwrap();
+        assert!(fitted.entries.len() < whole.entries.len());
+        assert!(
+            store.provenance(10).unwrap().is_empty(),
+            "building records nothing"
+        );
+        record_provenance(&store, &fitted);
+        let provenance = store.provenance(10).unwrap();
+        assert_eq!(provenance.len(), 1);
+        assert_eq!(provenance[0]["method"], "context_brief");
+        assert_eq!(provenance[0]["total_memories_searched"], 120);
+        let sources: Vec<&str> = provenance[0]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["memory_id"].as_str().unwrap())
+            .collect();
+        let shown: Vec<&str> = fitted.entries.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(sources, shown);
     }
 }

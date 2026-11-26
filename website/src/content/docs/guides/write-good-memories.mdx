@@ -34,7 +34,7 @@ The reason is what makes a decision useful. "We use Fastify" tells the agent wha
   ```
 
   Secrets files such as `.env` can't be cited either.
-- **Temporary status in the project layer.** "Day 12: fixing server.ts" is true for a day. Save work in progress in the `session` layer (the default for `add`), which expires after seven days and isn't in the brief.
+- **Temporary status in the project layer.** "Day 12: fixing server.ts" is true for a day. Save work in progress in the `session` layer, which expires after seven days and isn't in the brief.
 - **Rules that must be followed every time.** A preference that applies by inference ("document every new env var in the README") may not reach the agent when a request doesn't mention it. In the benchmark, agents followed such a rule from CLAUDE.md in 3 of 3 runs; from memory they skipped it or only mentioned it. Put rules like that in CLAUDE.md or AGENTS.md ([limits](/memctrl/help/limits/)).
 
 ## One fact per memory

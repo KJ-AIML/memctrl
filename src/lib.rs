@@ -1,12 +1,14 @@
 #![forbid(unsafe_code)]
 pub mod agent;
 pub mod capture;
+pub mod checkpoint;
 pub mod citations;
 pub mod context;
 pub mod decay;
 pub mod doctor;
 pub mod eval;
 pub mod fsutil;
+pub mod gitmeta;
 pub mod guard;
 pub mod heli;
 pub mod installer;

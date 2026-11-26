@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use memctrl::{
-    agent, citations, context, decay, doctor, guard, heli, installer,
+    agent, checkpoint, citations, context, decay, doctor, guard, heli, installer,
     llm::{LlmClient, LlmConfig, LlmSettings},
     mcp, mirror,
     model::{ClaimType, LifecycleState, NewMemory, VerificationState},
@@ -142,7 +142,7 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
-    /// Install SKILL.md for a coding tool (and optionally a Claude Code session-start hook).
+    /// Install SKILL.md for a coding tool (and optionally its hooks: the brief, recall and checkpoints).
     Install {
         #[arg(long)]
         tool: Option<String>,
@@ -150,7 +150,7 @@ enum Command {
         project: bool,
         #[arg(
             long,
-            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt"
+            help = "Claude Code, Codex and Gemini CLI: add hooks that give the agent the brief at session start and matching memories with each prompt, and save a checkpoint per branch (with your last three requests) in .memctrl/checkpoints/"
         )]
         hook: bool,
     },
@@ -185,10 +185,22 @@ enum Command {
         #[arg(long, value_enum, default_value_t = ContextFormat::Markdown)]
         format: ContextFormat,
     },
+    /// Where work on this branch left off: saved by hooks as you work, shown when a session starts.
+    Checkpoint {
+        #[command(subcommand)]
+        command: Option<CheckpointCommand>,
+        #[arg(long, value_enum, default_value_t = ContextFormat::Markdown, global = true)]
+        format: ContextFormat,
+        #[arg(
+            long,
+            help = "With --format hook: also tell the person a checkpoint was picked up"
+        )]
+        announce: bool,
+    },
     /// Store a memory (or explicitly request LLM extraction).
     Add {
         content: String,
-        #[arg(long, default_value = "session")]
+        #[arg(long, default_value = "project")]
         layer: String,
         #[arg(
             long,
@@ -499,6 +511,15 @@ enum Command {
     },
 }
 #[derive(Subcommand)]
+enum CheckpointCommand {
+    /// What the next session on this branch would get, however old (--format json: the stored file).
+    Show,
+    /// Leave a note for the next session on this branch.
+    Note { text: String },
+    /// Delete this branch's checkpoint.
+    Clear,
+}
+#[derive(Subcommand)]
 enum SemanticCommand {
     /// Find an embedding model on this machine (Ollama, LM Studio) and turn search by meaning on:
     /// adds [semantic] to your user config and indexes this project's memories.
@@ -584,11 +605,18 @@ fn project(cli: &Cli) -> Result<Project> {
             found: rc.is_file(),
             rc,
             dir: cwd.clone(),
+            store_root: cwd.clone(),
             searched_to: cwd,
         });
     }
     let located = project::locate_here()?;
     if let Command::Init { force } = &cli.command {
+        if !*force && located.store_root != located.dir {
+            bail!(
+                "this worktree already uses the memctrl store at {}; run `memctrl init --force` to give it a separate one",
+                located.store_root.display()
+            );
+        }
         ensure!(
             *force || !located.found || located.dir == cwd,
             "{} is already a memctrl project, and commands work from any folder inside it; to start a separate project here, run `memctrl init --force`",
@@ -599,10 +627,23 @@ fn project(cli: &Cli) -> Result<Project> {
             found: rc.is_file(),
             rc,
             dir: cwd.clone(),
+            store_root: cwd.clone(),
             searched_to: cwd,
         });
     }
     Ok(located)
+}
+/// Whether `init` writes the default rules file. An existing .memoryrc (often committed by a
+/// teammate) is kept unless --force. In a linked worktree that shares the main checkout's store,
+/// --force only gives it a store of its own (as the refusal message says) and keeps its rules.
+/// Decided before the store is opened, since opening it ends the sharing.
+fn init_writes_rules(force: bool, project: &Project) -> bool {
+    if !project.rc.exists() {
+        return true;
+    }
+    force
+        && !project::locate_here()
+            .is_ok_and(|here| here.dir == project.dir && here.store_root != here.dir)
 }
 /// The database: `--db` (or `MEMCTRL_DB_PATH`), else `db_path` from the rules file (relative to
 /// that file), else the project's `.memctrl/memories.db`. True when the user named the path.
@@ -1034,6 +1075,10 @@ fn recall_command(
                 .map(String::from)
         })
         .unwrap_or_default();
+    // Only the hook's own input is the user's request; a PROMPT argument only looks things up.
+    if format.hook() && prompt.is_none() && rules.continuity.enabled && rules.continuity.prompts {
+        keep_request(rules, db, &input, &text);
+    }
     let record = session_record(&input, db);
     let mut seen = record.as_deref().map(recall::seen_in).unwrap_or_default();
     // A prompt that starts with `remember:` saves the note first. Only the hook's own input does
@@ -1151,17 +1196,263 @@ fn session_record(input: &Value, db: &Path) -> Option<PathBuf> {
     let dir = db.parent().filter(|p| !p.as_os_str().is_empty())?;
     recall::session_file(dir, input.get("session_id")?.as_str()?)
 }
+
+/// The error for a command run where there is no store.
+fn missing_store(project: &Project) -> Result<()> {
+    if project.found {
+        bail!(
+            "{} has memctrl rules but no store yet; run `memctrl init` there (it keeps your rules)",
+            project.dir.display()
+        );
+    }
+    bail!(
+        "no memctrl project in {} or its parent folders (searched up to {}); run `memctrl init` at the project root, or pass --db",
+        std::env::current_dir()?.display(),
+        project.searched_to.display()
+    );
+}
+
+/// Why memctrl won't load a store that is committed to git.
+fn committed_store(db: &Path, user: &UserConfig) -> String {
+    format!(
+        "{} is committed to git, so anyone with push access could have written its memories; memctrl won't load it. Run `git rm --cached {}` and share memory through memory.md (export/import), or list this repository under [trust] repos in {}",
+        shown(db),
+        shown(db),
+        user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
+    )
+}
+
+/// `memctrl checkpoint`, kept out of `run` and `execute` so its locals don't enlarge their
+/// frames. It never reaches the code that opens or creates a store for other commands.
+fn checkpoint_command(
+    format: ContextFormat,
+    announce: bool,
+    command: Option<&CheckpointCommand>,
+    rules: &Rules,
+    project: &Project,
+    db: &Path,
+    user: &UserConfig,
+) -> Result<()> {
+    let committed = db.exists() && project::tracked_by_git(db) && !user.trusts(db);
+    let mut stdout = std::io::stdout().lock();
+    if format.hook() && command.is_none() {
+        if committed {
+            eprintln!(
+                "{}",
+                json!({"warning": sanitize_text(&committed_store(db, user))})
+            );
+        }
+        if !db.exists() || committed || !rules.continuity.enabled {
+            stdout.write_all(format.nothing())?;
+            return Ok(());
+        }
+        let input = hook_input(std::time::Duration::from_secs(2));
+        let output = match checkpoint_hook(&input, format, announce, rules, project, db) {
+            Ok(Some(output)) => output,
+            Ok(None) => String::from_utf8_lossy(format.nothing()).into_owned(),
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    json!({"warning": sanitize_text(&format!("checkpoint: {error:#}"))})
+                );
+                String::from_utf8_lossy(format.nothing()).into_owned()
+            }
+        };
+        stdout.write_all(output.as_bytes())?;
+        return Ok(());
+    }
+
+    if !db.exists() {
+        return missing_store(project);
+    }
+    // `show` reads session-layer memories from the store.
+    ensure!(!committed, committed_store(db, user));
+    let (file, branch) = checkpoint_file(db, &project.dir);
+    let now = chrono::Utc::now();
+    let output = match command {
+        None | Some(CheckpointCommand::Show) => {
+            ensure!(
+                !format.hook(),
+                "checkpoint show prints markdown or json; --format hook and gemini are for `memctrl checkpoint` run by a hook"
+            );
+            let mut saved = checkpoint::load(&file);
+            if format == ContextFormat::Json {
+                serde_json::to_string(&sanitize_value(&serde_json::to_value(&saved)?))? + "\n"
+            } else {
+                if saved.branch.is_none() {
+                    saved.branch = branch;
+                }
+                if !rules.continuity.prompts {
+                    saved.prompts.clear();
+                }
+                let notes = checkpoint::session_notes(&MemoryStore::open(db)?, &rules.guard)?;
+                match checkpoint::render(&saved, &notes, &rules.guard, now, false) {
+                    Some(rendered) => sanitize_text(&rendered.markdown),
+                    None => "No checkpoint for this branch yet.\n".into(),
+                }
+            }
+        }
+        Some(CheckpointCommand::Note { text }) => {
+            let mut saved = checkpoint::load(&file);
+            ensure!(saved.add_note(text, now), "nothing to save");
+            saved.branch = branch;
+            if !rules.continuity.prompts {
+                saved.prompts.clear();
+            }
+            checkpoint::save(&file, &saved)?;
+            serde_json::to_string(&sanitize_value(
+                &json!({"status": "saved", "branch": saved.branch}),
+            ))? + "\n"
+        }
+        Some(CheckpointCommand::Clear) => {
+            let status = match std::fs::remove_file(&file) {
+                Ok(()) => "cleared",
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => "none",
+                Err(error) => {
+                    return Err(error).with_context(|| format!("cannot delete {}", file.display()))
+                }
+            };
+            json!({ "status": status }).to_string() + "\n"
+        }
+    };
+    stdout.write_all(output.as_bytes())?;
+    Ok(())
+}
+
+/// This branch's checkpoint file, and the branch's name, sanitized. `worktree` is the folder
+/// the branch is checked out in.
+fn checkpoint_file(db: &Path, worktree: &Path) -> (PathBuf, Option<String>) {
+    let (file, branch) = checkpoint::file(db.parent().unwrap_or(Path::new("")), worktree);
+    (file, branch.as_deref().map(sanitize_text))
+}
+
+/// The hook input's `session_id`, only when it could name a session record, so hook input
+/// never stores anything else.
+fn hook_session_id(input: &Value) -> Option<&str> {
+    input
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|id| recall::session_file(Path::new(""), id).is_some())
+}
+
+/// Keeps the request the user just typed in this branch's checkpoint, for the prompt hook.
+/// A failure is a warning; recall carries on.
+fn keep_request(rules: &Rules, db: &Path, input: &Value, text: &str) {
+    // A `remember:` prompt is saved as a memory, not a task to pick up again.
+    if rules.remember && memctrl::capture::request(text).is_some() {
+        return;
+    }
+    let worktree = match &rules.project_dir {
+        Some(dir) => dir.clone(),
+        None => std::env::current_dir().unwrap_or_default(),
+    };
+    let (file, branch) = checkpoint_file(db, &worktree);
+    let mut saved = checkpoint::load(&file);
+    if !saved.record_prompt(text, chrono::Utc::now()) {
+        return;
+    }
+    saved.branch = branch;
+    if let Some(id) = hook_session_id(input) {
+        saved.session_id = Some(id.to_string());
+    }
+    if let Err(error) = checkpoint::save(&file, &saved) {
+        eprintln!(
+            "{}",
+            json!({"warning": sanitize_text(&format!("cannot save the checkpoint: {error:#}"))})
+        );
+    }
+}
+
+/// What `memctrl checkpoint --format hook|gemini` prints for a hook's input, after saving what
+/// it carries. `None` prints nothing.
+fn checkpoint_hook(
+    input: &Value,
+    format: ContextFormat,
+    announce: bool,
+    rules: &Rules,
+    project: &Project,
+    db: &Path,
+) -> Result<Option<String>> {
+    let now = chrono::Utc::now();
+    let (file, branch) = checkpoint_file(db, &project.dir);
+    let file = file.as_path();
+    let session_id = hook_session_id(input);
+    // With `[continuity] prompts = false`, requests kept earlier are never shown and the next
+    // save drops them.
+    let stamp = |saved: &mut checkpoint::Checkpoint| {
+        saved.branch = branch.clone();
+        if let Some(id) = session_id {
+            saved.session_id = Some(id.to_string());
+        }
+        if !rules.continuity.prompts {
+            saved.prompts.clear();
+        }
+    };
+    match checkpoint::event(input) {
+        checkpoint::Event::Start { fresh: true } => {
+            let mut saved = checkpoint::load(file);
+            if saved.branch.is_none() {
+                saved.branch = branch.clone();
+            }
+            if !rules.continuity.prompts {
+                saved.prompts.clear();
+            }
+            let notes = checkpoint::session_notes(&MemoryStore::open(db)?, &rules.guard)?;
+            let Some(rendered) = checkpoint::render(&saved, &notes, &rules.guard, now, true) else {
+                return Ok(None);
+            };
+            let mut output = json!({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":sanitize_text(&rendered.markdown)}});
+            if announce {
+                output["systemMessage"] = json!(sanitize_text(&rendered.announce));
+            }
+            Ok(Some(output.to_string() + "\n"))
+        }
+        checkpoint::Event::Stopped { message } => {
+            let mut saved = checkpoint::load(file);
+            if let Some(message) = message {
+                saved.record_message(&message, now);
+            }
+            stamp(&mut saved);
+            // The reply is kept before git runs, so a slow git can't lose it.
+            checkpoint::save(file, &saved)?;
+            if let Some(files) =
+                checkpoint::changed_files(&project.dir, std::time::Duration::from_secs(2))
+            {
+                // Reload: another session's hook may have saved while git ran.
+                let mut saved = checkpoint::load(file);
+                saved.record_files(files, now);
+                stamp(&mut saved);
+                checkpoint::save(file, &saved)?;
+            }
+            Ok(None)
+        }
+        checkpoint::Event::Compacted {
+            summary: Some(summary),
+        } => {
+            let mut saved = checkpoint::load(file);
+            if saved.record_compaction(&summary, now) {
+                stamp(&mut saved);
+                checkpoint::save(file, &saved)?;
+            }
+            Ok(None)
+        }
+        checkpoint::Event::Compacting if format == ContextFormat::Hook => {
+            Ok(Some(format!("{}\n", checkpoint::COMPACT_INSTRUCTIONS)))
+        }
+        _ => Ok(None),
+    }
+}
 async fn execute(
     cli: &Cli,
     store: &mut MemoryStore,
     rules: &Rules,
     project: &Project,
     db: &Path,
+    init_writes_rules: bool,
 ) -> Result<Value> {
     let result = match &cli.command {
-        Command::Init { force } => {
-            // An existing .memoryrc (often committed by a teammate) is kept unless --force.
-            let written = *force || !project.rc.exists();
+        Command::Init { .. } => {
+            let written = init_writes_rules;
             if written {
                 if let Some(parent) = project.rc.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -1186,13 +1477,23 @@ async fn execute(
                 layers.clone()
             };
             let notes = citations::stale_notes(store, rules);
-            let brief = context::session_brief_with(
-                store,
-                &layers,
-                *budget,
-                &|m| notes.get(&m.id).cloned(),
-                &rules.guard,
-            )?;
+            let build = |budget: usize| {
+                context::unrecorded_brief(
+                    store,
+                    &layers,
+                    budget,
+                    &|m| notes.get(&m.id).cloned(),
+                    &rules.guard,
+                )
+            };
+            // Only Claude Code and Codex cap a hook's output; every other format stays whole.
+            let brief = if *format == ContextFormat::Hook && write.is_none() {
+                context::fit_hook(*budget, &build)?
+            } else {
+                build(*budget)?
+            };
+            // One provenance row for the brief shown, however many were built to fit it.
+            context::record_provenance(store, &brief);
             if format.hook() && write.is_none() {
                 record_brief(&brief, db);
             }
@@ -1876,6 +2177,7 @@ async fn execute(
         Command::Eval { .. } => bail!("eval is handled separately"),
         Command::Install { .. } => bail!("install is handled separately"),
         Command::Check { .. } => bail!("check is handled separately"),
+        Command::Checkpoint { .. } => bail!("checkpoint is handled separately"),
     };
     Ok(sanitize_value(&result))
 }
@@ -1884,9 +2186,14 @@ async fn run(cli: Cli) -> Result<()> {
     let user = UserConfig::load()?;
     // Init must be able to replace malformed rules explicitly; every other command fails closed.
     // Init without --force keeps an existing rules file, so its db_path still applies.
-    let mut rules = match &cli.command {
-        Command::Init { force } if *force || !project.rc.exists() => Rules::default(),
-        _ => Rules::load_with(&project.rc, &user)?,
+    let init_writes_rules = match &cli.command {
+        Command::Init { force } => init_writes_rules(*force, &project),
+        _ => false,
+    };
+    let mut rules = if init_writes_rules {
+        Rules::default()
+    } else {
+        Rules::load_with(&project.rc, &user)?
     };
     for warning in &rules.warnings {
         // `semantic` commands report why it's off themselves; tune is how you fix it.
@@ -1899,6 +2206,22 @@ async fn run(cli: Cli) -> Result<()> {
     }
     rules.project_dir = Some(project.dir.clone());
     let (db, named) = database(&cli, &rules, &project);
+    if let Command::Checkpoint {
+        command,
+        format,
+        announce,
+    } = &cli.command
+    {
+        return checkpoint_command(
+            *format,
+            *announce,
+            command.as_ref(),
+            &rules,
+            &project,
+            &db,
+            &user,
+        );
+    }
     // Evaluation runs on an in-memory store and never opens or creates the real database.
     if let Command::Eval {
         file,
@@ -2112,17 +2435,7 @@ async fn run(cli: Cli) -> Result<()> {
     }
     // Only init, or a path the user named, creates a store, so a subfolder never gets its own.
     if !db.exists() && !named && !matches!(&cli.command, Command::Init { .. }) {
-        if project.found {
-            bail!(
-                "{} has memctrl rules but no store yet; run `memctrl init` there (it keeps your rules)",
-                project.dir.display()
-            );
-        }
-        bail!(
-            "no memctrl project in {} or its parent folders (searched up to {}); run `memctrl init` at the project root, or pass --db",
-            std::env::current_dir()?.display(),
-            project.searched_to.display()
-        );
+        return missing_store(&project);
     }
     // A database committed to git is never loaded into a session or searched for an agent.
     if db.exists()
@@ -2133,12 +2446,7 @@ async fn run(cli: Cli) -> Result<()> {
         && project::tracked_by_git(&db)
         && !user.trusts(&db)
     {
-        let message = format!(
-            "{} is committed to git, so anyone with push access could have written its memories; memctrl won't load it. Run `git rm --cached {}` and share memory through memory.md (export/import), or list this repository under [trust] repos in {}",
-            shown(&db),
-            shown(&db),
-            user.path.as_deref().map_or("your user config".into(), |p| p.display().to_string())
-        );
+        let message = committed_store(&db, &user);
         if let Command::Context {
             write: None,
             format,
@@ -2168,7 +2476,15 @@ async fn run(cli: Cli) -> Result<()> {
     }
     let started = Instant::now();
     // Boxed: the future of a function this large would otherwise sit on the main thread's stack.
-    let result = Box::pin(execute(&cli, &mut store, &rules, &project, &db)).await?;
+    let result = Box::pin(execute(
+        &cli,
+        &mut store,
+        &rules,
+        &project,
+        &db,
+        init_writes_rules,
+    ))
+    .await?;
     let operation = command_name(&cli.command);
     if records_span(&cli.command) {
         // Best effort: a command whose result is ready never fails or waits on telemetry.
@@ -2211,6 +2527,7 @@ fn records_span(command: &Command) -> bool {
             | Command::Install { .. }
             | Command::Context { .. }
             | Command::Recall { .. }
+            | Command::Checkpoint { .. }
             | Command::Stale { .. }
             | Command::Export { .. }
             | Command::Check { .. }
@@ -2250,6 +2567,7 @@ fn command_name(command: &Command) -> &'static str {
         Command::Install { .. } => "install",
         Command::Context { .. } => "context",
         Command::Recall { .. } => "recall",
+        Command::Checkpoint { .. } => "checkpoint",
         Command::Cite { .. } => "cite",
         Command::Stale { .. } => "stale",
         Command::Refresh { .. } => "refresh",

@@ -20,6 +20,12 @@ memctrl context
 memctrl recall "<the request, in its own words>"
 ```
 
+With the hooks installed, where the last session on this branch stopped arrives too, under "Where work on `<branch>` left off": the user's last requests, your last message, the files with uncommitted changes. memctrl saves it as you work. Without hooks, run `memctrl checkpoint` to see it. To leave the next session something it wouldn't otherwise have, such as an approach that failed and why, run:
+
+```bash
+memctrl checkpoint note "Tried rotating the session id inside the transaction: deadlocks with the audit trigger"
+```
+
 A recorded decision is what the team agreed. If a request goes against one, say so before acting on it.
 
 Entries under **Check before trusting** are disputed, or their cited code changed after they were saved. Confirm them against the code before relying on them.
@@ -51,7 +57,6 @@ memctrl add "We chose SQLx over Diesel: compile-time checked queries caught 3 pr
   --layer project --claim-type decision --cite src/db/mod.rs:12-40
 memctrl add "Integration tests need Postgres: docker compose up -d db" --layer project --cite docker-compose.yml
 memctrl add "Prefers small PRs with one concern each" --layer user
-memctrl add "Migrating auth to sessions; login done, logout next" --layer session
 ```
 
 | Layer | For | Default expiry |
@@ -90,7 +95,7 @@ Anyone who can edit `.memctrl/memory.md` can add an entry, so imported entries w
 
 ## Session end
 
-Save what the next session needs with `memctrl add`: decisions and conventions in `project`, the person's preferences in `user`. Session notes expire on their own.
+With the hooks installed, nothing to do: memctrl saves where you stopped. Without them, leave a `memctrl checkpoint note` saying where you stopped. Save what stays true after this task with `memctrl add` (decisions and conventions in `project`, the person's preferences in `user`).
 
 ## MCP tools
 
