@@ -102,13 +102,16 @@ fn retrieval_cache_is_scoped_and_invalidates_content_lifecycle_and_time() {
     assert_eq!(after.access_count, before.access_count + 1);
     // Alter validity once, populate both active and inactive cache sets, then
     // change only wall-clock time. No revision mutation occurs at the boundary.
+    // Each check waits for a moment measured from `base`, 600 ms from either edge of the
+    // window, so a slow runner can't carry one check's delay across a boundary.
+    let base = Utc::now();
     store
         .conn
         .execute(
             "UPDATE memories SET valid_from=?1,valid_until=?2 WHERE id=?3",
             rusqlite::params![
-                (Utc::now() + Duration::milliseconds(80)).to_rfc3339(),
-                (Utc::now() + Duration::milliseconds(250)).to_rfc3339(),
+                (base + Duration::milliseconds(600)).to_rfc3339(),
+                (base + Duration::milliseconds(1800)).to_rfc3339(),
                 session
             ],
         )
@@ -117,16 +120,23 @@ fn retrieval_cache_is_scoped_and_invalidates_content_lifecycle_and_time() {
         .unwrap()
         .facts
         .is_empty());
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    sleep_until(base + Duration::milliseconds(1200));
     assert!(!retriever::retrieve(&mut store, "backend auth", None, 5)
         .unwrap()
         .facts
         .is_empty());
-    std::thread::sleep(std::time::Duration::from_millis(170));
+    sleep_until(base + Duration::milliseconds(2100));
     assert!(retriever::retrieve(&mut store, "backend auth", None, 5)
         .unwrap()
         .facts
         .is_empty());
+}
+
+/// Sleeps until `at`, or not at all once it has passed.
+fn sleep_until(at: chrono::DateTime<Utc>) {
+    if let Ok(left) = (at - Utc::now()).to_std() {
+        std::thread::sleep(left);
+    }
 }
 
 #[test]
